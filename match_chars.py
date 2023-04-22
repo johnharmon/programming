@@ -12,6 +12,7 @@ def search_line(search_character, line):
     characters['"'] = ['"', '"']
     characters["'"] = ["'", "'"]
     search_stack = deque()
+    closing_stack = deque()
     for character in line:
         if character == characters[search_character][0]:
             search_stack.append(character)
@@ -19,9 +20,11 @@ def search_line(search_character, line):
             try:
                 search_stack.pop()
             except Exception as e:
-                return f'Unmatched closing {characters[search_character][1]}'
-    if len(search_stack) > 0:
-        return f'Unmatched opening {characters[search_character][0]}'
+                closing_stack.append(character)
+    if len(closing_stack) > 0:
+        return f' {len(closing_stack)} Unmatched closing {characters[search_character][1]}'
+    elif len(search_stack) > 0:
+        return f' {len(search_stack)} Unmatched opening {characters[search_character][0]}'
     else:
         return True
 
