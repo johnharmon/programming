@@ -2,6 +2,7 @@
 from collections import deque 
 import sys
 import os
+import re 
 
 def search_line(search_character, line):
     characters = dict()
@@ -13,20 +14,30 @@ def search_line(search_character, line):
     characters["'"] = ["'", "'"]
     search_stack = deque()
     closing_stack = deque()
-    for character in line:
-        if character == characters[search_character][0]:
-            search_stack.append(character)
-        elif character == characters[search_character][1]:
-            try:
-                search_stack.pop()
-            except Exception as e:
-                closing_stack.append(character)
-    if len(closing_stack) > 0:
-        return f' {len(closing_stack)} Unmatched closing {characters[search_character][1]}'
-    elif len(search_stack) > 0:
-        return f' {len(search_stack)} Unmatched opening {characters[search_character][0]}'
+    if search_character == '"' or search_character == "'":
+        opened = False
+        for character in line:
+            if character == characters[search_character][0]:
+                search_stack.append(character)
+        if len(search_stack)%2 != 0:
+            return f'Unmatched {search_character}'
+        else:
+            return True
     else:
-        return True
+        for character in line:
+            if character == characters[search_character][0]:
+                search_stack.append(character)
+            elif character == characters[search_character][1]:
+                try:
+                    search_stack.pop()
+                except Exception as e:
+                    closing_stack.append(character)
+        if len(closing_stack) > 0:
+            return f' {len(closing_stack)} Unmatched closing {characters[search_character][1]}'
+        elif len(search_stack) > 0:
+            return f' {len(search_stack)} Unmatched opening {characters[search_character][0]}'
+        else:
+            return True
 
 def search_file(search_character, file_path):
     wrong_lines = list()
@@ -39,7 +50,6 @@ def search_file(search_character, file_path):
             else:
                 wrong_lines.append(f'Line: {line_number}: {result}')
             line_number += 1
-
     return wrong_lines
 
 def main():
@@ -50,11 +60,9 @@ def main():
     characaters['<'] = ['<', '>']
     characaters['"'] = ['"', '"']
     characaters["'"] = ["'", "'"]
-
     search_character = sys.argv[1]
     file_path = sys.argv[2]
     result = search_file(search_character, file_path)
-
     if len(result) > 0:
         for line in result:
             print(f'{line} in {os.path.relpath(file_path)}')
