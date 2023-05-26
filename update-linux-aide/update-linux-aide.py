@@ -12,7 +12,6 @@ import requests
 import logging
 import warnings
 import multiprocessing as mp
-import asyncio 
 
 
 #ssh_connections = [sat01_ssh, wks01_ssh, wks02_ssh, cms01_ssh]
@@ -346,7 +345,9 @@ def main():
                     connection_states[index] = parent_pipes[index].recv()
                 print(connection_states[index])
             time.sleep(15.1)
-main()
+if __name__ == "__main__":
+    main()
+
 
 
 

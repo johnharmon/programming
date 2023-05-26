@@ -1,0 +1,89 @@
+#!/bin/python3
+from collections import deque 
+import sys
+import os
+import re 
+
+def search_line(search_character, line):
+    char_indicies = list()
+    index = 0
+    characters = dict()
+    results = dict()
+    characters['('] = ['(', ')']
+    characters['{'] = ['{', '}']
+    characters['['] = ['[', ']']
+    characters["'"] = ["'", "'"]
+    search_stack = deque()
+    closing_stack = deque()
+    if search_character == '"' or search_character == "'":
+        opened = False
+        for character in line:
+            if character == characters[search_character][0]:
+                search_stack.append(character)
+        if len(search_stack)%2 != 0:
+            return f'Unmatched {search_character}'
+        else:
+            return True
+    else:
+        for character in line:
+            if character == characters[search_character][0]:
+                search_stack.append(character)
+            elif character == characters[search_character][1]:
+                try:
+                    search_stack.pop()
+                except Exception as e:
+                    closing_stack.append(character)
+        if len(closing_stack) > 0:
+            #return f' {len(closing_stack)} Unmatched closing {characters[search_character][1]}'
+            return (len(closing_stack), characters[search_character[1]])
+        elif len(search_stack) > 0:
+            #return f' {len(search_stack)} Unmatched opening {characters[search_character][0]}'
+            return (len(search_stack), characters[search_character[0]])
+        else:
+            return True
+
+def format_results(results):
+    if len(results) > 0:
+        return f' {len(results[0])} Unmatched closing {results[1]}'
+    elif len(search_stack) > 0:
+        return f' {len(search_stack)} Unmatched opening {characters[search_character][0]}'
+    else:
+        return True
+
+def search_file(search_character, file_path):
+    wrong_lines = list()
+    with open(file_path, 'r') as search_file:
+         line_number = 1
+         for line in search_file.readlines():
+            result = search_line(search_character, line)
+            if  result == True:
+                pass
+            else:
+                wrong_lines.append(f'Line: {line_number}: {result}')
+            line_number += 1
+    return wrong_lines
+
+def main():
+    characaters = dict()
+    characaters['('] = ['(', ')']
+    characaters['{'] = ['{', '}']
+    characaters['['] = ['[', ']']
+    characaters['<'] = ['<', '>']
+    characaters['"'] = ['"', '"']
+    characaters["'"] = ["'", "'"]
+    search_character = sys.argv[1]
+    file_path = sys.argv[2]
+    result = search_file(search_character, file_path)
+    if len(result) > 0:
+        for line in result:
+            print(f'{line} in {os.path.relpath(file_path)}')
+    else:
+        print(f'This file does not have any unmatched {search_character} or {characaters[search_character][1]} on any line')
+ 
+if __name__ == '__main__':
+    main()
+
+
+
+
+                

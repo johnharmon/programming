@@ -234,7 +234,7 @@ def ssh_connect(ssh_connection):
                     return
             elif ssh_index == 1:
                 accept_fingerprint(ssh_connection)
-                break
+                continue 
             else:
                 print('C\033[01;33monnection was not successfull, please check the logs @ ' + log_file + 'for more details\033[00m')
                 exit(1)
