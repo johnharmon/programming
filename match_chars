@@ -6,9 +6,11 @@ import re
 
 def search_line(search_character, line):
     char_indicies = list()
-    index = 0
+    index = 1
     characters = dict()
     results = dict()
+    results['closing_index'] = list()
+    results['opening_index'] = list()
     characters['('] = ['(', ')']
     characters['{'] = ['{', '}']
     characters['['] = ['[', ']']
@@ -20,6 +22,7 @@ def search_line(search_character, line):
         for character in line:
             if character == characters[search_character][0]:
                 search_stack.append(character)
+            index += 1
         if len(search_stack)%2 != 0:
             return f'Unmatched {search_character}'
         else:
@@ -28,17 +31,22 @@ def search_line(search_character, line):
         for character in line:
             if character == characters[search_character][0]:
                 search_stack.append(character)
+                results['opening_index'].append(index)
             elif character == characters[search_character][1]:
-                try:
+                if len(search_stack) > 0:
                     search_stack.pop()
-                except Exception as e:
+                else:
                     closing_stack.append(character)
-        if len(closing_stack) > 0:
+                    results['closing_index'].append(index)
+            index += 1
+        if (len(closing_stack) > 0 or len(search_stack) > 0):
             #return f' {len(closing_stack)} Unmatched closing {characters[search_character][1]}'
+            results = dict()
+            results['unmatched_open'] = search_stack
+            results['unmatched_close'] = closing_stack
             return (len(closing_stack), characters[search_character[1]])
-        elif len(search_stack) > 0:
-            #return f' {len(search_stack)} Unmatched opening {characters[search_character][0]}'
             return (len(search_stack), characters[search_character[0]])
+            #return f' {len(search_stack)} Unmatched opening {characters[search_character][0]}'
         else:
             return True
 
