@@ -33,27 +33,27 @@ def search_line(line: str):
     for entry in iteration_list:
         if not(os.path.exists(entry)):
             result.remove(entry)
-            #print(f'removed {entry}')
-    #print(result)
     return set(result)
 
 def search_file(file: str):
-    #filepaths = list()
-    filepaths = list()
+    # use set object for holding only unique paths
     unique_paths = set()
     if os.path.isfile(file):
         with open(file, 'r') as input_file:
             for line in input_file.readlines():
+                # Update set with union of new files read from each line
                 unique_paths = unique_paths.union(search_line(line))
     iteration_set = unique_paths.copy()
+    # Remove values from set if they are the current file name, would cause useless and infinite recursion
     for path in iteration_set:
         if path == file:
             unique_paths.discard(path)
     if unique_paths:
+        # Convert it to a list before returning cause sets don't JSON
         return list(unique_paths)
 
 def recursive_search(file: str, depth: int, calling_file = None):
-    #print(file)
+    # Check to see if we are at our first level of recursion, directory changing will be dependent on calling file so relative paths remain intaact
     if not calling_file:
         if file[0] != '/':
             calling_directory = os.getcwd()
@@ -67,6 +67,7 @@ def recursive_search(file: str, depth: int, calling_file = None):
             elif os.path.exists(file) and os.path.isdir(file):
                 os.chdir(file)
     else:
+        # Essentially test to see if the calling file is in a different path and change to there
         dname = os.path.dirname(calling_file)
         if os.path.exists(dname):
             os.chdir(os.path.dirname(calling_file))
@@ -74,20 +75,18 @@ def recursive_search(file: str, depth: int, calling_file = None):
     file_results[file] = dict()
     if get_file_type(file):
         file_results[file]['Paths'] = search_file(file)
-        #print(file_results)
+        # Limit recursive depth to 3 levels
         if file_results[file]['Paths'] and depth < 3:
+            # Increment depth counter
             depth += 1
             for filepath in file_results[file]['Paths']:
-                file_results[file][filepath] = dict()
-                #file_results[file][filepath]['Paths'] = recursive_search(filepath, depth)
+                # Update this level's dictionary with the results of recursively searching the paths found in this file
                 file_results[file].update(recursive_search(filepath, depth, calling_file = file))
     return file_results 
 
 def main():
-    print(os.getcwd())
     file = sys.argv[1]
     results = recursive_search(file, depth = 0)
-    #print(results)
     print(json.dumps(results, indent = 4))
 
 if __name__ == '__main__':
