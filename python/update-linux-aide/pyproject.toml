@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "update-linux-aide"
+version = "0.1.0"
+description = "Updade aide databases on linux hosts"
+authors = ["John Harmon"]
+
+[tool.poetry.dependencies]
+python = "^3.6"
+pexpect = "^4.8.0"
+os3 = "^0.1.2"
+re101 = "^0.4.0"
+getpass3 = "^1.2"
+os-sys = "^2.1.4"
+time-tools = "^1.0.0"
+"sweet.socket" = "^0.0.0"
+socket-api2 = "^0.2.0"
+subprocess32 = "^3.5.4"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
