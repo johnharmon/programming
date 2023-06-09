@@ -1,5 +1,4 @@
 ---
- 
 - name: "Set hostname to lowercase {{ inventory_hostname }}"
   set_fact:
     hostname: "{{ inventory_hostname | lower }}"
@@ -29,7 +28,7 @@
 
 - name: "Copy properties file to {{ app_name }}"
   template:
-    src: "{{ lookup('template', role_path/em_suite.properties) }}"
+    src: "{{ lookup('template', em_suite.properties) }}"
     dest: "{{ cert_path }}"
     owner: sysman
     group: sysman
