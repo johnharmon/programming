@@ -38,7 +38,7 @@ def query_disa(cert = None, key = None, xml_file = None):
         response = connection.request(method="POST", url = url, headers = request_headers, body = xml.loads(xmlfile.read()))
         return response
 
-def validate_disa_response(response: xml = None):
+def validate_disa_response(response):
     for line in response.content:
         if re.search(r'accessdenied|serverfault', line, re.IGNORECASE):
             return False
