@@ -7,6 +7,7 @@
 - name: "Set staging directory fact"
   set_fact:
     staging_directory: "/tmp/ansible_staging_directory"
+
 - name: "Check if staging directory exists"
   stat:
     path: "{{ staging_directory }}"
@@ -79,9 +80,66 @@
 
 - name: "Pull down application and dependencies using pom and maven"
   shell:
-    cmd: "mvn dependency:copy-dependencies -Doutputdir applications"
+    cmd: "mvn dependency:copy-dependencies -Doutputdir application"
   chdir: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
   loop: "{{ apps }}"
   loop_control:
     loop_var: "app"
+  
+- name: "Set application directory fact"
+  set_fact:
+    app_dir: "{{ hostname_dir }}/{{ app.maven.artifactId }}/application"
+
+- name: "Create lib directory"
+  file:
+    path: "{{ app_dir }}/lib"
+    state: directory
+
+- name: "Move all jars besides {{ app.maven.artifactId }}.jar to the lib folder"
+  shell:
+    cmd: "for jar in $(ls | grep -v -E '^lib$|{{ app.maven.artifactId }}); do mv $jar lib; done"
+  chdir: "{{ app_dir }}"
+
+- name: "Extract {{ app.maven.artifactId }}"
+  shell:
+    cmd: "jar -xf {{ app.maven.artifactId }}.jar"
+  chdir: "{{ app_dir }}"
+
+- name: "tar current directory structure to deploy on {{ inventory_hostname }}"
+  archive:
+    path: "{{ app_dir }}/"
+    dest: "{{ hostname_dir }}/{{ app.maven.artifactId }}/{{ app.maven.artifactId }}.tar"
+    
+########################Begin the installation template#################################
+
+- name: "Check if {{ app }} directory exists"
+  stat:
+    path: "/opt/C2BMC/apps/{{ app.maven.artifactId }}"
+  register: app_stat
+
+- name: "Create {{ app.maven.artifactId }} directory"
+  file: 
+    path: "/opt/C2BMC/apps/{{ app.maven.artifactId }}"
+    state: "directory"
+  when: not app_stat.stat.isdir
+
+#- name: "Copy over tar file"
+#  copy:
+#    src:  "{{ hostname_dir }}/{{ app.maven.artifactId }}/{{ app.maven.artifactId }}.tar"
+#    dest: "/opt/C2BMC/apps/{{ app.maven.artifactId }}.tar"
+
+- name: "Extract tar archive"
+  unarchive: 
+    copy: True
+    src: "{{ hostname_dir }}/{{ app.maven.artifactId }}/{{ app.maven.artifactId }}.tar"
+    dest: "/opt/C2BMC/apps/{{ app.maven.artifactId }}.tar"
+    owner: "sysman"
+    group: "sysman"
+    mode: "775"
+
+- name: "Remove tar archive after extraction"
+  file: 
+    path: "/opt/C2BMC/apps/{{ app.maven.artifactId }}.tar"
+    state: absent
+    
   
