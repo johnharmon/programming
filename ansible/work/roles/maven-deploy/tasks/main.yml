@@ -1,0 +1,87 @@
+---
+
+# Assumptons:
+# apps is a list that holds all of the applicaqtions for a given hostname
+# each element of the apps list is a dict holding the lookup results from the vars/main.yml with the given app name
+
+- name: "Set staging directory fact"
+  set_fact:
+    staging_directory: "/tmp/ansible_staging_directory"
+- name: "Check if staging directory exists"
+  stat:
+    path: "{{ staging_directory }}"
+  register: staging_directory_stat
+  run_once: True
+
+- name: "Make staging directory for ansible"
+  file:
+    path: "{{ staging_directory }}"
+    state: "directory"
+  when: not staging_directory_stat.stat.isdir
+  run_once: True
+
+- name: "Set fact for {{ inventory_hosname }} staging directory"
+  set_fact:
+    hostname_dir: "{{ staging_directory }}/{{ inventory_hostname }}"
+
+- name: "Check if {{ inventory_hostname }} directory exists"
+  stat:
+    path: "{{ hostname_dir }}"
+  register: inventory_hostname_stat
+
+- name: "Make directory for {{ inventory_hostname }}"
+  file:
+    path: "{{ hostname_dir }}"
+    state: "directory"
+  when: not inventory_hostname_stat.stat.isdir
+  
+#- name: "Check if {{ app }} directory exists"
+#  stat:
+#    path: "{{ hostname_dir }}/{{ app.mave.artifactId }}"
+#  register: app_stat
+
+- name: "Make directory for {{ app }}"
+  file:
+    path: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+    state: "directory"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: app
+
+- name: "Make storage directory for {{ app }} and its dependencies"
+  file:
+    path: "{{ hosntame_dir }}/{{ app.maven.artifactId }}/application"
+    state: "directory"
+
+- name: "Create pom.xml for {{ app }} from template"  
+  template: 
+    src: "{{ role_path }}/templates/pom.j2"
+    dest: "{{ hostname_dir }}/{{ app.maven.artifactId }}/pom.xml"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Pull down pom for {{ app }} using maven"
+  shell:
+    cmd: "mvn dependency:get -Doutputfile app_pom.xml"
+  chdir: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Overwrite templated pom with one pulled from nexus"
+  shell:
+    cmd: "mv app_pom.xml pom.xml"
+  chdir: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Pull down application and dependencies using pom and maven"
+  shell:
+    cmd: "mvn dependency:copy-dependencies -Doutputdir applications"
+  chdir: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+  
