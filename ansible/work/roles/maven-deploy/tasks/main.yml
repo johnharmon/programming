@@ -89,26 +89,59 @@
 - name: "Set application directory fact"
   set_fact:
     app_dir: "{{ hostname_dir }}/{{ app.maven.artifactId }}/application"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
 
 - name: "Create lib directory"
   file:
     path: "{{ app_dir }}/lib"
     state: directory
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
 
-- name: "Move all jars besides {{ app.maven.artifactId }}.jar to the lib folder"
+# Ghetto fix for symlink creation cause using mvn to pull down the poms means we don't actually get the version into ansible's memory
+- name: "Get jar file name"
   shell:
-    cmd: "for jar in $(ls | grep -v -E '^lib$|{{ app.maven.artifactId }}); do mv $jar lib; done"
+    cmd: | 
+    ls | grep -E "{{ app.maven.artifactId }}-[0-9].*\.jar"
   chdir: "{{ app_dir }}"
+  register: grep_output
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Set jar file name fact"
+  set_fact:
+    app_jar: "{{ grep_output.stdout_lines[0] }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Move all jars besides {{ app_jar }} to the lib folder"
+  shell:
+    cmd: "for jar in $(ls | grep -v -E '^lib$|{{ app_jar }}); do mv $jar lib; done"
+  chdir: "{{ app_dir }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
 
 - name: "Extract {{ app.maven.artifactId }}"
   shell:
-    cmd: "jar -xf {{ app.maven.artifactId }}.jar"
+    cmd: "jar -xf {{ app_jar }}"
   chdir: "{{ app_dir }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
 
 - name: "tar current directory structure to deploy on {{ inventory_hostname }}"
   archive:
     path: "{{ app_dir }}/"
     dest: "{{ hostname_dir }}/{{ app.maven.artifactId }}/{{ app.maven.artifactId }}.tar"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
     
 ########################Begin the installation template#################################
 
@@ -141,5 +174,5 @@
   file: 
     path: "/opt/C2BMC/apps/{{ app.maven.artifactId }}.tar"
     state: absent
+
     
-  
