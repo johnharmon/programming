@@ -1,0 +1,4 @@
+1) you can't loop over blocks
+2) use roles, access to their inherent properties are very useful
+3) learn how to use templates, they are are stupidly useful (you can also use jinja2 with regular python)
+4) include and import are different functions, imports are pre-processed and indluces are processed during execution 
