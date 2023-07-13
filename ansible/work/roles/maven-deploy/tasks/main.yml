@@ -105,7 +105,7 @@
 - name: "Get jar file name"
   shell:
     cmd: | 
-    ls | grep -E "{{ app.maven.artifactId }}-[0-9].*\.jar"
+      ls | grep -E "{{ app.maven.artifactId }}-[0-9].*\.jar"
   chdir: "{{ app_dir }}"
   register: grep_output
   loop: "{{ apps }}"
