@@ -3,7 +3,7 @@
 import re, subprocess, sys, os, requests, typing, jinja2, xml, ssl, http
 
 def find_pull_point(line: str = None):
-    resutl = re.search(r'(?<=<{opening_tag}>).+(?=<closing_tag>)', line)
+    result = re.search(r'(?<=<{opening_tag}>).+(?=<closing_tag>)', line)
     if result:
         return result
     else:
@@ -22,9 +22,9 @@ def get_pull_points(script: str = None):
 
 def  template_xml(xml_template_path = None, xml_pull_point = None, xml_topic = None):
     j2_env = jinja2.Environment(loader = jinja2.FileSystemLoader(os.path.dirname(xml_template_path)))
-    j2_template = j2_env.get_template(xml_template_path.split('/')[-1])
-    content = j2.render(topic = xml_topic, pull_point = xml_pull_point)
-     with open(f'{xml_template_path}.txt', 'w') as xml_template:
+    j2_template = j2_env.get_template(xml_template_path.split('/')[:-1])
+    content = jinja2.render(topic = xml_topic, pull_point = xml_pull_point)
+    with open(f'{xml_template_path}.txt', 'w') as xml_template:
         xml_template.write(content) 
 
 def query_disa(cert = None, key = None, xml_file = None):
