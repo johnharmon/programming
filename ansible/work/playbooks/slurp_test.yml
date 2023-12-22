@@ -1,0 +1,8 @@
+--- 
+- name: "run slurp_test role"
+  hosts: localhost
+  gather_facts: False
+  tasks:
+    - name: "include slurp_test role"
+      include_role:
+        name: "slurp_test"

@@ -4,10 +4,10 @@ import requests, json, re, typing
 import vms
 
 class netbox_api():
-    def __init__(self, url, api_token):
+    def __init__(self, url: str, api_token: str):
         self.__kind = ''
         self.__root_url = url 
-        self._url = self.__root_url
+        self.__target_url = self.__root_url
         self.__token = api_token 
         self.auth = f'Token {self.__token}'
         self.headers = {'Content-Type': 'application/json', 'Authorization': self.auth}
@@ -17,21 +17,24 @@ class netbox_api():
     @kind.setter
     def kind(self, kind)
         self.__kind = kind 
-        self._url = f'{self.__root_url}/{self.__kind}/'
+        self.__target_url = f'{self.__root_url}/{self.__kind}/'
     @property 
-    def url(self):
-        return self._url 
+    def url(self) -> str:
+        return self.__root_url 
     @url.setter
     def url(self, url):
         self.__root_url = url
+    @property
+    def target(self):
+        return self.__target_url 
     def post(self, data):
-        response = requests.post(url = self.url, headers = self.headers, data = json.dumps(data))
+        response = requests.post(url = self.target, headers = self.headers, data = json.dumps(data))
         return response
     def put(self, data):
-        response = requests.put(url = self.url, headers = self.headers, data = json.dumps(data))
+        response = requests.put(url = self.target, headers = self.headers, data = json.dumps(data))
         return response
     def get(self):
-        response = requests.get(url = self.url, headers = self.headers)
+        response = requests.get(url = self.target, headers = self.headers)
         return response
 
 def create_resource(api, resource_name):
