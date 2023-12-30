@@ -1,0 +1,124 @@
+# Get netbox integer values for site, cluster, role, tenant
+# If any of these fail, you need to create them in netbox, as part of our best practices, we do not want to create them automatically, they should be managed by actual hoomans
+
+- name: "Template netbox vm body"
+  set_fact:
+    netbox_vm_body: "{{ lookup('template', 'nutanix-vm-to-netbox.yml.j2')  | from_yaml }}"
+
+- name: "Set authorization header"
+  set_fact:
+    netbox_headers:
+      Accept: "application/json"
+      Authorization: "Token {{ netbox_token }}"
+      Content-Type: "application/json"
+
+
+- name: "Get site ID, fail if not found"
+  block:
+    - name: "Query netbox for site ID"
+      uri:
+        url: "{{ netbox_url }}/api/dcim/sites/?name={{ netbox_vm_body.site }}"
+        method: GET
+        headers: "{{ netbox_headers }}"
+        validate_certs: False
+      register: netbox_site
+
+    - name: "Set site ID"
+      set_fact:
+        netbox_vm_body: "{{ netbox_vm_body | combine({'site': netbox_site.json.results[0].id}) }}"
+  rescue:
+    - name: "Fail if site not found"
+      fail:
+        msg: "Site {{ netbox_vm_body.site }} not found in netbox"
+
+- name: "Get cluster ID, fail if not found"
+  block:
+    - name: "Query netbox for cluster ID"
+      uri:
+        url: "{{ netbox_url }}/api/virtualization/clusters/?name={{ netbox_vm_body.cluster }}"
+        method: GET
+        headers: "{{ netbox_headers }}"
+        validate_certs: False
+      register: netbox_cluster
+
+    - name: "Set cluster ID"
+      set_fact:
+        netbox_vm_body: "{{ netbox_vm_body | combine({'cluster': netbox_cluster.json.results[0].id}) }}"
+  rescue:
+    - name: "Fail if cluster not found"
+      fail:
+        msg: "Cluster {{ netbox_vm_body.cluster }} not found in netbox"
+
+- name: "Get role ID, fail if not found"
+  block:
+    - name: "Query netbox for role ID"
+      uri:
+        url: "{{ netbox_url }}/api/virtualization/cluster-types/?name={{ netbox_vm_body.role }}"
+        method: GET
+        headers: "{{ netbox_headers }}"
+        validate_certs: False
+      register: netbox_role
+
+    - name: "Set role ID"
+      set_fact:
+         netbox_vm_body: "{{ netbox_vm_body | combine({'role': netbox_role.json.results[0].id}) }}"
+  rescue:
+    - name: "Fail if role not found"
+      fail:
+        msg: "Role {{ netbox_vm_body.role }} not found in netbox"
+
+- name: "Get tenant ID, fail if not found"
+  block:
+    - name: "Query netbox for tenant ID"
+      uri:
+        url: "{{ netbox_url }}/api/tenancy/tenants/?name={{ netbox_vm_body.tenant }}"
+        method: GET
+        headers: "{{ netbox_headers }}"
+        validate_certs: False
+      register: netbox_tenant
+
+    - name: "Set tenant ID"
+      set_fact:
+        netbox_vm_body: "{{ netbox_vm_body | combine({'tenant': netbox_tenant.json.results[0].id}) }}"
+  rescue:
+    - name: "Fail if tenant not found"
+      fail:
+        msg: "Tenant {{ netbox_vm_body.tenant }} not found in netbox"
+
+- name: "Get primary ipv4 ID, Create it if not found"
+  block:
+    - name: "Query netbox for primary ipv4 ID"
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/?address={{ netbox_vm_body.primary_ip }}"
+        method: GET
+        headers: "{{ netbox_headers }}"
+        validate_certs: False
+      register: netbox_primary_ip
+
+    - name: "Set primary ipv4 ID"
+      set_fact:
+        netbox_vm_body: "{{ netbox_vm_body | combine({'primary_ip': netbox_primary_ip.json.results[0].id}) }}"
+  rescue:
+    - name: "Include create-netbox-ipv4.yml tasks"
+      include_tasks: create-netbox-ipv4.yml
+#      vars:
+#        netbox_ipv4_body: "{{ netbox_vm_body.primary_ip | combine({'address': netbox_vm_body.primary_ip}) }}"
+#        netbox_vm_body: "{{ netbox_vm_body | combine({'primary_ip': netbox_ipv4_body.id}) }}"
+
+- name: "Create netbox vm"
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/virtual-machines/"
+    body: "{{ netbox_vm_body | to_json }}"
+    body_format: json
+    method: POST 
+    headers: "{{ netbox_headers }}"
+    status_code: 201
+    validate_certs: False
+  register: netbox_vm
+
+- name: "Set netbox vm ID"
+  set_fact:
+    netbox_vm_id: "{{ netbox_vm.json.0.id}}"
+
+- name: "Include create-netbox-interfaces.yml tasks"
+  include_tasks: create-netbox-interfaces.yml

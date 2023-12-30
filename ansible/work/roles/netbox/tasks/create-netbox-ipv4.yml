@@ -1,0 +1,58 @@
+    - name: "Template IPv4 body"
+      set_fact:
+        netbox_ipv4_body: "{{ lookup('template', 'netbox-ipv4.yml.j2')  | from_yaml }}"
+
+    - name: "Set vrf ID, fail if not found"
+      block:
+        - name: "Query netbox for vrf ID"
+          uri:
+            url: "{{ netbox_url }}/api/ipam/vrfs/?name={{ netbox_ipv4_body.vrf }}"
+            method: GET
+            headers: "{{ netbox_headers }}"
+            validate_certs: False
+          register: netbox_vrf
+
+        - name: "Set vrf ID"
+          set_fact:
+            netbox_ipv4_body: "{{ netbox_ipv4_body | combine({'vrf': netbox_vrf.json.results[0].id}) }}"
+      rescue:
+        - name: "Fail if vrf not found"
+          fail:
+            msg: "VRF {{ netbox_ipv4_body.vrf }} not found in netbox"
+
+    - name: "Set tenant ID, fail if not found"
+      block:
+        - name: "Query netbox for tenant ID"
+          uri:
+            url: "{{ netbox_url }}/api/tenancy/tenants/?name={{ netbox_ipv4_body.tenant }}"
+            method: GET
+            headers: "{{ netbox_headers }}"
+            validate_certs: False
+          register: netbox_tenant
+
+        - name: "Set tenant ID"
+          set_fact:
+            netbox_ipv4_body: "{{ netbox_ipv4_body | combine({'tenant': netbox_tenant.json.results[0].id}) }}"
+
+    - name: "Create primary ipv4"
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/"
+        body: "{{ netbox_ipv4_body | to_json }}"
+        body_format: json
+        method: POST 
+        headers: "{{ netbox_headers }}"
+        status_code: 201
+        validate_certs: False
+      register: netbox_primary_ip
+
+    
+    - name: "Set primary ipv4 ID"
+      set_fact:
+        netbox_vm_body: "{{ netbox_vm_body | combine({'primary_ip4': netbox_primary_ip.json.id}) }}"
+
+
+
+
+
+
+    

@@ -1,7 +1,7 @@
 Role Name
 =========
 
-A brief description of the role goes here.
+This role is designed to be given a series of nutanix vms and translate them to netbox, it also relies on some of the host_vars for that vm.
 
 Requirements
 ------------
@@ -11,7 +11,12 @@ Any pre-requisites that may not be covered by Ansible itself or the role should 
 Role Variables
 --------------
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
+This role relies on you haveing a nutanix vm response body called nutanix_vm tied to each host
+
+Host/Group/Inventory vars used
+c2bmc_mgt_if from hostvars/inventory_hostname/ip_vars.yml
+Netbox_Tenant from inventory/name.yml
+
 
 Dependencies
 ------------
@@ -35,4 +40,4 @@ BSD
 Author Information
 ------------------
 
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+John Harmon - Integration cube, if I've left the team and no one else has looked into how this role works, goood luck lmao

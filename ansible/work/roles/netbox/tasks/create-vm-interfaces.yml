@@ -1,0 +1,10 @@
+- name: "Set interface list"
+  set_fact:
+    interface_list: "{{ nutanix_vm.spec.resources.nic_list }}"
+
+- name: "Template interface bodies"
+  set_fact:
+    netbox_interfaces: "{{ netbox_interfaces | default([]) + [lookup('template', 'nutanix-vm-to-netbox-interface.yml.j2')  | from_yaml] }}"
+  loop: "{{ interface_list }}"
+  loop_control:
+    loop_var: interface

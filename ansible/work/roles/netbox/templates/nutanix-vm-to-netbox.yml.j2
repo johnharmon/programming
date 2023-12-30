@@ -1,0 +1,16 @@
+{# translate a raw nutanix vm json to a netbox vm #}
+{# for fields that require integers, perform the necessary api queries to netbox to get those values #}
+
+name: "{{ nutanix_vm['metadata']['name'] }}"
+status: 'active'
+site: 'MDIOC'
+cluster: "{{ nutanix_vm['spec']['cluster_reference']['name'] }}"
+role: "{{ 'Element' if inventory_hostname | lower is search('(element)|(user)|(uic)') else 'Mission-Low' if inventory_hostname | lower is search('msn-low') else 'Mission' if inventory_hostname | lower is search('msn') | else 'ACEOPS' }}"
+tenant: "{{ Netbox_Tenant }}"
+primary_ip4: "{{ hostvars[inventory_hostname]['ansible_host'] }}"
+vcpus: "{{ ((nutanix_vm['spec']['resources']['num_sockets'] | int) * (nutanix_vm['spec']['resources']['num_vcpus_per_socket'] | int)) | int }}"
+memory: "{{ nutanix_vm['spec']['resources']['memory_size_mib'] | int }}"
+disk: "{{ nutanix_vm['spec']['resources']['disk_list'] | map(attribute='disk_size_mib') | list | sort | last | int // 1024 }}"
+local_context_data: 
+  uuid: "{{ nutanix_vm['metadata']['uuid'] }}"
+  host_vars: "{{ hostvars[inventory_hostname] }}"
