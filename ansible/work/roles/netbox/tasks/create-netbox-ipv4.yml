@@ -1,6 +1,9 @@
     - name: "Template IPv4 body"
       set_fact:
         netbox_ipv4_body: "{{ lookup('template', 'netbox-ipv4.yml.j2')  | from_yaml }}"
+      loop: "{{ interface_list }}"
+      loop_control:
+        loop_var: interface
 
     - name: "Set vrf ID, fail if not found"
       block:

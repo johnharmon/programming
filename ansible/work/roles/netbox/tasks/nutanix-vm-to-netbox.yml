@@ -98,7 +98,18 @@
     - name: "Set primary ipv4 ID"
       set_fact:
         netbox_vm_body: "{{ netbox_vm_body | combine({'primary_ip': netbox_primary_ip.json.results[0].id}) }}"
+    - name: "Include create-netbox-interfaces.yml tasks"
+      include_tasks: create-netbox-interfaces.yml
+    
+    - name: "Include ip to interface mapping tasks"
+      include_tasks: ip-to-interface-mapping.yml"
   rescue:
+    - name: "Include create-netbox-interfaces.yml tasks"
+      include_tasks: create-netbox-interfaces.yml
+    
+    - name: "Include ip to interface mapping tasks"
+      include_tasks: ip-to-interface-mapping.yml"
+    
     - name: "Include create-netbox-ipv4.yml tasks"
       include_tasks: create-netbox-ipv4.yml
 #      vars:
@@ -120,5 +131,3 @@
   set_fact:
     netbox_vm_id: "{{ netbox_vm.json.0.id}}"
 
-- name: "Include create-netbox-interfaces.yml tasks"
-  include_tasks: create-netbox-interfaces.yml

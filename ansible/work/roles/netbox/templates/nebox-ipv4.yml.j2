@@ -6,3 +6,4 @@
   status: "active"
   vrf: "{{ vrf | default('ACEOPS') }}"
   dns_name: "{{ inventory_hostname }}"
+  assigned_object_id: "{{ netbox_interface.id }}"
