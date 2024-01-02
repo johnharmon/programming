@@ -98,14 +98,36 @@
     - name: "Set primary ipv4 ID"
       set_fact:
         netbox_vm_body: "{{ netbox_vm_body | combine({'primary_ip': netbox_primary_ip.json.results[0].id}) }}"
+      when: netbox_primary_ip.json.count > 0
+
+    - name: "Set boolean fact if we need to update with primary ipv4 at the end"
+      set_fact:
+        update_primary_ip: True
+      when: netbox_primary_ip.json.count == 0
+
+    - name: "Create netbox vm"
+      uri:
+        url: "{{ netbox_url }}/api/virtualization/virtual-machines/"
+        body: "{{ netbox_vm_body | to_json }}"
+        body_format: json
+        method: POST 
+        headers: "{{ netbox_headers }}"
+        status_code: 201
+        validate_certs: False
+      register: netbox_vm
+    
+    - name: "Set netbox vm ID"
+      set_fact:
+        netbox_vm_id: "{{ netbox_vm.json.0.id}}"
+
     - name: "Include create-netbox-interfaces.yml tasks"
-      include_tasks: create-netbox-interfaces.yml
+      include_tasks: create-vm-interfaces.yml
     
     - name: "Include ip to interface mapping tasks"
       include_tasks: ip-to-interface-mapping.yml"
   rescue:
     - name: "Include create-netbox-interfaces.yml tasks"
-      include_tasks: create-netbox-interfaces.yml
+      include_tasks: create-vm-interfaces.yml
     
     - name: "Include ip to interface mapping tasks"
       include_tasks: ip-to-interface-mapping.yml"
@@ -116,18 +138,4 @@
 #        netbox_ipv4_body: "{{ netbox_vm_body.primary_ip | combine({'address': netbox_vm_body.primary_ip}) }}"
 #        netbox_vm_body: "{{ netbox_vm_body | combine({'primary_ip': netbox_ipv4_body.id}) }}"
 
-- name: "Create netbox vm"
-  uri:
-    url: "{{ netbox_url }}/api/virtualization/virtual-machines/"
-    body: "{{ netbox_vm_body | to_json }}"
-    body_format: json
-    method: POST 
-    headers: "{{ netbox_headers }}"
-    status_code: 201
-    validate_certs: False
-  register: netbox_vm
-
-- name: "Set netbox vm ID"
-  set_fact:
-    netbox_vm_id: "{{ netbox_vm.json.0.id}}"
 
