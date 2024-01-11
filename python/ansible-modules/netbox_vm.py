@@ -163,7 +163,7 @@ def main():
         netbox_token=dict(type='str', required=True),
         interfaces=dict(type='list', required=False),
         vm_body=dict(type='dict', required=True)
-    )
+        )
     module = AnsibleModule(argument_spec=module_args, supports_check_mode=True)
     if module.params['vm_body']['name'] == None:
         module.fail_json(msg='VM name is required')
