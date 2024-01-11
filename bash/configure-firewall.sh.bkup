@@ -1,0 +1,211 @@
+#!/bin/bash
+#set -v
+
+all_zones=$(firewall-cmd --list-all-zones | grep -E '^[a-Z]')
+active_zones=$(firewall-cmd --get-active-zones)
+default_zone=$(firewall-cmd --get-default-zone)
+active_zone_name_1=$(printf "%s " "$active_zones" | sed -n 1p)
+active_zones_minus_first_name=$(printf "%s " "$active_zones" | sed -n '2,$p')
+term_width=$(tput cols) || term_width=210
+working_zone=${default_zone}
+NUM_SELECTED=""
+OPENING_HEADER_CALLED="0"
+
+
+#source /home/jharmon/bash-scripts/firewall-script/bash_completion
+#get_completions firewall-cmd --
+
+get_completions(){
+    local completion COMP_CWORD COMP_LINE COMP_POINT COMP_WORDS COMPREPLY=()
+    # load bash-completion if necessary
+    declare -F _completion_loader &>/dev/null || {
+        source /usr/share/bash-completion/bash_completion
+    }
+    COMP_LINE=$*
+    COMP_POINT=${#COMP_LINE}
+    eval set -- "$@"
+    COMP_WORDS=("$@")
+    # add '' to COMP_WORDS if the last character of the command line is a space
+    [[ ${COMP_LINE[@]: -1} = ' ' ]] && COMP_WORDS+=('')
+    # index of the last word
+    COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 ))
+    # determine completion function
+    completion=$(complete -p "$1" 2>/dev/null | awk '{print $(NF-1)}')
+    # run _completion_loader only if necessary
+    [[ -n $completion ]] || {
+        # load completion
+        _completion_loader "$1"
+        # detect completion
+        completion=$(complete -p "$1" 2>/dev/null | awk '{print $(NF-1)}')
+    }
+    # ensure completion was detected
+    [[ -n $completion ]] || return 1
+    # execute completion function
+    #echo ${completion}
+    "$completion"
+    # print completions to stdout
+    printf '%s\n' "${COMPREPLY[@]}" | LC_ALL=C sort
+}
+
+FIREWALL_CMD_OPTIONS=($(get_completions firewall-cmd --))
+
+c(){
+    printf "\033[0;0H\033[J"
+}
+
+opening_header(){
+    OPENING_HEADER_CALLED="1"
+    c
+    printf "%s\n" "Welcome to the firewall configuration script!" 
+    printf "\n"
+}
+
+default_information(){
+    local left_buffer=50
+    printf "%-${left_buffer}s %s\n" "Active zones and interfaces:" "Default zone:"
+    printf "%-${left_buffer}s %4s\n" "${active_zone_name_1}" "${default_zone}"
+    printf "%s\n %s %s\n" "${active_zones_minus_first_name}"
+    printf "%-${left_buffer}s %s\n" "Working zone is: ${working_zone}" "Current function is: ${FUNCNAME[1]}" 
+}
+
+main_menu(){
+    [ ${OPENING_HEADER_CALLED} -eq 1 ] && c
+    default_information
+    printf "%s\n\n" "What would you like to do? Please select a numbered item from the list below (or press q to quit):"
+    local option1="Switch_to_a_different_working_zone"
+    local option2="Modify_current_working_zone"
+    local option3="Reload_settings"
+    local option4="Get_information"
+    display_menu "$option1" "$option2" "$option3" "$option4"
+
+    case ${NUM_SELECTED} in
+        q|Q|quit|Quit|exit) printf "Exiting script...\n"; exit 1;;
+        1) change_working_zone;;
+        2) echo "running function modify_current_zone";;
+        3) echo "running function reload_settings";;
+        4) get_information;; #echo "running function get_information";;
+        *)c ; printf "\n${NUMBER_SELECTED} is not a valid choice!\n\n\n"
+           main_menu "$1" "$2" "$3" "$4"
+    esac
+}
+
+display_menu(){
+    local item_number=0
+    local selected_item=""
+    local display_item=""
+    for item in "$@"; do
+        ((item_number++))
+        display_item=$(tr '_' ' ' <<< "${item}")
+        printf "%d. %-50s" ${item_number} "${display_item}"
+        if [[ $((item_number%2)) -eq 0 ]]; then
+            printf "\n"
+        fi
+    done
+    if [[ $((item_number%2)) -ne 0 ]]; then
+        printf "\n"
+    fi
+    read -p "Select an item number: " item_number
+    NUM_SELECTED="${item_number}"
+    return 0
+}
+
+
+get_information(){
+    #num_opts=8
+    #clear
+    printf "\033[0;0H\033[J"
+    local previous_function="${FUNCNAME[1]}"
+    local current_function="${FUNCNAME[0]}"
+    default_information
+    local options
+    options=("Return_to_main_menu")
+    options+=("Change_working_zone")
+    for opt in "${FIREWALL_CMD_OPTIONS[@]}"; do
+        case $opt in
+            "--list"*|"--get"*) options+=(${opt});;
+            *) continue ;;
+        esac   
+    done
+    #local options=("List_all_zones")
+    #options+=("List_active_zones")
+    #options+=("List_default_zone")
+    #options+=("List_services")
+    #options+=("List_ports")
+    #options+=("List_interfaces")
+    #options+=("List_protocols")
+    #options+=("List_forwarded_ports")
+    #options+=("Change_working_zone")
+    #opt_string=''
+    #for num in {1..8}; do
+        #opt_string+=\"$(eval "echo \${option${num}}") \"
+    #done
+    display_menu ${options[@]}
+    local option_index=$((NUM_SELECTED-1))
+    option_value=${options[${option_index}]}
+    local tmp_working_zone=${working_zone}
+    case ${option_value} in
+        --get-active-zones|--get-default-zone|--get-zones|--list-all-zones|--get-active_zones) tmp_working_zone="Zone independent command";;
+        "Return_to_main_menu") main_menu;;
+        "Change_working_zone") change_working_zone;;
+    esac
+    if [ "${tmp_working_zone}" == "Zone independent command" ]; then
+        cmd="firewall-cmd ${option_value}"
+    else
+        cmd="firewall-cmd ${option_value} --zone=${working_zone}"
+    fi
+    printf "\n"
+    printf "%s\n" "Executing: \"firewall-cmd ${option_value}\" on zone: \"${tmp_working_zone}\"" "Results:"
+    eval ${cmd}
+    unset cmd option_value tmp_working_zone
+    read -p "Press any key to return to the previous menu: "
+    ${current_function}
+    #case ${NUM_SELECTED} in
+    #q|Q|quit|Quit|exit) printf "Exiting script...\n"; exit 1;;
+    #1) firewall-cmd --list-all-zones | grep -E '^[a-Z]' ;; #| printf "%-30s %s\n";;
+    #2) firewall-cmd --get-active-zones;;
+    #3) firewall-cmd --get-default-zone;;
+    #4) firewall-cmd --list-services --zone=${working_zone};;
+    #5) firewall-cmd --list-ports --zone=${working_zone};;
+    #6) firewall-cmd --list-interfaces --zone${working_zone};;
+    #7) firewall-cmd --list-list-protocols --zone=${working_zone};;
+    #8) firewall-cmd --list-forward-ports --zone=${working_zone};;
+    #9) change_working_zone;;
+    #*)c ; printf "\n${NUM_SELECTED} is not a valid choice! \n\n\n"
+    #   get_information
+    #   ;;
+    #esac
+}
+
+change_working_zone(){
+    #echo ${FUNCNAME[1]}
+    c
+    default_information
+    local zones=($(firewall-cmd --get-zones))
+    #for zone in $(firewall-cmd --list-all-zones | grep '^[a-Z]'); do
+    #    [ "${zone}" == "(active)" ] && continue
+    #    options+=" $( tr ' ' '_' <<< ${zone})"
+    #done
+    display_menu ${zones[@]}
+    case ${NUM_SELECTED} in
+    q|Q|quit|Quit|exit) printf "Exiting script...\n"; exit 1;;
+    1) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    2) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    3) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    4) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    5) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    6) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    7) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    8) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    9) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c; ${FUNCNAME[1]};;
+    10) working_zone=$(echo ${zones[$((NUM_SELECTED-1))]}) ; c ; ${FUNCNAME[1]};;
+    *)c; printf "\n${NUM_SELECTED} is not a valid o ption!\n\n\n"; change_working_zone;;
+    esac                                                 
+    #printf "%s\n" ${options}                            
+}                                                        
+
+opening_header
+main_menu 
+#echo "${options[3]}"
+
+#get_completions firewall-cmd --
+#echo ${FIREWALL_CMD_OPTIONS[@]}

@@ -1,0 +1,100 @@
+#!/bin/zsh
+OSCOTS_PARAMS="/home/jharmon/OSCOTS_PARAMS.dat"
+STAGE_FILE='/home/jharmon/ACCS7'
+choose_stage_file(){
+    local STAGE_FILE=$(OCM_network_config.zsh --file ${OUTPUT_FILE} -c get_metadata CONFIGURATION)
+    echo ${STAGE_FILE}
+}
+get_pg_type_one(){
+    local PG_TYPE_1=$(egrep '^PG[0-9]_TYPE=1' ${OSCOTS_PARAMS})
+    if [[ -n $(echo $PG_TYPE_1 | awk '{print $2}') ]]; then
+        printf "Multiple lines of PG[X]_TYPE=1 detected in ${OSCOTS_PARAMS}\n Please address this issue and run this script again\n"
+        exit 1
+    fi
+    local PG_TYPE_1_NUMBER=$( echo ${PG_TYPE_1} | awk '{print substr($0,3,1)}')
+    echo ${PG_TYPE_1_NUMBER}
+}
+set_pg_group_number(){
+    local  PG_NUM=$(grep "NUM_PG" ${OSCOTS_PARAMS} | awk '{print substr($0,8,1)}')
+    (( PG_NUM-- ))
+    sed  -i "s/NUM_PG=.*/NUM_PG=${PG_NUM}/" ${OSCOTS_PARAMS}
+}
+delete_pg_type_one(){
+    local PG_NUM=$1
+    sed -i "/^PG${PG_NUM}.*/d" ${OSCOTS_PARAMS}
+}
+get_highest_pg(){
+    local highest_pg=$(egrep '^PG[0-9]{1,}.*' ${OSCOTS_PARAMS} | awk '{print substr($0,3,2)}' | sort -n -r | sed -n '1p')
+    highest_pg=${highest_pg%_}
+    echo ${highest_pg}
+}
+move_pg_types(){
+    local CURRENT_PG=$1
+    ((CURRENT_PG++))
+    highest_pg=$(get_highest_pg)
+    for num in $(seq ${CURRENT_PG} ${highest_pg}); do
+        local new_pg_number=$(bc <<< "${num}-1")
+        sed -i  "s/^PG${num}/PG${new_pg_number}/g" ${OSCOTS_PARAMS}
+    done
+}
+modify_digi_config(){
+    pg_digi_values=$(egrep '^PG[0-9]{1,}_HAS_DIGI=0' ${STAGE_FILE} | awk '{print substr($0,3,1)}')
+    if [[ -n ${pg_digi_values} ]]; then
+        while read pg_number; do
+            sed -i "s/^PG${pg_number}_HAS_DIGI=1/PG${pg_number}_HAS_DIGI=0/" ${OSCOTS_PARAMS}
+            sed -i "/\(^PG${pg_number}_DIGI_NAME.*\)\|\(^PG${pg_number}_DIGI_IP.*\)/d" ${OSCOTS_PARAMS}
+            done <<< ${pg_digi_values}
+    fi
+}
+modify_switch_config(){
+    pg_switch_values=$(egrep '^PG[0-9]{1,}_HAS_9300.*' ${STAGE_FILE})
+    echo ${pg_switch_values}
+    if [[ -n ${pg_switch_values} ]]; then
+        while read pg_switch_value; do
+            echo "reading pg_switch_values"
+            pg_switch_status=$(cut -d '=' -f 2 <<< ${pg_switch_value})
+            pg_switch_number=$( awk '{print substr($0,3,1)}' <<< ${pg_switch_value})
+            if [[ ${pg_switch_status} -eq 0 ]]; then
+                echo "Modifying settings for ${pg_switch_number}"
+                sed -i "s/^PG${pg_switch_number}_HAS_9300=1/PG${pg_switch_number}_HAS_9300=0/" ${OSCOTS_PARAMS}
+                sed -i "/\(^PG${pg_switch_number}_9300_NAME.*\)\|\(^PG${pg_switch_number}_9300_IP.*\)/d" ${OSCOTS_PARAMS}
+            fi
+            done <<< ${pg_switch_values}
+    fi
+}
+set_default_routers(){
+    default_routers=$(egrep '^PG[0-9]{1,}_DEFAULT_ROUTER.*' ${STAGE_FILE})
+    while read line; do
+        router_number=$(cut -d '_' -f 1 <<< ${line} | cut -d 'G' -f 2)
+        sed -i "s/PG${router_number}_DEFAULT_ROUTER.*/${line}/" ${OSCOTS_PARAMS}
+    done <<< ${default_routers}
+    if [[ $(egrep '^DEFAULT_ROUTER.*' ${STAGE_FILE} &>/dev/null; echo $?) -ne 0 ]]; then
+        sed -i '/^DEFAULT_ROUTER.*/d' ${OSCOTS_PARAMS}
+    elif [[ $(egrep '^DEFAULT_ROUTER.*' ${OSCOTS_PARAMS} &>/dev/null; echo $?) -ne 0 ]]; then
+        def_router=$(egrep '^DEFAULT_ROUTER.*' ${STAGE_FILE})
+        echo ${def_router} >> ${OSCOTS_PARAMS}
+    else
+        def_router=$(egrep '^DEFAULT_ROUTER.*' ${STAGE_FILE})
+        sed -i "s/^DEFAULT_ROUTER.*/${def_router}/" ${OSCOTS_PARAMS}
+    fi
+}
+add_ntp_entries(){
+    ntp_entries=$(grep 'NTP' ${STAGE_FILE})
+    if [[ -n ${ntp_entries} ]]; then
+        sed -i '/NTP/d' ${OSCOTS_PARAMS}
+        printf "%s\n" ${ntp_entries} >> ${OSCOTS_PARAMS}
+   fi
+}
+if [[ ! -e ${OSCOTS_PARAMS} ]]; then
+   cp ${OSCOTS_PARAMS} ${OSCOTS_PARAMS}.bkup
+fi
+PG_TYPE_ONE=$(get_pg_type_one)
+if [[ -n ${PG_TYPE_ONE} ]]; then
+    set_pg_group_number
+    delete_pg_type_one "${PG_TYPE_ONE}"
+    move_pg_types ${PG_TYPE_ONE}
+fi
+modify_digi_config
+modify_switch_config
+set_default_routers
+add_ntp_entries
