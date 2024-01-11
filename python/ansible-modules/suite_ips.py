@@ -3,6 +3,26 @@
 #This is a script (eventually to be a module) designed to provide a datastructure representing the available IP space of a given suite.
 # It will break it out by node type (msn, user-int, user-ext, elements) creating a dictionary representing each different subnet,
 # and a list of lists representing available IPs in consecutive ranges
+# effective data scructure will be:
+# { 
+#   <subnet1/mask1>: [
+#       [ <available ip range 1> ],
+#       [ <available ip range 2> ],
+#       [ <available ip range X> ]
+#   ],
+#   <subnet2/mask2>: [
+#       [ <available ip range 1> ],
+#       [ <available ip range 2> ], 
+#       [ <available ip range X> ]
+#   ],
+#   <subnetX/maskX>: [
+#       [ <available ip range 1> ],
+#       [ <available ip range 2> ],
+#       [ <available ip range X> ]
+#   ]
+# }
+# This will be used to generate an ip table for ansible, and will be used to generate an inventory file for ansible
+
 from ansible.module_utils.basic import AnsibleModule
 import requests
 import json
@@ -13,17 +33,18 @@ import sys
 import os
 import argparse
 
+# define the parameters for the script, eventually this will be made part of the module args
 def define_params():
     parser = argparse.ArgumentParser(description='This is a script (eventually to be a module) designed to provide a datastructure representing the IP space of a given suite.')
     # parser.add_argument('--inventory', type=str, mandatory=True)
     # parser.add_argument('--suite_vars', type=str, mandatory=True)
-    parser.add_argument('--host_identifier', type=str, required=False, default='ansible_host:')
+    parser.add_argument('--host_identifier', type=str, required=False, default='ansible_host:') # string representing the host identifier in the inventory file, can be regex
     # inventory = args.inventory
     # suite_vars = json.loads(args.suite_vars)
     # return {'inventory_file': inventory, 'suite_vars': suite_vars, 'host_identifier': args.host_identifier}
-    inventory = '/home/jharmon/programming/python/ansible-modules/test-files/inventory.yml'
-    parser.add_argument('--initial_inventory', type=bool, required=False, default=False)
-    parser.add_argument('--subnets', type=str, required=False)
+    inventory = '/home/jharmon/programming/python/ansible-modules/test-files/inventory.yml' # hardcoded inventory file location for testing
+    parser.add_argument('--initial_inventory', type=bool, required=False, default=False) # boolean representing whether or not to generate an initial inventory file
+    parser.add_argument('--subnets', type=str, required=False) # string representing a json list of subnets to generate ips for
     parser.add_argument('--exclusions', type=str, required=False, default=None) # string representing a json list of ips to exclude, assumes /24 and is given only 4th octets, will default to bottom 10 and top 20 of each subnet
     args = parser.parse_args()
     return inventory, args, 'ansible_host:'
@@ -63,9 +84,11 @@ def parse_suite_vars(suite_vars):
     }
     return subnets
 
+# typecast a list of items to a given type
 def typecast_list(type, list):
     return [type(item) for item in list]
 
+# build a list of IPs to exclude, defaulting to the bottom 10 and top 20 of each subnet
 def build_exclusion_list(exclusions=None):
     exclusion_list = list()
     if exclusions:
@@ -78,21 +101,25 @@ def build_exclusion_list(exclusions=None):
             exclusion_list.append(i)
     return exclusion_list
 
+
+# Generate lines from a file, to save memory, probably not necessary but hey its a good practice
 def generate_lines(filename):
     with open(filename, 'r') as f:
         for line in f:
             yield line
 
+# Generate initial inventory file, given a list of subnets and a list of IPs to exclude
 def initial_inventory(subnet_list, exclusion_list):
     inventory = dict()
     for subnet in json.loads(subnet_list):
         inventory[subnet] = list()
-        inventory[subnet].append(list([int(str(ip).split('.')[-1]) for ip in ipaddress.IPv4Network(subnet) if int(str(ip).split('.')[-1]) not in exclusion_list]))
-        #inventory[subnet] = [item for sublist in inventory[subnet] for item in sublist if item not in exclusion_list]
-        #inventory[subnet][0].sort()
+        # list comprehension to filter out the excluded IPs
+        inventory[subnet].append(list([int(str(ip).split('.')[-1]) for ip in ipaddress.IPv4Network(subnet) if int(str(ip).split('.')[-1]) not in exclusion_list])) 
     return inventory
 
+# Parse an existing inventory file, extracting unique subnets and the unassigned IPs in each subnet, including the exclusion list
 def parse_inventory(inventory_file, host_identifier, exclusion_list):
+    # strip quotes and spaces from the host identifier
     host_regex = re.compile(host_identifier.strip().strip("'").strip('"'))
     ip_addresses = dict()
     for line in generate_lines(inventory_file):
@@ -141,13 +168,13 @@ def main():
     exclusion_list = build_exclusion_list(args.exclusions)
     if args.initial_inventory:
         ip_addresses = initial_inventory(args.subnets, exclusion_list)
-        # for ip_address in ip_addresses:
-        #     ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
     else:
         ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list)
         for ip_address in ip_addresses.keys():
             ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
-    print(yaml.dump(ip_addresses))
+    #print(yaml.dump(ip_addresses))
+    with open('./available-ips.yml', 'w') as f:
+        f.write(yaml.dump(ip_addresses))
 
 if __name__ == '__main__':
     main()
