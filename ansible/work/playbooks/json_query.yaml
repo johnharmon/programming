@@ -1,0 +1,21 @@
+- name: "PLaybook to test json_query filter with the sort_by function"
+  hosts: localhost
+  gather_facts: False
+  tasks:
+    - name: "Set nested data structure fact"
+      set_fact:
+        json_data:
+          - name: "vm1"
+            subnet_reference:
+              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+              kind: "subnet"
+              name: "subnet4"
+          - name: "vm2"
+            subnet_reference:
+              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+              kind: "subnet"
+              name: "subnet2"
+      
+    - name: "sort by name"
+      debug:
+        msg: "{{ json_data | sort(attribute='subnet_reference.name') }}"

@@ -85,8 +85,8 @@ def parse_suite_vars(suite_vars):
     return subnets
 
 # typecast a list of items to a given type
-def typecast_list(type, list):
-    return [type(item) for item in list]
+def typecast_list(target_type, list):
+    return [target_type(item) for item in list]
 
 # build a list of IPs to exclude, defaulting to the bottom 10 and top 20 of each subnet
 def build_exclusion_list(exclusions=None):
@@ -181,7 +181,6 @@ def main():
         ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list)
         for ip_address in ip_addresses.keys():
             ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
-    #print(yaml.dump(ip_addresses))
     with open('./available-ips.yml', 'w') as f:
         f.write(yaml.dump(ip_addresses))
 
