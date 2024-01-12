@@ -123,20 +123,29 @@ def parse_inventory(inventory_file, host_identifier, exclusion_list):
     host_regex = re.compile(host_identifier.strip().strip("'").strip('"'))
     ip_addresses = dict()
     for line in generate_lines(inventory_file):
+        # check if the line matches the host identifier
        rematch = re.match(host_regex, line.strip().strip('"'))
        if rematch:
             print('re was matched')
+            # strip quotes from the ip address
             ip = line.split(rematch.group(0))[1].strip().strip('"')
+            # create the subnet from the ip address
             subnet = '.'.join(ip.split('.')[:-1]) + '.0/24'
             subnet = subnet.strip('"')
+            # ensure subnet is unique
             if not subnet in ip_addresses.keys():
+                # ensure subnet is a unique set of ips
                 ip_addresses[subnet] =  set()
             ip_addresses[subnet].add(ip)
     for subnet in ip_addresses.keys():
+        # typecast the exclusion list to a list of strings
         exclusions = typecast_list(str, exclusion_list)
+        # fileter out the excluded IPs
         exclusions = ['.'.join(subnet.split('.')[0:-1]) + f'.{exclusion_ip}' for exclusion_ip in exclusions]
+        # update the ip_addresses dict with the exclusions
         ip_addresses[subnet].update(exclusions)
         print(ip_addresses[subnet])
+        # create a set of all IPs in the subnet, and subtract the set of assigned IPs
         available_ips = set([str(ip) for ip in ipaddress.IPv4Network(subnet)]) - ip_addresses[subnet]
         ip_addresses[subnet] = list(available_ips)
         ip_addresses[subnet].sort(key=lambda ip: tuple(map(int, ip.split('.'))))
