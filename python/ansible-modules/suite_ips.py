@@ -126,7 +126,7 @@ def parse_inventory(inventory_file, host_identifier, exclusion_list):
         # check if the line matches the host identifier
        rematch = re.match(host_regex, line.strip().strip('"'))
        if rematch:
-            print('re was matched')
+            # print('re was matched')
             # strip quotes from the ip address
             ip = line.split(rematch.group(0))[1].strip().strip('"')
             # create the subnet from the ip address
@@ -144,7 +144,7 @@ def parse_inventory(inventory_file, host_identifier, exclusion_list):
         exclusions = ['.'.join(subnet.split('.')[0:-1]) + f'.{exclusion_ip}' for exclusion_ip in exclusions]
         # update the ip_addresses dict with the exclusions
         ip_addresses[subnet].update(exclusions)
-        print(ip_addresses[subnet])
+        # print(ip_addresses[subnet])
         # create a set of all IPs in the subnet, and subtract the set of assigned IPs
         available_ips = set([str(ip) for ip in ipaddress.IPv4Network(subnet)]) - ip_addresses[subnet]
         ip_addresses[subnet] = list(available_ips)
@@ -160,7 +160,7 @@ def breakup_subnet_spaces(subnet):
     for ip in range(1, 255):
         if ip in subnet_4th_octets:
             if not new_ip:
-                print('appending item')
+                # print('appending item')
                 subnet_spaces.append(list())
                 subnet_spaces[subnet_index].append(ip)
                 new_ip = True
