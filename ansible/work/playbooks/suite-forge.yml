@@ -1,0 +1,8 @@
+- name: "Suite-forge"
+  hosts: localhost
+  gather_facts: False
+  tasks:
+    - name: "Suite-forge"
+      include_role:
+        name: "suite-forge"
+        tasks_from: "ips.yml"

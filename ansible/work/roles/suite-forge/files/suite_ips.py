@@ -39,6 +39,7 @@ def define_params():
     # parser.add_argument('--inventory', type=str, mandatory=True)
     # parser.add_argument('--suite_vars', type=str, mandatory=True)
     parser.add_argument('--host_identifier', type=str, required=False, default='ansible_host:') # string representing the host identifier in the inventory file, can be regex
+    parser.add_argument('--config', type=str, required=False, default=None) # string representing a yaml config, and be used to pass all other arguments
     # inventory = args.inventory
     # suite_vars = json.loads(args.suite_vars)
     # return {'inventory_file': inventory, 'suite_vars': suite_vars, 'host_identifier': args.host_identifier}
@@ -47,6 +48,24 @@ def define_params():
     parser.add_argument('--subnets', type=str, required=False) # string representing a json list of subnets to generate ips for
     parser.add_argument('--exclusions', type=str, required=False, default=None) # string representing a json list of ips to exclude, assumes /24 and is given only 4th octets, will default to bottom 10 and top 20 of each subnet
     args = parser.parse_args()
+    if args.config:
+        print(f'parsing {args.config}')
+        with open(args.config, 'r') as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+            try:
+                args.initial_inventory = bool(config['initial_inventory'])
+                print(args.initial_inventory)
+            except: pass
+            try:
+                args.subnets = json.dumps(config['subnets'])
+                print(yaml.dump(args.subnets, default_flow_style=False ))
+            except: pass
+            try:
+                args.exclusions = config['exclusions'].json.dumps()
+            except: pass
+            try:
+                args.host_identifier = config['host_identifier']
+            except: pass
     return inventory, args, 'ansible_host:'
 
 def parse_suite_vars(suite_vars):

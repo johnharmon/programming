@@ -1,0 +1,46 @@
+---
+- name: "Set subnet dictionary"
+  set_fact:
+    subnet_dictionary: "{{ lookup('vars', suite) }}"
+
+- name: "pull subnet for node_type"
+  set_fact:
+    subnet_dictionary: "{{ subnet_dictionary['subnets'][node_type] }}"
+
+- name: "Debug subnet dictionary"
+  copy:
+    content: "{{ subnet_dictionary | to_yaml(indent=2) }}"
+    dest: "{{ role_path }}/files/subnet-dictionary.yml"
+
+- name: "Set subnet list"
+  set_fact:
+    subnet_list: "{{ subnet_dictionary | dict2items | json_query('[*].value') }}" # Build subnet list from subnet dictionary, useing the derived node_type, allowing access to a single level dictionary
+
+- name: "Check if inventory exists"
+  stat:
+    path: "{{ role_path }}/../inventory/{{ suite }}"
+  register: inventory_exists
+
+- name: debug inventory_exists
+  debug:
+    msg: "{{ inventory_exists | to_nice_yaml(indent=2) }}"
+
+- name: "Run suite_ips.py (initial inventory)"
+  script: "suite_ips.py --initial_inventory {{ inventory_exists.stat.exists | bool }} --subnets '{{ subnet_list | to_json }}'"
+  register: suite_ips
+  #when: inventory_exists.stat.exists is false
+
+#- name: "Run suite_ips.py (update inventory)"
+#  script: "suite_ips.py"
+#  register: suite_ip
+#  when: initial_inventory is not defined
+
+- name: "Load suite_ips.py results"
+  set_fact:
+    available_ips: "{{ lookup('file', role_path ~ '/files/available-ips.yml') | from_yaml }}"
+
+- name: "Debug available_ips"
+  copy:
+    content: "{{ available_ips | to_nice_yaml(indent=2) }}"
+    dest: "{{ role_path }}/files/available-ips.yml"
+

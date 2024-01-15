@@ -1,0 +1,9 @@
+subnets:
+ {{ subnet_list | to_nice_yaml(indent=2) }}
+initial_inventory: {{ initial_inventory | bool }}
+{% if exclusions is defined and exclusions is not None %}
+exclusions: {{ exclusions }}
+{% endif %}
+{% if host_identifier is defined and host_identifier is not None %}
+host_identifier: "{{ host_identifier }}"
+{% endif %}
