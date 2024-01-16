@@ -36,13 +36,9 @@ import argparse
 # define the parameters for the script, eventually this will be made part of the module args
 def define_params():
     parser = argparse.ArgumentParser(description='This is a script (eventually to be a module) designed to provide a datastructure representing the IP space of a given suite.')
-    # parser.add_argument('--inventory', type=str, mandatory=True)
-    # parser.add_argument('--suite_vars', type=str, mandatory=True)
     parser.add_argument('--host_identifier', type=str, required=False, default='ansible_host: ') # string representing the host identifier in the inventory file, can be regex
     parser.add_argument('--config', type=str, required=False, default=False) # string representing a yaml config, and be used to pass all other arguments
     # inventory = args.inventory
-    # suite_vars = json.loads(args.suite_vars)
-    # return {'inventory_file': inventory, 'suite_vars': suite_vars, 'host_identifier': args.host_identifier}
     inventory = '/home/jharmon/programming/python/ansible-modules/test-files/inventory.yml' # hardcoded inventory file location for testing
     parser.add_argument('--initial_inventory', type=bool, required=False, default=False) # boolean representing whether or not to generate an initial inventory file
     parser.add_argument('--subnets', type=str, required=False) # string representing a json list of subnets to generate ips for
@@ -144,8 +140,6 @@ def initial_inventory(subnet_list, exclusion_list):
 def parse_inventory(inventory_file, host_identifier, exclusion_list, subnets):
     subnets = json.loads(subnets)
     # strip quotes and spaces from the host identifier
-    #host_regex = re.compile(host_identifier.strip().strip("'").strip('"'))
-    #raise Exception('testing if parse')
     host_regex = re.compile(host_identifier.strip())
     ip_addresses = dict()
     for line in generate_lines(inventory_file):
@@ -170,16 +164,12 @@ def parse_inventory(inventory_file, host_identifier, exclusion_list, subnets):
                     f.write(str(ip_addresses[subnet]))
 
     for subnet in ip_addresses.keys():
-     #   with open('/home/jharmon/ip_addresses.txt', 'a') as f:
-     #       f.write(yaml.dump(subnet))
-
         # typecast the exclusion list to a list of strings
         exclusions = typecast_list(str, exclusion_list)
         # fileter out the excluded IPs
         exclusions = ['.'.join(subnet.split('.')[0:-1]) + f'.{exclusion_ip}' for exclusion_ip in exclusions]
         # update the ip_addresses dict with the exclusions
         ip_addresses[subnet].update(exclusions)
-        # print(ip_addresses[subnet])
         # create a set of all IPs in the subnet, and subtract the set of assigned IPs
         available_ips = set([str(ip) for ip in ipaddress.IPv4Network(subnet)]) - ip_addresses[subnet]
         ip_addresses[subnet] = list(available_ips)
@@ -189,21 +179,25 @@ def parse_inventory(inventory_file, host_identifier, exclusion_list, subnets):
 # given a subnet, break it up into lists of consecutive IPs
 def breakup_subnet_spaces(subnet):
     subnet_spaces = list()
-    subnet_4th_octets = [int(ip.split('.')[-1]) for ip in subnet]
+    #subnet_4th_octets = [int(ip.split('.')[-1]) for ip in subnet]
     new_ip = False
     subnet_index = 0
-    for ip in range(1, 255):
-        # Create new list entry if new_ip is false, else append to existing consecutive ip range
-        if ip in subnet_4th_octets:
-            if not new_ip:
-                subnet_spaces.append(list())
-                subnet_spaces[subnet_index].append(ip)
-                new_ip = True
-                subnet_index += 1
+    for index in range(len(subnet)):
+        # Create new list entry if new_ip is false, else append to existing consecutive ip range:
+        if index > 0:
+            current_ip = int(ipaddress.IPv4Address(subnet[index]))
+            previous_ip = int(ipaddress.IPv4Address(subnet[index - 1]))
+            if abs(current_ip - previous_ip) == 1:
+                new_ip = True 
             else:
-                subnet_spaces[subnet_index -1].append(ip)
+                new_ip = False
+        if not new_ip:
+            subnet_spaces.append(list())
+            subnet_spaces[subnet_index].append(subnet[index])
+            new_ip = True
+            subnet_index += 1
         else:
-            new_ip = False
+            subnet_spaces[subnet_index -1].append(subnet[index])
     return subnet_spaces
 
 def main():

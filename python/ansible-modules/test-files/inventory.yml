@@ -4,6 +4,8 @@ suite1:
   msnh:
     host1:
       ansible_host: "10.177.105.11"
+    host6:
+      ansible_host: "10.177.105.13"
     host2:
       ansible_host: "192.168.137.2"
     host3:
