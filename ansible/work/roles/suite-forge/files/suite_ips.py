@@ -38,7 +38,7 @@ def define_params():
     parser = argparse.ArgumentParser(description='This is a script (eventually to be a module) designed to provide a datastructure representing the IP space of a given suite.')
     # parser.add_argument('--inventory', type=str, mandatory=True)
     # parser.add_argument('--suite_vars', type=str, mandatory=True)
-    parser.add_argument('--host_identifier', type=str, required=False, default='ansible_host:') # string representing the host identifier in the inventory file, can be regex
+    parser.add_argument('--host_identifier', type=str, required=False, default='ansible_host: ') # string representing the host identifier in the inventory file, can be regex
     parser.add_argument('--config', type=str, required=False, default=False) # string representing a yaml config, and be used to pass all other arguments
     # inventory = args.inventory
     # suite_vars = json.loads(args.suite_vars)
@@ -48,6 +48,10 @@ def define_params():
     parser.add_argument('--subnets', type=str, required=False) # string representing a json list of subnets to generate ips for
     parser.add_argument('--exclusions', type=str, required=False, default=None) # string representing a json list of ips to exclude, assumes /24 and is given only 4th octets, will default to bottom 10 and top 20 of each subnet
     args = parser.parse_args()
+    #try:
+        #raise Exception()
+    #except Exception as faggotry:
+
     if args.config:
         print(f'parsing {args.config}')
         with open(args.config, 'r') as f:
@@ -128,6 +132,7 @@ def generate_lines(filename):
 
 # Generate initial inventory file, given a list of subnets and a list of IPs to exclude
 def initial_inventory(subnet_list, exclusion_list):
+    # raise Exception('testing if initial')
     inventory = dict()
     for subnet in json.loads(subnet_list):
         inventory[subnet] = list()
@@ -136,26 +141,38 @@ def initial_inventory(subnet_list, exclusion_list):
     return inventory
 
 # Parse an existing inventory file, extracting unique subnets and the unassigned IPs in each subnet, including the exclusion list
-def parse_inventory(inventory_file, host_identifier, exclusion_list):
+def parse_inventory(inventory_file, host_identifier, exclusion_list, subnets):
+    subnets = json.loads(subnets)
     # strip quotes and spaces from the host identifier
-    host_regex = re.compile(host_identifier.strip().strip("'").strip('"'))
+    #host_regex = re.compile(host_identifier.strip().strip("'").strip('"'))
+    #raise Exception('testing if parse')
+    host_regex = re.compile(host_identifier.strip())
     ip_addresses = dict()
     for line in generate_lines(inventory_file):
         # check if the line matches the host identifier
        rematch = re.match(host_regex, line.strip().strip('"'))
+    #    if not rematch:
+    #        raise Exception((f'did not find {host_regex} in {line}'))
        if rematch:
-            # print('re was matched')
-            # strip quotes from the ip address
-            ip = line.split(rematch.group(0))[1].strip().strip('"')
-            # create the subnet from the ip address
-            subnet = '.'.join(ip.split('.')[:-1]) + '.0/24'
-            subnet = subnet.strip('"')
-            # ensure subnet is unique
-            if not subnet in ip_addresses.keys():
-                # ensure subnet is a unique set of ips
-                ip_addresses[subnet] =  set()
-            ip_addresses[subnet].add(ip)
+            # Iterate over subnets given to script, so proper CIDR notation can be used to generate a list of IPs in each subnet
+            # This could be done by simply using /24, but this allows for more flexibility, and /0 would be very inefficient
+            for subnet in subnets:
+                # strip quotes from the ip address
+                ip = line.split(rematch.group(0))[1].strip().strip('"')
+                # create the subnet from the ip address
+                subnet = subnet.strip('"[]')
+                # ensure subnet is unique
+                if not subnet in ip_addresses.keys():
+                    # ensure subnet is a unique set of ips
+                    ip_addresses[subnet] =  set()
+                ip_addresses[subnet].add(ip)
+                with open('/home/jharmon/ip_addresses.txt', 'a') as f:
+                    f.write(str(ip_addresses[subnet]))
+
     for subnet in ip_addresses.keys():
+     #   with open('/home/jharmon/ip_addresses.txt', 'a') as f:
+     #       f.write(yaml.dump(subnet))
+
         # typecast the exclusion list to a list of strings
         exclusions = typecast_list(str, exclusion_list)
         # fileter out the excluded IPs
@@ -193,10 +210,10 @@ def main():
     inventory, args, host_identifier = define_params()
     ip_addresses = dict()
     exclusion_list = build_exclusion_list(args.exclusions)
-    if args.initial_inventory:
+    if args.initial_inventory is True:
         ip_addresses = initial_inventory(args.subnets, exclusion_list)
     else:
-        ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list)
+        ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list, args.subnets)
         for ip_address in ip_addresses.keys():
             ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
     with open('./available-ips.yml', 'w') as f:

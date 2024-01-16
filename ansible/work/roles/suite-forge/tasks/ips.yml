@@ -23,8 +23,18 @@
 
 - name: "Check if inventory exists"
   stat:
-    path: "{{ role_path }}/../inventory/{{ suite }}"
+    path: "/home/jharmon/programming/ansible/work/inventory/{{ suite }}.yml"
   register: inventory_exists
+
+# - name: "set inventory exists to False for testing"
+#   set_fact:
+#     inventory_exists:
+#       stat:
+#         exists: True
+
+- name: "Debug inventory path"
+  debug:
+    msg: "/home/jharmon/programming/ansible/work/inventory/{{ suite }}.yml"
 
 - name: debug inventory_exists
   debug:
@@ -32,19 +42,26 @@
 
 - name: "Debug script command"
   debug:
-    msg: "suite_ips.py --initial_inventory {{ not inventory_exists.stat.exists | bool }} --subnets '{{ subnet_list | to_json }}'"
+    msg: "suite_ips.py --initial_inventory {{ inventory_exists.stat.exists | bool }} --subnets '{{ subnet_list | to_json }}'"
 
 - name: "Run suite_ips.py (initial inventory)"
-  script: "suite_ips.py --initial_inventory {{ not inventory_exists.stat.exists | bool }} --subnets '{{ subnet_list | to_json }}'"
-  register: suite_ips
+  script: "suite_ips.py --initial_inventory {{ inventory_exists.stat.exists }} --subnets '{{ subnet_list | to_json }}'"
+  register: suite_ips 
   args:
     chdir: "{{ role_path }}/files/"
-  #when: inventory_exists.stat.exists is false
+  when: not inventory_exists.stat.exists 
 
-#- name: "Run suite_ips.py (update inventory)"
-#  script: "suite_ips.py"
-#  register: suite_ip
-#  when: initial_inventory is not defined
+- name: "debug retarded script line"
+  debug:
+    msg: "suite_ips.py --initial_inventory {{ not inventory_exists.stat.exists }} --subnets '{{ subnet_list | to_json }}'"
+
+- name: "Run suite_ips.py (update inventory)"
+  #script: "suite_ips.py --initial_inventory {{ not inventory_exists.stat.exists }} --subnets '{{ subnet_list | to_json }}'"
+  script: "suite_ips.py --subnets '{{ subnet_list | to_json }}'"
+  register: suite_ip
+  args:
+    chdir: "{{ role_path }}/files/"
+  when: inventory_exists.stat.exists
 
 - name: "Load suite_ips.py results"
   set_fact:
