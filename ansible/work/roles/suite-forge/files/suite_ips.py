@@ -68,40 +68,40 @@ def define_params():
             except: pass
     return inventory, args, 'ansible_host:'
 
-# def parse_suite_vars(suite_vars):
-#     subnets: {
-#         'mission': {
-#             'msn': {
-#             'octet1': suite_vars['mission']['msn']['octet1'] if suite_vars['mission']['msn']['octet1'] else '10',
-#             'octet2': suite_vars['mission']['msn']['octet2'] if suite_vars['mission']['msn']['octet2'] else '177',
-#             'octet3': suite_vars['mission']['msn']['octet3'] if suite_vars['mission']['msn']['octet3'] else suite_vars['subnet'],
-#             'octet4': '0',
-#             'mask': suite_vars['mission']['msn']['mask'] if suite_vars['mission']['msn']['mask'] else '16'
-#             },
-#             'mgt': {
-#             'octet1': suite_vars['mission']['mgt']['octet1'] if suite_vars['mission']['mgt']['octet1'] else '192',
-#             'octet2': suite_vars['mission']['mgt']['octet2'] if suite_vars['mission']['mgt']['octet2'] else '168',
-#             'octet3': suite_vars['mission']['mgt']['octet3'] if suite_vars['mission']['mgt']['octet3'] else suite_vars['subnet'],
-#             'octet4': '0',
-#             'mask': suite_vars['mission']['mgt']['mask'] if suite_vars['mission']['mgt']['mask'] else '24'
-#             },
-#             'int': {
-#             'octet1': suite_vars['mission']['int']['octet1'] if suite_vars['mission']['int']['octet1'] else '192',
-#             'octet2': suite_vars['mission']['int']['octet2'] if suite_vars['mission']['int']['octet2'] else '168',
-#             'octet3': suite_vars['mission']['int']['octet3'] if suite_vars['mission']['int']['octet3'] else '1',
-#             'octet4': '0',
-#             'mask': suite_vars['mission']['int']['mask'] if suite_vars['mission']['int']['mask'] else '24'
-#             },
-#             'ext': {
-#             'octet1': suite_vars['mission']['ext']['octet1'] if suite_vars['mission']['ext']['octet1'] else '192',
-#             'octet2': suite_vars['mission']['ext']['octet2'] if suite_vars['mission']['ext']['octet2'] else '168',
-#             'octet3': suite_vars['mission']['ext']['octet3'] if suite_vars['mission']['ext']['octet3'] else '2',
-#             'octet4': '0',
-#             'mask': suite_vars['mission']['ext']['mask'] if suite_vars['mission']['ext']['mask'] else '24'
-#             }
-#         }
-#     }
-#     return subnets
+def parse_suite_vars(suite_vars):
+    subnets: {
+        'mission': {
+            'msn': {
+            'octet1': suite_vars['mission']['msn']['octet1'] if suite_vars['mission']['msn']['octet1'] else '10',
+            'octet2': suite_vars['mission']['msn']['octet2'] if suite_vars['mission']['msn']['octet2'] else '177',
+            'octet3': suite_vars['mission']['msn']['octet3'] if suite_vars['mission']['msn']['octet3'] else suite_vars['subnet'],
+            'octet4': '0',
+            'mask': suite_vars['mission']['msn']['mask'] if suite_vars['mission']['msn']['mask'] else '16'
+            },
+            'mgt': {
+            'octet1': suite_vars['mission']['mgt']['octet1'] if suite_vars['mission']['mgt']['octet1'] else '192',
+            'octet2': suite_vars['mission']['mgt']['octet2'] if suite_vars['mission']['mgt']['octet2'] else '168',
+            'octet3': suite_vars['mission']['mgt']['octet3'] if suite_vars['mission']['mgt']['octet3'] else suite_vars['subnet'],
+            'octet4': '0',
+            'mask': suite_vars['mission']['mgt']['mask'] if suite_vars['mission']['mgt']['mask'] else '24'
+            },
+            'int': {
+            'octet1': suite_vars['mission']['int']['octet1'] if suite_vars['mission']['int']['octet1'] else '192',
+            'octet2': suite_vars['mission']['int']['octet2'] if suite_vars['mission']['int']['octet2'] else '168',
+            'octet3': suite_vars['mission']['int']['octet3'] if suite_vars['mission']['int']['octet3'] else '1',
+            'octet4': '0',
+            'mask': suite_vars['mission']['int']['mask'] if suite_vars['mission']['int']['mask'] else '24'
+            },
+            'ext': {
+            'octet1': suite_vars['mission']['ext']['octet1'] if suite_vars['mission']['ext']['octet1'] else '192',
+            'octet2': suite_vars['mission']['ext']['octet2'] if suite_vars['mission']['ext']['octet2'] else '168',
+            'octet3': suite_vars['mission']['ext']['octet3'] if suite_vars['mission']['ext']['octet3'] else '2',
+            'octet4': '0',
+            'mask': suite_vars['mission']['ext']['mask'] if suite_vars['mission']['ext']['mask'] else '24'
+            }
+        }
+    }
+    return subnets
 
 # typecast a list of items to a given type
 def typecast_list(target_type, list):
