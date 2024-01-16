@@ -16,6 +16,11 @@
   set_fact:
     subnet_list: "{{ subnet_dictionary | dict2items | json_query('[*].value') }}" # Build subnet list from subnet dictionary, useing the derived node_type, allowing access to a single level dictionary
 
+- name: "Debug subnet list"  
+  copy:
+    content: "{{ subnet_list | to_json(indent=2) }}"
+    dest: "{{ role_path }}/files/subnet-list.json"
+
 - name: "Check if inventory exists"
   stat:
     path: "{{ role_path }}/../inventory/{{ suite }}"
@@ -25,9 +30,15 @@
   debug:
     msg: "{{ inventory_exists | to_nice_yaml(indent=2) }}"
 
+- name: "Debug script command"
+  debug:
+    msg: "suite_ips.py --initial_inventory {{ not inventory_exists.stat.exists | bool }} --subnets '{{ subnet_list | to_json }}'"
+
 - name: "Run suite_ips.py (initial inventory)"
-  script: "suite_ips.py --initial_inventory {{ inventory_exists.stat.exists | bool }} --subnets '{{ subnet_list | to_json }}'"
+  script: "suite_ips.py --initial_inventory {{ not inventory_exists.stat.exists | bool }} --subnets '{{ subnet_list | to_json }}'"
   register: suite_ips
+  args:
+    chdir: "{{ role_path }}/files/"
   #when: inventory_exists.stat.exists is false
 
 #- name: "Run suite_ips.py (update inventory)"
