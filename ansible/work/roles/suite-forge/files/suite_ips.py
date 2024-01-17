@@ -200,6 +200,14 @@ def breakup_subnet_spaces(subnet):
             subnet_spaces[subnet_index -1].append(subnet[index])
     return subnet_spaces
 
+def ping_remaining_ips(ip_addresses):
+    for subnet in ip_addresses.keys():
+        for ip_range in ip_addresses[subnet]:
+            for ip in ip_range: 
+                if os.system(f'ping -c 1 -W 1 {ip}') == 0:
+                    ip_addresses[subnet].remove(ip)
+    return ip_addresses
+
 def main():
     inventory, args, host_identifier = define_params()
     ip_addresses = dict()
@@ -210,6 +218,7 @@ def main():
         ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list, args.subnets)
         for ip_address in ip_addresses.keys():
             ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
+        ip_addresses = ping_remaining_ips(ip_addresses) 
     with open('./available-ips.yml', 'w') as f:
         f.write(yaml.dump(ip_addresses))
 
