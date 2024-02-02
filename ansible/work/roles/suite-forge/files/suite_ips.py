@@ -32,7 +32,8 @@ import yaml
 import sys 
 import os
 import argparse
-
+import multiprocessing
+import nmap
 # define the parameters for the script, eventually this will be made part of the module args
 def define_params():
     parser = argparse.ArgumentParser(description='This is a script (eventually to be a module) designed to provide a datastructure representing the IP space of a given suite.')
@@ -43,10 +44,8 @@ def define_params():
     parser.add_argument('--initial_inventory', type=bool, required=False, default=False) # boolean representing whether or not to generate an initial inventory file
     parser.add_argument('--subnets', type=str, required=False) # string representing a json list of subnets to generate ips for
     parser.add_argument('--exclusions', type=str, required=False, default=None) # string representing a json list of ips to exclude, assumes /24 and is given only 4th octets, will default to bottom 10 and top 20 of each subnet
+    parser.add_argument('--ip_scan', type=bool, required=False, default=False) # boolean representing whether or not to scan the subnets for existing ips
     args = parser.parse_args()
-    #try:
-        #raise Exception()
-    #except Exception as faggotry:
 
     if args.config:
         print(f'parsing {args.config}')
@@ -68,41 +67,7 @@ def define_params():
             except: pass
     return inventory, args, 'ansible_host:'
 
-def parse_suite_vars(suite_vars):
-    subnets: {
-        'mission': {
-            'msn': {
-            'octet1': suite_vars['mission']['msn']['octet1'] if suite_vars['mission']['msn']['octet1'] else '10',
-            'octet2': suite_vars['mission']['msn']['octet2'] if suite_vars['mission']['msn']['octet2'] else '177',
-            'octet3': suite_vars['mission']['msn']['octet3'] if suite_vars['mission']['msn']['octet3'] else suite_vars['subnet'],
-            'octet4': '0',
-            'mask': suite_vars['mission']['msn']['mask'] if suite_vars['mission']['msn']['mask'] else '16'
-            },
-            'mgt': {
-            'octet1': suite_vars['mission']['mgt']['octet1'] if suite_vars['mission']['mgt']['octet1'] else '192',
-            'octet2': suite_vars['mission']['mgt']['octet2'] if suite_vars['mission']['mgt']['octet2'] else '168',
-            'octet3': suite_vars['mission']['mgt']['octet3'] if suite_vars['mission']['mgt']['octet3'] else suite_vars['subnet'],
-            'octet4': '0',
-            'mask': suite_vars['mission']['mgt']['mask'] if suite_vars['mission']['mgt']['mask'] else '24'
-            },
-            'int': {
-            'octet1': suite_vars['mission']['int']['octet1'] if suite_vars['mission']['int']['octet1'] else '192',
-            'octet2': suite_vars['mission']['int']['octet2'] if suite_vars['mission']['int']['octet2'] else '168',
-            'octet3': suite_vars['mission']['int']['octet3'] if suite_vars['mission']['int']['octet3'] else '1',
-            'octet4': '0',
-            'mask': suite_vars['mission']['int']['mask'] if suite_vars['mission']['int']['mask'] else '24'
-            },
-            'ext': {
-            'octet1': suite_vars['mission']['ext']['octet1'] if suite_vars['mission']['ext']['octet1'] else '192',
-            'octet2': suite_vars['mission']['ext']['octet2'] if suite_vars['mission']['ext']['octet2'] else '168',
-            'octet3': suite_vars['mission']['ext']['octet3'] if suite_vars['mission']['ext']['octet3'] else '2',
-            'octet4': '0',
-            'mask': suite_vars['mission']['ext']['mask'] if suite_vars['mission']['ext']['mask'] else '24'
-            }
-        }
-    }
-    return subnets
-
+# d
 # typecast a list of items to a given type
 def typecast_list(target_type, list):
     return [target_type(item) for item in list]
@@ -173,7 +138,7 @@ def parse_inventory(inventory_file, host_identifier, exclusion_list, subnets):
         # create a set of all IPs in the subnet, and subtract the set of assigned IPs
         available_ips = set([str(ip) for ip in ipaddress.IPv4Network(subnet)]) - ip_addresses[subnet]
         ip_addresses[subnet] = list(available_ips)
-        ip_addresses[subnet].sort(key=lambda ip: tuple(map(int, ip.split('.'))))
+        ip_addresses[subnet].sort(key=lambda ip: tuple(map(int, ip.split('.')[-1])))
     return ip_addresses
 
 # given a subnet, break it up into lists of consecutive IPs
@@ -200,27 +165,86 @@ def breakup_subnet_spaces(subnet):
             subnet_spaces[subnet_index -1].append(subnet[index])
     return subnet_spaces
 
-def ping_remaining_ips(ip_addresses):
-    for subnet in ip_addresses.keys():
-        for ip_range in ip_addresses[subnet]:
-            for ip in ip_range: 
-                if os.system(f'ping -c 1 -W 1 {ip}') == 0:
-                    ip_addresses[subnet].remove(ip)
-    return ip_addresses
+def ping_subnet(subnet, ip_range):
+    ip_range_copy = ip_range.copy()
+    for ip in ip_range:
+        if os.system(f'ping -c 1 -W 1 {ip}') == 0:
+            ip_range_copy.remove(ip)
+    return ip_range_copy
 
+def check_if_all_same_mask(subnets):
+    subnets = json.loads(subnets)
+    mask = subnets[0].split('/')[-1]
+    for subnet in subnets:
+        if not subnet.split('/')[-1] == mask:
+            return False
+    return True
+
+def build_subnets_off_mgt(mgt_subnet, ip_addresses):
+        mgt_subnet = ip_addresses.pop(mgt_subnet)
+        for subnet in ip_addresses.keys():
+            ip_addresses[subnet] = []
+            prefix = '.'.join(subnet.split('.')[0:-1])
+            ip_addresses[subnet] = [f'{prefix}.{ip.split(".")[-1]}' for ip in mgt_subnet]
+        ip_addresses.update({'mgt': mgt_subnet})
+        return ip_addresses
+    
 def main():
     inventory, args, host_identifier = define_params()
     ip_addresses = dict()
+    subnet_dict = json.loads(args.subnets)
+    mgt_subnet = subnet_dict['mgt']
+    subnet_list = json.dumps([subnet_dict[subnet] for subnet in subnet_dict.keys()])
     exclusion_list = build_exclusion_list(args.exclusions)
+    # exclusion_list = scan_subnet(exclusion_list, args.subnets)
     if args.initial_inventory is True:
-        ip_addresses = initial_inventory(args.subnets, exclusion_list)
+        ip_addresses = initial_inventory(subnet_list, exclusion_list)
     else:
-        ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list, args.subnets)
-        for ip_address in ip_addresses.keys():
-            ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
-        ip_addresses = ping_remaining_ips(ip_addresses) 
+        ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list, subnet_list)
+        if check_if_all_same_mask(subnet_list):
+            ip_addresses = build_subnets_off_mgt(mgt_subnet, ip_addresses)
+    for ip_address in ip_addresses.keys():
+        ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
     with open('./available-ips.yml', 'w') as f:
         f.write(yaml.dump(ip_addresses))
 
 if __name__ == '__main__':
     main()
+
+
+# def ping_remaining_ips(ip_addresses):
+#     processes = []
+#     for subnet in ip_addresses.keys():
+#         for ip_range in ip_addresses[subnet]:
+#             process = multiprocessing.Process(target=ping_subnet, args=(subnet, ip_range))
+#             process.start()
+#             processes.append(process) 
+#     for process in processes:
+#         process.join()
+#     with open('./process_file.txt', 'w') as f:
+#         f.write(str(processes))
+#     return ip_addresses
+
+
+# def ping_remaining_ips(ip_addresses):
+#     with Pool() as pool:
+#         results = []
+#         for subnet in ip_addresses.keys():
+#             for ip_range in ip_addresses[subnet]:
+#                print('Entering multiprocessed ping')
+#                result = pool.apply_async(ping_subnet, args=(subnet, ip_range))
+#                results.append(result)
+#                ip_addresses[subnet].append(result)
+#         for result in results:
+#             result.wait()  # Wait for the process to complete
+#         # # Get the results
+#         # for subnet in ip_addresses.keys():            
+#         #     for ip_range in ip_addresses[subnet]:
+#         #         ip_addresses[subnet].remove(ip_range)
+#         #         ip_addresses[subnet].append(ip_range.get())
+#         # ip_addresses = {result.get() for result in results}
+#         results = [result.get() for result in results]
+#         with open('./result_file.txt', 'w') as f:
+#             json.dump(ip_addresses, f, indent=0)
+#     return ip_addresses
+

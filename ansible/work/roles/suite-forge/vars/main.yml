@@ -2,11 +2,11 @@
 # vars file for suite-forge
 SUITE01:
   subnets:
-    mission-high:
+    msn:
       msn: '10.177.101.0/24'
       mgt: '192.168.102.0/24'
       int: '192.168.1.0/24'
-    mission-low:
+    msn-low:
       msn: '10.177.101.0/24'
       mgt: '192.168.102.0/24'
       int: '192.168.1.0/24'

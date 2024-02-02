@@ -20,25 +20,40 @@
       debug:
         msg: "{{ json_data | sort(attribute='subnet_reference.name') }}"
 
-    - name: "lookup suite_subnet"
+    # - name: "lookup suite_subnet"
+    #   set_fact:
+    #     subnet_dictionary: "{{ lookup('file',  playbook_dir ~ '/../roles/suite-forge/vars/main.yml') | from_yaml }}"
+
+    # - name: "debug subnet_dictionary"
+    #   copy:
+    #     content: "{{ subnet_dictionary | to_nice_yaml(indent=2) }}" 
+    #     dest: "./subnet_dictionary.yml"
+    #     force: True
+
+    # - name: "Set subnet dictionary to suite and node type"
+    #   set_fact:
+    #     subnet_list: "{{ subnet_dictionary['SUITE01']['subnets']['mission-high'] | dict2items | json_query('[*].value') }}"
+
+    # - name: "debug subnet_dictionary"
+    #   copy:
+    #     content: "{{ subnet_list | to_nice_yaml(indent=2) }}" 
+    #     dest: "./subnet_group.yml"
+    #     force: True
+
+    - name: "set list of lists"
       set_fact:
-        subnet_dictionary: "{{ lookup('file',  playbook_dir ~ '/../roles/suite-forge/vars/main.yml') | from_yaml }}"
+        nested_list: 
+        - - "a"
+          - "b"
+        - - "c"
+          - 'd'
+          - 'e'
 
-    - name: "debug subnet_dictionary"
-      copy:
-        content: "{{ subnet_dictionary | to_nice_yaml(indent=2) }}" 
-        dest: "./subnet_dictionary.yml"
-        force: True
+    - name: "debug nested_list"
+      debug:
+        msg: "{{ item | length }}"
+      loop: "{{ nested_list }}"
 
-    - name: "Set subnet dictionary to suite and node type"
-      set_fact:
-        subnet_list: "{{ subnet_dictionary['SUITE01']['subnets']['mission-high'] | dict2items | json_query('[*].value') }}"
-
-    - name: "debug subnet_dictionary"
-      copy:
-        content: "{{ subnet_list | to_nice_yaml(indent=2) }}" 
-        dest: "./subnet_group.yml"
-        force: True
 
  #   - name: "Create subnet_list"
  #     set_fact:
