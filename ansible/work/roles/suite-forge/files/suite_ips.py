@@ -53,11 +53,11 @@ def define_params():
             config = yaml.load(f, Loader=yaml.FullLoader)
             try:
                 args.initial_inventory = bool(config['initial_inventory'])
-                print(args.initial_inventory)
+                # print(args.initial_inventory)
             except: pass
             try:
                 args.subnets = json.dumps(config['subnets'])
-                print(yaml.dump(args.subnets, default_flow_style=False ))
+                # print(yaml.dump(args.subnets, default_flow_style=False ))
             except: pass
             try:
                 args.exclusions = config['exclusions'].json.dumps()
@@ -97,8 +97,10 @@ def initial_inventory(subnet_list, exclusion_list):
     inventory = dict()
     for subnet in json.loads(subnet_list):
         inventory[subnet] = list()
+        subnet_mask = str(ipaddress.IPv4Network(subnet).prefixlen)
         # list comprehension to filter out the excluded IPs
-        inventory[subnet].append(list([int(str(ip).split('.')[-1]) for ip in ipaddress.IPv4Network(subnet) if int(str(ip).split('.')[-1]) not in exclusion_list])) 
+        inventory[subnet].append(list([(str(ip) + f'/{subnet_mask}') for ip in ipaddress.IPv4Network(subnet) if int(str(ip).split('.')[-1]) not in exclusion_list])) 
+        # print(yaml.dump(inventory, default_flow_style=False))
     return inventory
 
 # Parse an existing inventory file, extracting unique subnets and the unassigned IPs in each subnet, including the exclusion list
@@ -124,21 +126,32 @@ def parse_inventory(inventory_file, host_identifier, exclusion_list, subnets):
                 if not subnet in ip_addresses.keys():
                     # ensure subnet is a unique set of ips
                     ip_addresses[subnet] =  set()
-                ip_addresses[subnet].add(ip)
-                with open('/home/jharmon/ip_addresses.txt', 'a') as f:
+                    if ipaddress.ip_address(ip) in ipaddress.IPv4Network(subnet):
+                        ip_addresses[subnet].add(ip)
+                # ip_addresses[subnet].add(ip)
+                with open('/home/jharmon/ip_addresses.txt', 'w') as f:
                     f.write(str(ip_addresses[subnet]))
-
+    # print(ip_addresses)
     for subnet in ip_addresses.keys():
+        subnet_mask = str(ipaddress.IPv4Network(subnet).prefixlen)
         # typecast the exclusion list to a list of strings
         exclusions = typecast_list(str, exclusion_list)
         # fileter out the excluded IPs
-        exclusions = ['.'.join(subnet.split('.')[0:-1]) + f'.{exclusion_ip}' for exclusion_ip in exclusions]
+        exclusions = ['.'.join(subnet.split('.')[0:-1]) + f'.{exclusion_ip}/{subnet_mask}' for exclusion_ip in exclusions]
         # update the ip_addresses dict with the exclusions
         ip_addresses[subnet].update(exclusions)
+        # print(ip_addresses[subnet])
+        #print(subnet_mask)
         # create a set of all IPs in the subnet, and subtract the set of assigned IPs
-        available_ips = set([str(ip) for ip in ipaddress.IPv4Network(subnet)]) - ip_addresses[subnet]
+        available_ips = set([str(str(ip) + f'/{subnet_mask}') for ip in ipaddress.IPv4Network(subnet)]) - ip_addresses[subnet]
+        # print(yaml.dump(available_ips, default_flow_style=False))
+        # print(available_ips)
+        # print(subnet)
+        
         ip_addresses[subnet] = list(available_ips)
-        ip_addresses[subnet].sort(key=lambda ip: tuple(map(int, ip.split('.')[-1])))
+        # print(yaml.dump(ip_addresses, default_flow_style=False))
+        ip_addresses[subnet].sort(key=lambda ip: tuple(map(int, ip.split('.')[-1].split('/')[0])))
+    # print(yaml.dump(ip_addresses, default_flow_style=False))
     return ip_addresses
 
 # given a subnet, break it up into lists of consecutive IPs
@@ -150,8 +163,12 @@ def breakup_subnet_spaces(subnet):
     for index in range(len(subnet)):
         # Create new list entry if new_ip is false, else append to existing consecutive ip range:
         if index > 0:
-            current_ip = int(ipaddress.IPv4Address(subnet[index]))
-            previous_ip = int(ipaddress.IPv4Address(subnet[index - 1]))
+            # print(subnet[index].split('.'))
+            # print('.'.join(str(subnet[index]).split('/')[0:-1]))
+            # print('.'.join(str(subnet[index - 1]).split('/')[0:-1]))
+            current_ip = int(ipaddress.IPv4Address('.'.join(str(subnet[index]).split('/')[0:-1])))
+            previous_ip = int(ipaddress.IPv4Address('.'.join(str(subnet[index - 1]).split('/')[0:-1])))
+#            print(f'current_ip: {current_ip}, previous_ip: {previous_ip}')
             if abs(current_ip - previous_ip) == 1:
                 new_ip = True 
             else:
@@ -163,6 +180,7 @@ def breakup_subnet_spaces(subnet):
             subnet_index += 1
         else:
             subnet_spaces[subnet_index -1].append(subnet[index])
+    #print(yaml.dump(subnet_spaces, default_flow_style=False))
     return subnet_spaces
 
 def ping_subnet(subnet, ip_range):
@@ -180,13 +198,19 @@ def check_if_all_same_mask(subnets):
             return False
     return True
 
+# Build the other available ips off the management subnet if all masks are the same
 def build_subnets_off_mgt(mgt_subnet, ip_addresses):
+    # pop management subnet so we don't have to loop over it
         mgt_subnet = ip_addresses.pop(mgt_subnet)
         for subnet in ip_addresses.keys():
             ip_addresses[subnet] = []
+            # Create prefix string of the first 3 octets of the subnet
             prefix = '.'.join(subnet.split('.')[0:-1])
+            # List comprehension to create a list of ips in the subnet, using the last octet of the management subnet
             ip_addresses[subnet] = [f'{prefix}.{ip.split(".")[-1]}' for ip in mgt_subnet]
+            # update the returned ip spaces with the management subnet dictionary
         ip_addresses.update({'mgt': mgt_subnet})
+        # print(yaml.dump(ip_addresses, default_flow_style=False))    
         return ip_addresses
     
 def main():
@@ -201,10 +225,12 @@ def main():
         ip_addresses = initial_inventory(subnet_list, exclusion_list)
     else:
         ip_addresses = parse_inventory(inventory, host_identifier, exclusion_list, subnet_list)
+        #print(yaml.dump(ip_addresses, default_flow_style=False))    
         if check_if_all_same_mask(subnet_list):
             ip_addresses = build_subnets_off_mgt(mgt_subnet, ip_addresses)
     for ip_address in ip_addresses.keys():
         ip_addresses[ip_address] = breakup_subnet_spaces(ip_addresses[ip_address])
+    print(yaml.dump(ip_addresses, default_flow_style=False))
     with open('./available-ips.yml', 'w') as f:
         f.write(yaml.dump(ip_addresses))
 
