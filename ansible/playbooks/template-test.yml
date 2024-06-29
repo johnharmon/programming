@@ -1,0 +1,8 @@
+---
+- name: Template test
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include template-test"
+      include_role:
+        name: "template-test"

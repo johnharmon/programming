@@ -1,0 +1,29 @@
+---
+# vars file for terraform-template
+proxmox_header: |
+  terraform {
+    required_providers {
+      proxmox = {
+        source = "bpg/proxmox"
+        version = "0.60.1"
+      }
+    }
+  }
+  provider "proxmox" {
+    insecure  = true
+    endpoint = var.proxmox_endpoint
+    username = var.proxmox_username
+    password = var.proxmox_password
+    ssh {
+      agent = true
+      username = var.proxmox_username
+    }
+  }
+
+
+
+
+
+
+
+

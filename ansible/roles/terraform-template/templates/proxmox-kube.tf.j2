@@ -1,0 +1,30 @@
+{% set proxmox_node_name = (proxmox_node_name | default('proxmox')) %}
+
+{{ proxmox_header }}
+
+{% for num in range(proxmox_kube.control_nodes | int) %}
+{% set vm_name = "control_node" ~ loop.index %}
+resource "proxmox_virtual_environment_vm" {{ vm_name }} {
+    name = "{{ vm_name }}"
+    description = "Control Node {{ loop.index }} for kube cluster"
+    tags = ["kube", "control_node", "terraform"]
+    node_name = "{{ proxmox_node_name | default("proxmox") v}}"
+
+}
+
+
+
+
+
+
+
+/* DATA SOURCES */
+
+
+data "proxmox_virtual_environment_vms" ""vm_list" {
+    tags = ["templates"]
+}
+
+data "proxmox_virtual_environment_datastores" "datastores" {
+    node_name = "{{ proxmox_node_name }}"
+}

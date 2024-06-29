@@ -1,0 +1,6 @@
+---
+# defaults file for terraform-template
+deployments:
+  proxmox_kube:
+    control_nodes: 2
+    worker_nodes: 3
