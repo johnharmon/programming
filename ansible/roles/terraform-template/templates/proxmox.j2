@@ -1,0 +1,8 @@
+{% if clone_vm is not defined or clone_vm is false %}
+resource "proxmox_vm_quemu" "resource-name" {
+    name = "{{ proxmox_vm_name }}"
+    target_node = "{{ proxmox_node | default('proxmox') }}"
+    iso = "{{ proxmox_vm_iso | default('proxmox_cloud_init.iso') }}"
+{% else %}
+clone = "{{ proxmox_vm_template | default('proxmox_cloud_init')}}"
+{% endif %}

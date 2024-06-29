@@ -1,8 +1,8 @@
 - name: "Suite-forge"
   hosts: localhost
-  gather_facts: False
+  gather_facts: false
   tasks:
     - name: "Suite-forge"
-      include_role:
+      ansible.builtin.include_role:
         name: "suite-forge"
         tasks_from: "ips.yml"
