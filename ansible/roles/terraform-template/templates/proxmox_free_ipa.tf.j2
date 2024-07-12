@@ -1,0 +1,47 @@
+
+{% set proxmox_node_name = (proxmox_node_name | default('proxmox')) %}
+{% set vm_name = deployment_config.vm_name %}
+{% set datastore_vms_id = deployment_config.datastore_vms_id | default('vm_pool_1') %}
+{% set ssh_key = deployment_config.ssh_key_file | default("~/.ssh/authorized_keys")) %}
+
+
+{{ proxmox_header }}
+
+
+/* VM RESOURCES */
+
+resource "proxmox_virtual_environment_vm" "{{ vm_name }}" {
+    name = "{{ vm_name }}"
+    description = "Freeipa server"
+    tags = ["freeipa", "terraform"]
+    node_name = "{{ proxmox_node_name }}"
+    disk {
+        datastore_id = "{{ datastore_vms_id }}"
+        file_id = proxmox_virtual_environment_file.local_kube_image.id 
+    }
+    initialization {
+        ip_config {
+            ipv4 {
+                address = "dhcp"
+            }
+        }
+    }
+
+    user_account {
+        keys = [trimspace(file("{{ ssh_key_file}}"))]
+        username = "kubeadmin" 
+        password = var.kubeadmin_password
+    }
+
+
+/* DATA SOURCES */
+
+data "proxmox_virtual_environment_vms" "vm_list" {
+    tags = ["templates"]
+}
+
+data "proxmox_virtual_environment_datastores" "datastores" {
+    node_name = "{{ proxmox_kube.proxmox_node_name }}"
+    datastore_id = "{{ proxmox_datastore_iso_id | default('local') }}"
+    content_type = "{{ proxmox_kube.image_type | default('iso') }}"
+}

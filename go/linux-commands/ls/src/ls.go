@@ -11,6 +11,43 @@ import (
 	"golang.org/x/term"
 )
 
+func getFileStructs(file os.FileInfo) (*syscall.Stat_t, os.FileMode) {
+	file_stat := file.Sys().(*syscall.Stat_t)
+	file_mode := file.Mode()
+	return file_stat, file_mode
+}
+
+func getNamesFromIds(uid int, gid int) (string, string) {
+	userName, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(3)
+	}
+	groupName, err := user.LookupGroupId(strconv.Itoa(gid))
+	if err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(3)
+	}
+	return userName.Username, groupName.Name
+}
+
+func getFileIds(file os.FileInfo) (uint32, uint32) {
+	file_stat := file.Sys().(*syscall.Stat_t)
+	uid := file_stat.Uid
+	gid := file_stat.Gid
+	return uid, gid
+}
+
+func getFileFromDirEntry(file os.DirEntry) (os.FileInfo, *syscall.Stat_t, os.FileMode) {
+	file_info, err := file.Info()
+	if err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(3)
+	}
+	file_stat, file_mode := getFileStructs(file_info)
+	return file_info, file_stat, file_mode
+}
+
 func getFilePerm(mode os.FileMode) {
 	//perm_typs := []string{"---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"}
 	t := reflect.TypeOf(mode)
