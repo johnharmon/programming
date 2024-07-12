@@ -15,7 +15,18 @@ resource "proxmox_virtual_environment_vm" "{{ vm_name }}" {
     node_name = "{{ proxmox_kube.proxmox_node_name | default("proxmox") v}}"
     disk {
         datastore_id = "{{ proxmox_kube.proxmox_datastore_vms_id | default('vm_pool_1') }}"
-        file_id = proxmox_virtual_environment_file.local_kube_image.id 
+        file_id = "{{ proxmox_kude.image_id | default("local:iso/Rocky-9.3-x86_64-minimal.iso") }}"
+        interface = "ide0"
+    }
+
+    disk {
+        datastore_id = "{{ proxmox_kube.proxmox_datastore_vms_id | default('vm_pool_1') }}"
+        interface = "scsi0"
+        size = 40
+        iothread = true
+        aio = "native"
+        file_format = "raw" 
+
     }
     initialization {
         ip_config {
