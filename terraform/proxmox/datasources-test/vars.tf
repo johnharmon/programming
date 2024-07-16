@@ -7,7 +7,7 @@ variable "proxmox_node_name"  {
 variable "proxmox_username" {
   description = "The username for the proxmox node"
   type = string
-  default = "harmonj" 
+  default = "harmonj@pam" 
 }
 
 variable "proxmox_password" {
