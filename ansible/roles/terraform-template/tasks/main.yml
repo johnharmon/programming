@@ -1,2 +1,18 @@
 ---
 # tasks file for terraform-template
+- name: "Set deployment vars"
+  ansible.builtin.set_fact:
+    deployments: "{{ lookup('vars', 'deployments') }}"
+
+- name: "Debug deployment"
+  ansible.builtin.debug:
+    msg: "{{ deployments[deployment] }}"
+
+- name: "Lookup template for deployment"
+  ansible.builtin.set_fact:
+    deployment_template: "{{ lookup('template', deployment_template_file, template_vars={'deployment_config': deployments[deployment]}) }}"
+  delegate_to: localhost
+
+- name: "Debug template"
+  ansible.builtin.debug:
+    msg: "{{ deployment_template }}"

@@ -4,7 +4,7 @@ terraform {
 
         proxmox = {
             source = "bpg/proxmox"
-            version = "0.60.1"
+            version = "0.61.0"
         }
         random = {
             source = "hashicorp/random" 
@@ -19,7 +19,7 @@ terraform {
   provider "proxmox" {
     insecure  = true
     endpoint = var.proxmox_endpoint
-    username = "${var.proxmox_username}@pam"
+    username = var.proxmox_username
     password = var.proxmox_password
     ssh {
       agent = true
@@ -32,21 +32,19 @@ data "proxmox_virtual_environment_datastores" "proxmox" {
     node_name = "proxmox"
 }
 
+data "proxmox_virtual_environment_vms" "proxmox" {
+    node_name = "proxmox" 
+    filter {
+        name = "name"
+        regex = true 
+        values = [".*(?i)kube.*"]
+    }
+    
+}
 
 locals {
     vm_pool = [for datastore in data.proxmox_virtual_environment_datastores.proxmox.datastore_ids : datastore if datastore == "vm_pool_1"]
 }
-
-# resource "proxmox_virtual_environment_file" "iso_file" {
-#     content_type = "iso"
-#     node_name = "proxmox"
-#     datastore_id = "local"
-#     source_file {
-#         path = "Rocky-9.3-x86_64-minimal.iso"
-#     }
-
-# }
-
 
 resource "proxmox_virtual_environment_vm" "terraform-vm" {
     name = "terraform-vm"
@@ -55,11 +53,9 @@ resource "proxmox_virtual_environment_vm" "terraform-vm" {
     node_name = "proxmox"
     disk {
         datastore_id = local.vm_pool[0]
-        # file_id = "local:iso/Rocky-9.3-x86_64-minimal.iso"
         file_format = "raw"
         interface = "scsi0"
         size = 40
-        iothread = true
         aio = "native" 
 
     }
@@ -76,19 +72,19 @@ resource "proxmox_virtual_environment_vm" "terraform-vm" {
     memory {
         dedicated = 2048
     }
-    # initialization {
-    #     datastore_id = local.vm_pool[0]
-    #     ip_config {
-    #         ipv4 {
-    #             address = "dhcp"
-    #         }
-    #     }
-    #     user_account {
-    #         keys = [trimspace(file("${pathexpand("~")}/.ssh/authorized_keys"))]
-    #         username = "cloud_user"
-    #         password = var.proxmox_password
-    #     }
-    # }
+    initialization {
+        datastore_id = local.vm_pool[0]
+        ip_config {
+            ipv4 {
+                address = "dhcp"
+            }
+        }
+        user_account {
+            keys = [trimspace(file("${pathexpand("~")}/.ssh/authorized_keys"))]
+            username = "cloud_user"
+            password = var.proxmox_password
+        }
+    }
 }
 
 output "datastores" {
@@ -97,4 +93,9 @@ output "datastores" {
 
 output "username" {
     value = split("@", var.proxmox_username)
+}
+
+
+output "vms" {
+    value = data.proxmox_virtual_environment_vms.proxmox.vms 
 }
