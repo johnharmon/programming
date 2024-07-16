@@ -1,0 +1,7 @@
+- name: "Template test"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include terraform role"
+      ansible.builtin.include_role:
+        name: terraform-template
