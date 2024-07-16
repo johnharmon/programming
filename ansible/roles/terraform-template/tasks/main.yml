@@ -10,7 +10,7 @@
 
 - name: "Lookup template for deployment"
   ansible.builtin.set_fact:
-    deployment_template: "{{ lookup('template', deployment_template_file, template_vars={'deployment_config': deployments[deployment]}) }}"
+    deployment_template: "{{ lookup('template', deployment_template_file) }}"
   delegate_to: localhost
 
 - name: "Debug template"
