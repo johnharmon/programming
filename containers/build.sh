@@ -5,4 +5,5 @@ build_dockerfile(){
 
 
 build_dockerfile alpine:latest 
-podman build -t my-build:latest -f Dockerfile .
+buildah build --tag my-build:latest -f Dockerfile
+#podman build -t my-build:latest -f Dockerfile .

@@ -27,11 +27,24 @@
 - name: "Template out file"
   ansible.builtin.copy:
     content: "{{ deployment_template }}"
-    dest: "~/.test"
+    dest: "~/.test.tf"
     owner: "jharmon"
     mode: "644"
   delegate_to: localhost
 
-- name: "Debug template"
-  ansible.builtin.debug:
-    msg: "{{ deployment_template }}"
+- name: "Create terraform project directory"
+  ansible.builtin.file:
+    state: "directory"
+    path: "{{ terraform_path ~ deployments }}"
+    mode: "755"
+    owner: "jharmon"
+    group: "jharmon"
+
+- name: "Apply terraform"
+  community.general.terraform:
+    state: "present"
+    project_path: "{{ terraform_path ~ deployments }}"
+
+# - name: "Debug template"
+#   ansible.builtin.debug:
+#     msg: "{{ deployment_template }}"
