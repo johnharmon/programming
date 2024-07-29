@@ -9,5 +9,4 @@ deployments:
     hostname: 'freeipa'
     template_name: 'proxmox_free_ipa.tf.j2'
     vm_name: 'freeipa'
-    dns_servers: ['192.168.86.4']
-
+    dns_servers: ['192.168.86.5']

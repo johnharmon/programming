@@ -4,4 +4,4 @@
   tasks:
     - name: "Include terraform role"
       ansible.builtin.include_role:
-        name: terraform-template
+        name: "terraform-template"

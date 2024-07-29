@@ -4,12 +4,44 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	fp "path/filepath"
 	"reflect"
 	"strconv"
 	"syscall"
 
 	"golang.org/x/term"
 )
+
+type FileDetails struct {
+	Name      string
+	Path      string
+	Size      int64
+	Mode      os.FileMode
+	ModTime   string
+	IsDir     bool
+	IsSymlink bool
+	Stat      *syscall.Stat_t
+}
+
+func (fd *FileDetails) Init(filepath string) error {
+	file, err := os.Stat(filepath)
+	if err != nil {
+		return err
+	}
+	fd.Name = file.Name()
+	path, err := fp.Abs(filepath)
+	if err != nil {
+		return err
+	}
+	fd.Path = path
+	fd.Size = file.Size()
+	fd.Mode = file.Mode()
+	fd.ModTime = file.ModTime().String()
+	fd.IsDir = file.IsDir()
+	fd.IsSymlink = file.Mode()&os.ModeSymlink != 0
+	fd.Stat = file.Sys().(*syscall.Stat_t)
+	return nil
+}
 
 func getFileStructs(file os.FileInfo) (*syscall.Stat_t, os.FileMode) {
 	file_stat := file.Sys().(*syscall.Stat_t)
@@ -177,7 +209,6 @@ func processDirEntries(files_in_dir []os.DirEntry, sep_string string, stat_fileI
 			fmt.Printf("Error: %s\n", err)
 			os.Exit(3)
 		}
-
 		// Direct syscall.Stat_t type conversion from file_info.Sys() method, needed specifically for uid and gid
 		file_stat_sys := file_info.Sys().(*syscall.Stat_t)
 		uid := file_stat_sys.Uid
@@ -189,32 +220,26 @@ func processDirEntries(files_in_dir []os.DirEntry, sep_string string, stat_fileI
 			fmt.Printf("Error: %s\n", err)
 			os.Exit(3)
 		}
-
 		groupName, err := user.LookupGroupId(strconv.Itoa(int(gid)))
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 			os.Exit(3)
 		}
-
 		file_perm := fmt.Sprintf("%v", file_info.Mode())
 		if file_info.IsDir() {
 			file_perm = "d" + file_perm[1:]
 		}
-
 		// Print header if idx is 0, then print the file info
 		if idx == 0 {
 			fmt.Printf(format_string_header, "Permissions", "Name", "UID", "GID", "Size", "Last Modified")
 			// fmt.Printf(format_string_entries, file_perm, stat_fileInfo.Name(), stat.Uid, stat.Gid, stat_fileInfo.Size(), stat_fileInfo.ModTime())
 			fmt.Printf("%s\n", sep_string)
 		}
-
 		// Print each processed file info
 		fmt.Printf(format_string_entries, file_perm, file_info.Name(), userName.Username, groupName.Name, file_info.Size(), file_info.ModTime())
 	}
 }
-
 func main() {
-
 	// Generate separator string to separate header(s) from rest of file output
 	width, _, err := term.GetSize((int(os.Stdout.Fd())))
 	sep_string := ""
@@ -225,7 +250,6 @@ func main() {
 	}
 	// Set empty string for target directory
 	targetdir := ""
-
 	// Read cli args, if any, determine location to list (default to cwd)
 	args := os.Args
 	if arg_len := len(args); arg_len == 1 {
@@ -239,17 +263,14 @@ func main() {
 	} else {
 		targetdir = args[1]
 	}
-
 	// Get file info
 	stat_fileInfo, err := os.Stat(targetdir)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
-
 	// Get raw stat info from the syscall.Stat_t type passed to the .Sys() method
 	stat := stat_fileInfo.Sys().(*syscall.Stat_t)
-
 	// Get file mode
 	stat_mode := stat_fileInfo.Mode()
 
@@ -263,7 +284,6 @@ func main() {
 			// Will process a slice of os.DirEntry types
 			processDirEntries(files_in_dir, sep_string, stat_fileInfo, stat, stat_mode)
 		}
-
 		// If we are not listing a directory, we are listing a single file
 	} else {
 
