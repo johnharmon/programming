@@ -1,15 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	fp "path/filepath"
 	"syscall"
-	"time"
 )
 
 func OpenFile(filepath string) (*os.File, error) {
@@ -19,17 +19,6 @@ func OpenFile(filepath string) (*os.File, error) {
 	} else {
 		return file, nil
 	}
-}
-
-type FileDetails struct {
-	Name      string
-	Path      string
-	Size      int64
-	Mode      os.FileMode
-	ModTime   string
-	IsDir     bool
-	IsSymlink bool
-	Stat      *syscall.Stat_t
 }
 
 func (fd *FileDetails) Init(filepath string) error {
@@ -50,20 +39,6 @@ func (fd *FileDetails) Init(filepath string) error {
 	fd.IsSymlink = file.Mode()&os.ModeSymlink != 0
 	fd.Stat = file.Sys().(*syscall.Stat_t)
 	return nil
-}
-
-type GitObject interface {
-	GetType() string
-	GetHash() []byte
-	GenHash() []byte
-}
-
-type GitBlob struct {
-	hash    []byte
-	size    int64
-	name    string
-	details *FileDetails
-	content *[]byte
 }
 
 func (b *GitBlob) GetType() string {
@@ -108,14 +83,6 @@ func (b *GitBlob) Init(filepath string) error {
 	return nil
 }
 
-type GitTree struct {
-	entryCount int
-	entries    []GitTreeEntry
-	hash       []byte
-	name       string
-	size       int
-}
-
 func (t *GitTree) GetType() string {
 	return "tree"
 }
@@ -139,12 +106,97 @@ func (t *GitTree) AddEntry(entry GitTreeEntry) {
 	t.entries = append(t.entries, entry)
 }
 
-type GitTreeEntry struct {
-	mode      int
-	entryType string
-	hash      []byte
-	name      string
-	object    GitObject
+func NewGitBlobFromContent(size int, content []byte) *GitBlob {
+	blob := &GitBlob{}
+	blob.content = &content
+	blob.size = int64(size)
+	return blob
+
+}
+
+func NewGitTreeFromContent(content []byte) *GitTree {
+	tree := &GitTree{}
+	tree.entries = []GitTreeEntry{}
+	return tree
+}
+
+func NewGitCommitFromContent(content []byte) *GitCommit {
+	commit := &GitCommit{}
+	return commit
+}
+
+func (c *GitCommit) GetType() string {
+	return "commit"
+}
+
+func (c *GitCommit) GetHash() []byte {
+	return c.hash
+}
+
+func (c *GitCommit) GenHash() []byte {
+	hash := sha256.New()
+	hash.Write([]byte(fmt.Sprintf("commit %d\000", len(c.header))))
+	hash.Write([]byte(c.header))
+	hash.Write([]byte(fmt.Sprintf("tree %s\000", c.treeHash)))
+	for _, parent := range *c.parentHashes {
+		hash.Write([]byte(fmt.Sprintf("parent %s\000", parent)))
+	}
+	hash.Write([]byte(fmt.Sprintf("author %s <%s> %s\000", c.authorName, c.authorEmail, c.authorTime)))
+	hash.Write([]byte(fmt.Sprintf("committer %s <%s> %s\000", c.comitterName, c.comitterEmail, c.comitterTime)))
+	hash.Write([]byte(c.message))
+	hash_sum := hash.Sum(nil)
+	c.hash = hash_sum
+	return hash_sum
+}
+
+func (b *GitBlob) WriteBlobToFile() error {
+	hash := b.GenHash()
+	hash_prefix := hash[0:2]
+	hash_path := fp.Join(".git", "objects", string(hash_prefix), string(hash[2:]))
+	object_file, err := os.Create(hash_path)
+	if err != nil {
+		return err
+	}
+	defer object_file.Close()
+	header := fmt.Sprintf("blob %d\000", b.size)
+	object_file.Write([]byte(header))
+	object_file.Write(*b.content)
+	return nil
+}
+
+func FetchObjectFromHash(hash []byte) (GitObject, error) {
+	var new_object GitObject
+	hash_prefix := hash[0:2]
+	hash_path := fp.Join(".git", "objects", string(hash_prefix), string(hash[2:]))
+	object_file, err := os.Open(hash_path)
+	if err != nil {
+		return nil, err
+	}
+	defer object_file.Close()
+	object_content, err := io.ReadAll(object_file)
+	if err != nil {
+		return nil, err
+	}
+	headerSize := bytes.Index(object_content, []byte("\000")) + 1
+	header := string(object_content[:headerSize])
+	content := object_content[headerSize:]
+	var objectType string
+	var object_size int
+	_, err = fmt.Sscanf(header, "%s %d", &objectType, object_size)
+	if err != nil {
+		return nil, err
+	} else {
+		switch objectType {
+		case "blob":
+			new_object = NewGitBlobFromContent(object_size, content)
+		case "tree":
+			new_object = NewGitTreeFromContent(content)
+		case "commit":
+			new_object = NewGitCommitFromContent(content)
+
+		}
+	}
+	return new_object, nil
 }
 
 func NewGitBlob(filepath string) (*GitBlob, error) {
@@ -220,22 +272,8 @@ func NewGitTree(filepath string) (*GitTree, error) {
 		}
 		entries := append(tree.entries, *treeEntry)
 		tree.entries = entries
-		}
 	}
 	return tree, nil
-}
-
-type GitCommit struct {
-	treeHash      []byte
-	parentCount   int
-	parentHashes  *[][]byte
-	authorName    string
-	authorEmail   string
-	authorTime    time.Time
-	comitterName  string
-	comitterEmail string
-	comitterTime  time.Time
-	message       string
 }
 
 func NewFileDetailsPtr(filepath string) (*FileDetails, error) {
@@ -337,26 +375,40 @@ func ReadFile(filepath string) ([]byte, error) {
 	return fileContent, nil
 }
 
+func ParseArgs() {
+	// Parse command line arguments
+
+}
+
 func main() {
-	filePath := "/home/jharmon/.bashrc"
+
+	//var nFlag = flag.Int("n", 10, "Number of lines to read")
+	var fFlag = flag.String("f", "", "File to read")
+	var wFlag = flag.String("w", "output.txt", "File to write to")
+	flag.Parse()
+	fmt.Printf("%v\n", *fFlag)
+	fmt.Printf("%v\n", *wFlag)
+
+	//fmt.Printf("%v\n", *nFlag)
+	// filePath := "/home/jharmon/.bashrc"
 	// Open the file
-	file, err := os.Open(filePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
+	// file, err := os.Open(filePath)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer file.Close()
 
-	// Create a new SHA256 hash
-	hash := sha256.New()
+	// // Create a new SHA256 hash
+	// hash := sha256.New()
 
-	// Copy the file data into the hash
-	if _, err := io.Copy(hash, file); err != nil {
-		log.Fatal(err)
-	}
+	// // Copy the file data into the hash
+	// if _, err := io.Copy(hash, file); err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	// Get the final hash sum
-	hashInBytes := hash.Sum(nil)                   // returns []byte
-	hashInString := fmt.Sprintf("%x", hashInBytes) // returns string
+	// // Get the final hash sum
+	// hashInBytes := hash.Sum(nil)                   // returns []byte
+	// hashInString := fmt.Sprintf("%x", hashInBytes) // returns string
 
-	fmt.Println("SHA-256 hash:", hashInString)
+	// fmt.Println("SHA-256 hash:", hashInString)
 }
