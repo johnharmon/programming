@@ -108,66 +108,9 @@ func (b *GitBlob) Init(filepath string) error {
 	return nil
 }
 
-func NewGitBlob(filepath string) (*GitBlob, error) {
-	blob := &GitBlob{}
-	err := blob.Init(filepath)
-	if err != nil {
-		return nil, err
-	}
-	return blob, nil
-}
-
-type GitTreeEntry struct {
-	mode      int
-	entryType string
-	hash      []byte
-	name      string
-	object    GitObject
-}
-
-func NewGitTreeEntry(filepath string) (*GitTreeEntry, error) {
-	entry := &GitTreeEntry{}
-	//var err error
-	file_details, fderr := NewFileDetailsPtr(filepath)
-	if fderr != nil {
-		return entry, fderr
-	}
-	if !file_details.IsDir { // Open file and hash if if not a directory
-		bObj, berr := NewGitBlob(filepath)
-		if berr != nil {
-			return entry, berr
-		} else {
-			entry.object = bObj
-		}
-		file, ferr := os.Open(filepath)
-		if ferr != nil {
-			return entry, ferr
-		}
-		defer file.Close()
-		_ = bObj.GenHash()
-
-	} else {
-		tree, terr := NewGitTree(fp.Join(filepath, file_details.Name))
-		if terr != nil {
-			return entry, terr
-		} else {
-			entry.object = tree
-		}
-	}
-	entry.name = file_details.Name
-	entry.mode = int(file_details.Mode)
-	if file_details.IsDir {
-		entry.entryType = "tree"
-	} else {
-		entry.entryType = "blob"
-	}
-
-	return entry, nil
-}
-
 type GitTree struct {
 	entryCount int
-	entries    *[]GitTreeEntry
+	entries    []GitTreeEntry
 	hash       []byte
 	name       string
 	size       int
@@ -184,7 +127,7 @@ func (t *GitTree) GetHash() []byte {
 func (t *GitTree) GenHash() []byte {
 	hash := sha256.New()
 	hash.Write([]byte(fmt.Sprintf("tree %d\000", t.size)))
-	for _, entry := range *t.entries {
+	for _, entry := range t.entries {
 		hash.Write([]byte(fmt.Sprintf("%d %s %s\000", entry.mode, entry.name, entry.hash)))
 	}
 	hash_sum := hash.Sum(nil)
@@ -193,13 +136,75 @@ func (t *GitTree) GenHash() []byte {
 }
 
 func (t *GitTree) AddEntry(entry GitTreeEntry) {
-	*t.entries = append(*t.entries, entry)
+	t.entries = append(t.entries, entry)
+}
+
+type GitTreeEntry struct {
+	mode      int
+	entryType string
+	hash      []byte
+	name      string
+	object    GitObject
+}
+
+func NewGitBlob(filepath string) (*GitBlob, error) {
+	blob := &GitBlob{}
+	err := blob.Init(filepath)
+	if err != nil {
+		return nil, err
+	}
+	return blob, nil
+}
+
+func NewGitTreeEntry(filepath string) (*GitTreeEntry, error) {
+	entry := &GitTreeEntry{}
+	//var err error
+	file_details, fderr := NewFileDetailsPtr(filepath)
+	if fderr != nil {
+		return entry, fderr
+	}
+	entry.mode = int(file_details.Mode)
+	entry.name = file_details.Name
+	entry.entryType = entry.object.GetType()
+	if !file_details.IsDir { // Open file and hash if if not a directory
+		bObj, berr := NewGitBlob(filepath)
+		if berr != nil {
+			return entry, berr
+		} else {
+			entry.object = bObj
+			entry.hash = entry.object.GenHash()
+		}
+		file, ferr := os.Open(filepath)
+		if ferr != nil {
+			return entry, ferr
+		}
+		defer file.Close()
+		_ = bObj.GenHash()
+
+	} else {
+		tree, terr := NewGitTree(fp.Join(filepath, file_details.Name))
+		if terr != nil {
+			return entry, terr
+		} else {
+			entry.object = tree
+			entry.hash = entry.object.GenHash()
+		}
+	}
+	entry.name = file_details.Name
+	entry.mode = int(file_details.Mode)
+	if file_details.IsDir {
+		entry.entryType = "tree"
+	} else {
+		entry.entryType = "blob"
+	}
+
+	return entry, nil
 }
 
 func NewGitTree(filepath string) (*GitTree, error) {
 	//var err error
 	tree := &GitTree{}
-	tree.entries = &[]GitTreeEntry{}
+	tree.entries = []GitTreeEntry{}
 	dirEntries, derr := os.ReadDir(filepath)
 	if derr != nil {
 		return tree, derr
@@ -209,23 +214,15 @@ func NewGitTree(filepath string) (*GitTree, error) {
 		if err != nil {
 			return tree, err
 		}
-		if entryInfo.IsDir {
-			treeEntry, terr := NewGitTreeEntry(fp.Join(filepath, entryInfo.Name))
-			if terr != nil {
-				return tree, terr
-			}
-			entries := append(*tree.entries, *treeEntry)
-			tree.entries = &entries
-		} else {
-			treeEntry, terr := NewGitTreeEntry(fp.Join(filepath, entryInfo.Name))
-			if terr != nil {
-				return tree, terr
-			}
-			entries := append(*tree.entries, *treeEntry)
-			tree.entries = &entries
+		treeEntry, terr := NewGitTreeEntry(fp.Join(filepath, entryInfo.Name))
+		if terr != nil {
+			return tree, terr
 		}
-		return tree, nil
+		entries := append(tree.entries, *treeEntry)
+		tree.entries = entries
+		}
 	}
+	return tree, nil
 }
 
 type GitCommit struct {
