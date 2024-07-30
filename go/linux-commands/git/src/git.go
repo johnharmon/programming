@@ -375,8 +375,38 @@ func ReadFile(filepath string) ([]byte, error) {
 	return fileContent, nil
 }
 
-func ParseArgs() {
-	// Parse command line arguments
+func ReadWriteFile(sourcepath string, targetpath string, chunkSize int) error {
+	sourcefile, err := os.Open(sourcepath)
+	if err != nil {
+		return err
+	}
+	sourceFileDetails, err := NewFileDetailsPtr(sourcepath)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Source file details: %v\n", *sourceFileDetails)
+
+	defer sourcefile.Close()
+	targetfile, err := os.Create(targetpath)
+	if err != nil {
+		return err
+	}
+	defer targetfile.Close()
+	chunk := make([]byte, chunkSize)
+	for {
+		bytesRead, err := sourcefile.Read(chunk)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		fmt.Printf("Bytes read: %d\n", bytesRead)
+		if bytesRead > 0 {
+			fmt.Printf("Writing %d bytes\n", bytesRead)
+			targetfile.Write(chunk[:bytesRead])
+		} else {
+			break
+		}
+	}
+	return nil
 
 }
 
@@ -388,6 +418,14 @@ func main() {
 	flag.Parse()
 	fmt.Printf("%v\n", *fFlag)
 	fmt.Printf("%v\n", *wFlag)
+
+	err := ReadWriteFile(*fFlag, *wFlag, 8192)
+	if err != nil {
+		logExit(err, 1)
+	} else {
+		fmt.Printf("File %s written to %s\n", *fFlag, *wFlag)
+		os.Exit(0)
+	}
 
 	//fmt.Printf("%v\n", *nFlag)
 	// filePath := "/home/jharmon/.bashrc"
