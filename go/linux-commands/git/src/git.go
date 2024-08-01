@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/zlib"
 	"crypto/sha256"
 	"encoding/hex"
 	"flag"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"os"
 	fp "path/filepath"
+	"strconv"
 	"syscall"
 )
 
@@ -114,8 +116,14 @@ func NewGitBlobFromContent(size int, content []byte) *GitBlob {
 
 }
 
-func NewGitTreeFromContent(content []byte) *GitTree {
+func (*GitTree) ProcessTreeEntries() error {
+
+}
+
+func NewGitTreeFromContent(content []byte, hash []byte, header []byte) *GitTree {
 	tree := &GitTree{}
+	tree.hash = hash
+	tree.content = &content
 	tree.entries = []GitTreeEntry{}
 	return tree
 }
@@ -149,10 +157,30 @@ func (c *GitCommit) GenHash() []byte {
 	return hash_sum
 }
 
+func CompressBytes(content []byte) ([]byte, error) {
+	var compressed bytes.Buffer
+	w := zlib.NewWriter(&compressed)
+	w.Write(content)
+	defer w.Close()
+	err := w.Flush()
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("Compressed bytes: %s\n", compressed.String())
+	return compressed.Bytes(), nil
+}
+
 func (b *GitBlob) WriteBlobToFile() error {
 	hash := b.GenHash()
-	hash_prefix := hash[0:2]
-	hash_path := fp.Join(".git", "objects", string(hash_prefix), string(hash[2:]))
+	dirmode := os.FileMode(0755)
+	hash_prefix := hex.EncodeToString(hash[0:2])
+	hash_suffix := hex.EncodeToString(hash[2:])
+	fmt.Printf("Hash: %s\n", hex.EncodeToString(hash))
+	hash_directory := fp.Join(".gitg", "objects", hash_prefix)
+	os.MkdirAll(hash_directory, dirmode)
+
+	hash_path := fp.Join(".gitg", "objects", hash_prefix, hash_suffix)
+	fmt.Printf("Hash path: %s\n", hash_path)
 	object_file, err := os.Create(hash_path)
 	if err != nil {
 		return err
@@ -160,43 +188,98 @@ func (b *GitBlob) WriteBlobToFile() error {
 	defer object_file.Close()
 	header := fmt.Sprintf("blob %d\000", b.size)
 	object_file.Write([]byte(header))
-	object_file.Write(*b.content)
+	compressed_content, err := CompressBytes(*b.content)
+	if err != nil {
+		return err
+	}
+	object_file.Write(compressed_content)
 	return nil
 }
 
-func FetchObjectFromHash(hash []byte) (GitObject, error) {
-	var new_object GitObject
-	hash_prefix := hash[0:2]
-	hash_path := fp.Join(".git", "objects", string(hash_prefix), string(hash[2:]))
+func ReadObjectFromFile(hash []byte) (GitObject, error) {
+	hash_prefix := hex.EncodeToString(hash[0:2])
+	hash_file := hex.EncodeToString(hash[2:])
+	hash_path := fp.Join(".gitg", "objects", hash_prefix, hash_file)
 	object_file, err := os.Open(hash_path)
 	if err != nil {
 		return nil, err
 	}
 	defer object_file.Close()
-	object_content, err := io.ReadAll(object_file)
-	if err != nil {
-		return nil, err
-	}
-	headerSize := bytes.Index(object_content, []byte("\000")) + 1
-	header := string(object_content[:headerSize])
-	content := object_content[headerSize:]
-	var objectType string
-	var object_size int
-	_, err = fmt.Sscanf(header, "%s %d", &objectType, object_size)
-	if err != nil {
-		return nil, err
-	} else {
-		switch objectType {
-		case "blob":
-			new_object = NewGitBlobFromContent(object_size, content)
-		case "tree":
-			new_object = NewGitTreeFromContent(content)
-		case "commit":
-			new_object = NewGitCommitFromContent(content)
-
+	const chunkSize = 8192
+	chunk := make([]byte, chunkSize)
+	var (
+		bytesRead int
+		buffer    bytes.Buffer
+	)
+	for {
+		bytesRead, err = object_file.Read(chunk)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		if bytesRead > 0 {
+			buffer.Write(chunk[:bytesRead])
+		} else {
+			break
 		}
 	}
-	return new_object, nil
+	content := buffer.Bytes()
+	headersize := bytes.Index(content, []byte("\000")) + 1
+	header := content[:headersize]
+	type_location := bytes.Index(header, []byte(" "))
+	objectType := string(header[:type_location])
+	content = content[headersize:]
+	if objectType == "tree" {
+		tree := NewGitTreeFromContent(content, hash, header)
+		return tree, nil
+	} else if objectType == "blob" {
+		sblobSize := string(header[type_location+1 : headersize-1])
+		blobSize, err := strconv.Atoi(sblobSize)
+		if err != nil {
+			return nil, err
+		}
+		blob := NewGitBlobFromContent(blobSize, content)
+		return blob, nil
+	} else if objectType == "commit" {
+		commit := NewGitCommitFromContent(content)
+		return commit, nil
+
+	}
+	return nil, nil
+}
+
+// func FetchObjectFromHash(hash []byte) (GitObject, error) {
+// 	var new_object GitObject
+// 	hash_prefix := hash[0:2]
+// 	hash_path := fp.Join("\.gitg", "objects", string(hash_prefix), string(hash[2:]))
+// 	object_file, err := os.Open(hash_path)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer object_file.Close()
+// 	object_content, err := io.ReadAll(object_file)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	headerSize := bytes.Index(object_content, []byte("\000")) + 1
+// 	header := string(object_content[:headerSize])
+// 	content := object_content[headerSize:]
+// 	var objectType string
+// 	var object_size int
+// 	_, err = fmt.Sscanf(header, "%s %d", &objectType, object_size)
+// 	if err != nil {
+// 		return nil, err
+// 	} else {
+// 		switch objectType {
+// 		case "blob":
+// 			new_object = NewGitBlobFromContent(object_size, content)
+// 		case "tree":
+// 			new_object = NewGitTreeFromContent(content)
+// 		case "commit":
+// 			new_object = NewGitCommitFromContent(content)
+
+// 		}
+// 	}
+// 	return new_object, nil
 }
 
 func NewGitBlob(filepath string) (*GitBlob, error) {
@@ -251,6 +334,10 @@ func NewGitTreeEntry(filepath string) (*GitTreeEntry, error) {
 	}
 
 	return entry, nil
+}
+
+func (t *GitTree) ProcessEntries() error {
+
 }
 
 func NewGitTree(filepath string) (*GitTree, error) {
@@ -380,13 +467,12 @@ func ReadWriteFile(sourcepath string, targetpath string, chunkSize int) error {
 	if err != nil {
 		return err
 	}
+	defer sourcefile.Close()
 	sourceFileDetails, err := NewFileDetailsPtr(sourcepath)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Source file details: %v\n", *sourceFileDetails)
-
-	defer sourcefile.Close()
 	targetfile, err := os.Create(targetpath)
 	if err != nil {
 		return err
@@ -407,11 +493,9 @@ func ReadWriteFile(sourcepath string, targetpath string, chunkSize int) error {
 		}
 	}
 	return nil
-
 }
 
 func main() {
-
 	//var nFlag = flag.Int("n", 10, "Number of lines to read")
 	var fFlag = flag.String("f", "", "File to read")
 	var wFlag = flag.String("w", "output.txt", "File to write to")
@@ -419,13 +503,20 @@ func main() {
 	fmt.Printf("%v\n", *fFlag)
 	fmt.Printf("%v\n", *wFlag)
 
-	err := ReadWriteFile(*fFlag, *wFlag, 8192)
+	blob, err := NewGitBlob(*fFlag)
 	if err != nil {
 		logExit(err, 1)
-	} else {
-		fmt.Printf("File %s written to %s\n", *fFlag, *wFlag)
-		os.Exit(0)
 	}
+	blob.WriteBlobToFile()
+	fmt.Printf("Blob: %v\n", *blob)
+
+	// err := ReadWriteFile(*fFlag, *wFlag, 8192)
+	// if err != nil {
+	// 	logExit(err, 1)
+	// } else {
+	// 	fmt.Printf("File %s written to %s\n", *fFlag, *wFlag)
+	// 	os.Exit(0)
+	// }
 
 	//fmt.Printf("%v\n", *nFlag)
 	// filePath := "/home/jharmon/.bashrc"
