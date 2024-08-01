@@ -8,10 +8,12 @@ import (
 
 type GitTree struct {
 	entryCount int
+	header     *[]byte
 	entries    []GitTreeEntry
 	hash       []byte
 	name       string
 	size       int
+	content    *[]byte
 }
 
 type FileDetails struct {
@@ -29,6 +31,7 @@ type GitObject interface {
 	GetType() string
 	GetHash() []byte
 	GenHash() []byte
+	//SetContent(*[]byte) error
 }
 
 type GitBlob struct {
