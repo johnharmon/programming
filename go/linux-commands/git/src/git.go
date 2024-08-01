@@ -117,7 +117,7 @@ func NewGitBlobFromContent(size int, content []byte) *GitBlob {
 }
 
 func (*GitTree) ProcessTreeEntries() error {
-
+	return nil
 }
 
 func NewGitTreeFromContent(content []byte, hash []byte, header []byte) *GitTree {
@@ -337,7 +337,7 @@ func NewGitTreeEntry(filepath string) (*GitTreeEntry, error) {
 }
 
 func (t *GitTree) ProcessEntries() error {
-
+	return nil
 }
 
 func NewGitTree(filepath string) (*GitTree, error) {
