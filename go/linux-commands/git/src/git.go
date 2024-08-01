@@ -280,7 +280,7 @@ func ReadObjectFromFile(hash []byte) (GitObject, error) {
 // 		}
 // 	}
 // 	return new_object, nil
-}
+// }
 
 func NewGitBlob(filepath string) (*GitBlob, error) {
 	blob := &GitBlob{}
