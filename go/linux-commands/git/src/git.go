@@ -117,6 +117,7 @@ func NewGitBlobFromContent(size int, content []byte) *GitBlob {
 }
 
 func (*GitTree) ProcessTreeEntries() error {
+
 	return nil
 }
 
@@ -168,6 +169,20 @@ func CompressBytes(content []byte) ([]byte, error) {
 	}
 	fmt.Printf("Compressed bytes: %s\n", compressed.String())
 	return compressed.Bytes(), nil
+}
+
+func DecompressBytes(compressed *[]byte) ([]byte, error) {
+	var decompressed bytes.Buffer
+	r, err := zlib.NewReader(bytes.NewReader(*compressed))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	_, err = io.Copy(&decompressed, r)
+	if err != nil {
+		return nil, err
+	}
+	return decompressed.Bytes(), nil
 }
 
 func (b *GitBlob) WriteBlobToFile() error {

@@ -1,12 +1,3 @@
 ---
 # defaults file for terraform-template
-deployments:
-  proxmox_kube:
-    control_nodes: 2
-    worker_nodes: 3
-  proxmox_free_ipa:
-    ip: 'dhcp'
-    hostname: 'freeipa'
-    template_name: 'proxmox_free_ipa.tf.j2'
-    vm_name: 'freeipa'
-    dns_servers: ['192.168.86.5']
+terraform_path: "{{lookup('env', 'HOME') ~ '/programming/terraform/ansible-projects/'}}"

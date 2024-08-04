@@ -30,20 +30,29 @@
     dest: "~/.test.tf"
     owner: "jharmon"
     mode: "644"
+    force: true
   delegate_to: localhost
 
 - name: "Create terraform project directory"
   ansible.builtin.file:
     state: "directory"
-    path: "{{ terraform_path ~ deployments }}"
+    path: "{{ terraform_path ~ deployment }}"
     mode: "755"
     owner: "jharmon"
     group: "jharmon"
 
-- name: "Apply terraform"
-  community.general.terraform:
-    state: "present"
-    project_path: "{{ terraform_path ~ deployments }}"
+- name: "Copy template result into terrafrorm project"
+  ansible.builtin.copy:
+    content: "{{ deployment_template }}"
+    dest: "{{ terraform_path ~ deployment ~ '/main.tf' }}"
+    owner: "jharmon"
+    mode: "644"
+    force: true
+
+# - name: "Apply terraform"
+#   community.general.terraform:
+#     state: "present"
+#     project_path: "{{ terraform_path ~ deployments }}"
 
 # - name: "Debug template"
 #   ansible.builtin.debug:
