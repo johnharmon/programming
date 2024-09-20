@@ -87,16 +87,6 @@ func main() {
 		fmt.Printf("Error analyzing file: %s\n", err)
 		fmt.Printf("However, before running into an error, here are the counts we got for each message level:\n")
 		PrintAnalysis(message_counts)
-		/*
-			keys_alphabetical := make([]string, 0, len(message_counts))
-			for key, _ := range message_counts {
-				keys_alphabetical = append(keys_alphabetical, key)
-			}
-			sort.Strings(keys_alphabetical)
-			for _, key := range keys_alphabetical {
-				fmt.Printf("%s Messages: %d", key, message_counts[key])
-			}
-		*/
 	} else {
 		PrintAnalysis(message_counts)
 	}
