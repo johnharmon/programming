@@ -143,10 +143,12 @@ func processDir(targetdir string, sep_string string, stat_fileInfo os.FileInfo, 
 func processDirEntries(files_in_dir []os.DirEntry, sep_string string, stat_fileInfo os.FileInfo, stat *syscall.Stat_t, stat_mode os.FileMode) { // Unsused optional arguments, to be used later?
 
 	// Set variables for longest entries for header types of unknown length (name, username, groupname, size)
-	var longest_name int = 0
-	var longest_username int = 0
-	var longest_groupname int = 0
-	var longest_size int = 0
+	var (
+		longest_name      int = 0
+		longest_username  int = 0
+		longest_groupname int = 0
+		longest_size      int = 0
+	)
 
 	// Iterate over files in directory to determine longest name, username, groupname, and size
 	for _, file := range files_in_dir {

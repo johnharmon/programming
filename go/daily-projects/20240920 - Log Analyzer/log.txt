@@ -1,0 +1,6 @@
+INFO: Starting the service
+WARN: Low disk space
+ERROR: Failed to connect to database
+INFO: Service running smoothly
+WARN: Memory usage is high
+ERROR: Connection timeout
