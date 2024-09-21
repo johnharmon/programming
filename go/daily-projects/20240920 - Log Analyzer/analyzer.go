@@ -8,13 +8,13 @@ import (
 	"sort"
 )
 
-func AnalyzeFile(filepath string) (map[string]int, error) {
+func AnalyzeFile(filePath string) (map[string]int, error) {
 	debug := false
-	file, err := os.Open(filepath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening the file: %w", err)
 	}
-	message_counts := map[string]int{
+	messageCounts := map[string]int{
 		"INFO":  0,
 		"WARN":  0,
 		"ERROR": 0,
@@ -25,7 +25,7 @@ func AnalyzeFile(filepath string) (map[string]int, error) {
 	scanner := bufio.NewScanner(file)
 
 	if debug {
-		fmt.Printf("Starting to scan %s\n", filepath)
+		fmt.Printf("Starting to scan %s\n", filePath)
 	}
 
 	for scanner.Scan() {
@@ -35,59 +35,61 @@ func AnalyzeFile(filepath string) (map[string]int, error) {
 		}
 
 		line := scanner.Bytes()
-		header_end := bytes.Index(line, []byte("\072"))
-		line_start := line[:header_end]
-		line_start_string := string(line_start)
+		headerEnd := bytes.Index(line, []byte(":"))
+		if headerEnd == -1 {
+			continue
+		}
+		lineStart := line[:headerEnd]
+		lineStartString := string(lineStart)
 
 		if debug {
-			fmt.Println(line_start_string)
+			fmt.Println(lineStartString)
 		}
 
 		switch {
-		case line_start_string == "INFO":
-			message_counts["INFO"]++
-		case line_start_string == "WARN":
-			message_counts["WARN"]++
-		case line_start_string == "DEBUG":
-			message_counts["DEBUG"]++
-		case line_start_string == "FATAL":
-			message_counts["FATAL"]++
-		case line_start_string == "ERROR":
-			message_counts["ERROR"]++
-		}
-		if err := scanner.Err(); err != nil {
-			return message_counts, err
+		case lineStartString == "INFO":
+			messageCounts["INFO"]++
+		case lineStartString == "WARN":
+			messageCounts["WARN"]++
+		case lineStartString == "DEBUG":
+			messageCounts["DEBUG"]++
+		case lineStartString == "FATAL":
+			messageCounts["FATAL"]++
+		case lineStartString == "ERROR":
+			messageCounts["ERROR"]++
 		}
 	}
-	return message_counts, nil
+	if err := scanner.Err(); err != nil {
+		return messageCounts, err
+	} else {
+		return messageCounts, nil
+	}
 }
 
-func PrintAnalysis(message_counts map[string]int) {
-	keys_alphabetical := make([]string, 0, len(message_counts))
-	for key := range message_counts {
-		keys_alphabetical = append(keys_alphabetical, key)
+func PrintAnalysis(messageCounts map[string]int) {
+	keysAlphabetical := make([]string, 0, len(messageCounts))
+	for key := range messageCounts {
+		keysAlphabetical = append(keysAlphabetical, key)
 	}
-	sort.Strings(keys_alphabetical)
-	for _, key := range keys_alphabetical {
-		fmt.Printf("%s Messages: %d\n", key, message_counts[key])
+	sort.Strings(keysAlphabetical)
+	for _, key := range keysAlphabetical {
+		fmt.Printf("%s Messages: %d\n", key, messageCounts[key])
 	}
 }
 
 func main() {
-	var filepath string
+	var filePath string
 
 	if len(os.Args) > 1 {
-		filepath = os.Args[1]
+		filePath = os.Args[1]
 	} else {
-		filepath = "log.txt"
+		filePath = "log.txt"
 	}
-	fmt.Printf("Analyzing file: %s\n", filepath)
-	message_counts, err := AnalyzeFile(filepath)
+	fmt.Printf("Analyzing file: %s\n", filePath)
+	messageCounts, err := AnalyzeFile(filePath)
 	if err != nil {
 		fmt.Printf("Error analyzing file: %s\n", err)
 		fmt.Printf("However, before running into an error, here are the counts we got for each message level:\n")
-		PrintAnalysis(message_counts)
-	} else {
-		PrintAnalysis(message_counts)
 	}
+	PrintAnalysis(messageCounts)
 }
