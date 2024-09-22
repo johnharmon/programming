@@ -35,7 +35,7 @@ func AnalyzeFile(filePath string) (map[string]int, error) {
 		}
 
 		line := scanner.Bytes()
-		headerEnd := bytes.Index(line, []byte(":"))
+		headerEnd := bytes.Index(line, byte(":"[0]))
 		if headerEnd == -1 {
 			continue
 		}
@@ -72,8 +72,8 @@ func PrintAnalysis(messageCounts map[string]int) {
 		keysAlphabetical = append(keysAlphabetical, key)
 	}
 	sort.Strings(keysAlphabetical)
-	for _, key := range keysAlphabetical {
-		fmt.Printf("%s Messages: %d\n", key, messageCounts[key])
+	for _, item := range keysAlphabetical {
+		fmt.Printf("%s Messages: %d\n", item, messageCounts[item])
 	}
 }
 
