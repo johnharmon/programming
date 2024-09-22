@@ -29,7 +29,6 @@ func main() {
 	doneChan := make(chan bool)
 	go func() {
 		taskWg.Wait()
-		//fmt.Println("all task generators done")
 		close(doneChan)
 	}()
 	workerWg := sync.WaitGroup{}
@@ -37,26 +36,17 @@ func main() {
 		workerWg.Add(1)
 		go func(i int) {
 			defer workerWg.Done()
-			//workerResults := []int{}
 			for {
-				//allClosed := true
 				remainingChannels := 0
 				for _, taskChannel := range taskChannels {
 					chi, ok := <-taskChannel
 					if !ok {
 						continue
 					}
-					//allClosed = false
 					remainingChannels++
 					processedResult := chi * chi
 					fmt.Printf("Worker %d processed task #%d with result %d\n", i, chi, processedResult)
 				}
-				//				if allClosed {
-				//					break
-				//				}
-				//				if allClosed {
-				//					return
-				//				}
 				select {
 				case <-doneChan:
 					return
