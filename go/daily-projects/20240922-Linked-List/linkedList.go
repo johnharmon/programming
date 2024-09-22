@@ -74,6 +74,7 @@ func removeFromEnd(list *linkedList) {
 }
 
 func removeNodePtr(head **listNode, previousNode *listNode) {
+	// Pass double pointer, only needed to move the head of the actual list wrapping our nodes
 	if previousNode != nil { // We are not at the head of the list
 		if (*head).next != nil { // we are not at the end either
 			previousNode.next = (*head).next
@@ -83,6 +84,10 @@ func removeNodePtr(head **listNode, previousNode *listNode) {
 		}
 	} else { // We are at the current head of the list
 		if (*head).next != nil {
+			// use double pointer to change the location the real pointer is pointing to
+			// *head -> head = linkeList.head
+			// want to change the location head (*listNode) is pointing to, not the thing itself
+			// so a double pointer allows me to make modifications to essentially the integer that head actually is, allowing me to point it to a different memory address
 			*head = (*head).next // Move head to the second element, GC will clean up the old head
 		} else { // We are a one node list
 			*head = nil // Zero out only existing node
