@@ -5,9 +5,8 @@ import (
 	"sync"
 )
 
-func genTasks(limit int) ([]chan int, *sync.WaitGroup) {
+func genTasks(limit int, taskWg *sync.WaitGroup) []chan int {
 	perChannelLimit := limit / 5
-	taskWg := &sync.WaitGroup{}
 	var taskChannels []chan int
 	for t := 1; t < 6; t++ {
 		taskWg.Add(1)
@@ -21,15 +20,16 @@ func genTasks(limit int) ([]chan int, *sync.WaitGroup) {
 		}(t)
 		taskChannels = append(taskChannels, taskChannel)
 	}
-	return taskChannels, taskWg
+	return taskChannels
 }
 func main() {
 	limit := 20000
-	taskChannels, taskWg := genTasks(limit)
+	taskWg := &sync.WaitGroup{}
+	taskChannels := genTasks(limit, taskWg)
 	doneChan := make(chan bool)
 	go func() {
 		taskWg.Wait()
-		fmt.Println("all task generators done")
+		//fmt.Println("all task generators done")
 		close(doneChan)
 	}()
 	workerWg := sync.WaitGroup{}
