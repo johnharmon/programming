@@ -22,6 +22,7 @@ func genTasks(limit int, taskWg *sync.WaitGroup) []chan int {
 	}
 	return taskChannels
 }
+
 func main() {
 	limit := 20000
 	taskWg := &sync.WaitGroup{}
@@ -52,9 +53,7 @@ func main() {
 					return
 				default:
 				}
-
 			}
-
 		}(itr)
 	}
 	workerWg.Wait()
