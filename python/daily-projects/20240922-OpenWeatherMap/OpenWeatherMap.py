@@ -13,8 +13,6 @@ class locationInfo():
         self.state = state
         self.country = country 
 
-
-
 def getLatLon(city, apiKey = ''):
 
     apiUrl = f'http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={apiKey}'
@@ -27,7 +25,6 @@ def getLatLon(city, apiKey = ''):
     #http://api.openweathermap.org/geo/1.0/direct?q=London&limit=5&appid={API key}
     #print(response)
     #print(json.dumps(response.json(), indent=2))
-
 
 def queryCity(city, apiKey):
     cityInfo = getLatLon(city, apiKey)
@@ -54,9 +51,6 @@ def displayCity(cityData):
     print(f'  Weather: {cityData["weather"][0]["description"]}')
     print(f'  Wind:')
     print(f'    Deg: {cityData["wind"]["deg"]},  Speed: {cityData["wind"]["speed"]} kts')
-
-
-    
 
 def main():
     city = sys.argv[1]
