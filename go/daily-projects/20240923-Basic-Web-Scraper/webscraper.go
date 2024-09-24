@@ -23,7 +23,6 @@ func queryUrl(url string) (urlBody []byte, err error) {
 }
 
 func analyzeUrlBody(urlBody []byte) ([][]byte, error) {
-	//linkRegex, err := regexp.Compile("<a .*?href=.*?</a>")
 	linkRegex, err := regexp.Compile("<a .*?href=.*?(/>|</a>)")
 	if err != nil {
 		return nil, fmt.Errorf("error compiling regex: %w", err)
@@ -53,6 +52,7 @@ func main() {
 	matches, err := analyzeUrlBody(urlBody)
 	if err != nil {
 		fmt.Printf("Error: %+v\n", err)
+		os.Exit(2)
 	}
 	showMatches(matches)
 }
