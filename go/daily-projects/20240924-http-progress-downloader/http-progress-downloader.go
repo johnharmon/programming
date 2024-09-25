@@ -18,6 +18,21 @@ func headUrl(url string) (contentLength int64, err error) {
 	}
 }
 
+func makeProgressBar(progressInt int) (progressBar []byte) {
+	progressByte := byte(0174) //Pipe
+	emptyByte := byte(040)     // Space
+	for i := 0; i < 100; i++ {
+		if i < progressInt {
+			progressBar = append(progressBar, progressByte)
+		} else if i >= progressInt && i < 99 {
+			progressBar = append(progressBar, emptyByte)
+		} else {
+			progressBar = append(progressBar, progressByte)
+		}
+	}
+	return progressBar
+}
+
 func getUrl(url string, contentLength int64) (err error) {
 	var useProgressBar bool
 	chunkSize := 4096
@@ -34,11 +49,8 @@ func getUrl(url string, contentLength int64) (err error) {
 		return fmt.Errorf("error downloading the specified resource: %w", err)
 	}
 	if useProgressBar {
-		//progressBar := make([]byte, 100)
 		fmt.Println("Downloading with progress indicator")
-		//progressBarTicSize = contentLength / 10000
-		// "\0124"
-		downloadFile, err := os.Open("./download")
+		downloadFile, err := os.OpenFile("./download", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		downloadReader := urlDownloadResponse.Body
 		if err != nil {
 			return fmt.Errorf("error opening speficied file to write download to: %w", err)
@@ -51,9 +63,13 @@ func getUrl(url string, contentLength int64) (err error) {
 			if bytesRead > 0 {
 				contentRead = contentRead + int64(bytesRead)
 				percentDone = int64(float64(contentRead) / float64(contentLength) * 100)
-				downloadFile.Write(buf)
-				fmt.Printf("%d%% Done\r", percentDone)
+				progressBar := makeProgressBar(int(percentDone))
+				downloadFile.Write(buf[:bytesRead])
+				if err == nil {
+					fmt.Printf("%d%% %s\r", percentDone, string(progressBar))
+				}
 				if err != nil && (err == io.EOF) {
+					fmt.Printf("%d%% %s", percentDone, string(progressBar))
 					return nil
 				} else if err != nil {
 					//fmt.Printf("Unknown error, %+v", err)
@@ -93,6 +109,9 @@ func main() {
 		if err != nil {
 			//log.Fatal("Error: %s\n", err)
 			log.Fatalf("Error: %+v\n", err)
+		} else {
+			fmt.Println("")
+
 		}
 	}
 }
