@@ -12,9 +12,6 @@ func createSplitFunc(splitChar []byte) func(data []byte, atEOF bool) (advance in
 	buffering := false
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		splitIndex := bytes.Index(data, splitChar)
-		//		fmt.Printf("data: %s", string(data))
-		//		fmt.Printf("Split index: %d\n", splitIndex)
-		//		fmt.Printf("atEOF: %t\n", atEOF)
 		err = nil
 		if splitIndex == -1 {
 			if atEOF {
@@ -22,9 +19,7 @@ func createSplitFunc(splitChar []byte) func(data []byte, atEOF bool) (advance in
 				if len(data) != 0 {
 					token = append(tokenBuffer, data[:]...)
 				} else if len(tokenBuffer) > 0 {
-					//fmt.Println("Copying data from token buffer")
 					token = append(token, tokenBuffer...)
-					//fmt.Printf("Token after appending: %s", string(token))
 				}
 				tokenBuffer = tokenBuffer[:0]
 
@@ -34,7 +29,6 @@ func createSplitFunc(splitChar []byte) func(data []byte, atEOF bool) (advance in
 			}
 			advance = len(data)
 		} else {
-			//fmt.Println("got split match")
 			if buffering {
 				token = append(tokenBuffer, data[:splitIndex]...)
 				tokenBuffer = tokenBuffer[:0]
@@ -42,16 +36,11 @@ func createSplitFunc(splitChar []byte) func(data []byte, atEOF bool) (advance in
 			} else {
 				token = data[:splitIndex]
 			}
-			//fmt.Printf("%s\n", string(token))
 			advance = splitIndex + 1
-			//fmt.Printf("Advance is : %d\n", advance)
-			//fmt.Printf("splitIndex is : %d\n", splitIndex)
 		}
 		if len(token) < 1 {
 			token = nil
 		}
-		//fmt.Printf("token: %s\n", string(token))
-		//fmt.Printf("tokenBuffer: %s\n", string(tokenBuffer))
 		return advance, token, err
 	}
 }
