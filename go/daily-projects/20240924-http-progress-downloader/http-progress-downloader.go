@@ -10,21 +10,18 @@ import (
 
 type ProgressBar []byte
 
-func (ProgressBar) Render(progress int) []byte {
-	progressBar := make([]byte, 100)
+func (p ProgressBar) Render(progress int) {
 	progressByte := byte(0174) //Pipe
 	emptyByte := byte(040)     // Space
 	for i := 0; i < 100; i++ {
 		if i < progress {
-			progressBar[i] = progressByte
+			p[i] = progressByte
 		} else if i >= progress && i < 99 {
-			progressBar[i] = emptyByte
+			p[i] = emptyByte
 		} else {
-			progressBar[i] = progressByte
+			p[i] = progressByte
 		}
 	}
-	return progressBar
-
 }
 
 func headUrl(url string) (contentLength int64, err error) {
@@ -35,21 +32,6 @@ func headUrl(url string) (contentLength int64, err error) {
 		contentLength = headResponse.ContentLength
 		return contentLength, nil
 	}
-}
-
-func makeProgressBar(progressInt int) (progressBar []byte) {
-	progressByte := byte(0174) //Pipe
-	emptyByte := byte(040)     // Space
-	for i := 0; i < 100; i++ {
-		if i < progressInt {
-			progressBar = append(progressBar, progressByte)
-		} else if i >= progressInt && i < 99 {
-			progressBar = append(progressBar, emptyByte)
-		} else {
-			progressBar = append(progressBar, progressByte)
-		}
-	}
-	return progressBar
 }
 
 func getUrl(url string, contentLength int64) (err error) {
@@ -76,22 +58,21 @@ func getUrl(url string, contentLength int64) (err error) {
 		}
 		defer downloadFile.Close()
 		buf := make([]byte, chunkSize)
+		p := make(ProgressBar, 100)
 		for {
 			bytesRead, err := downloadReader.Read(buf)
-			//fmt.Printf("Read chunk\n")
 			if bytesRead > 0 {
 				contentRead = contentRead + int64(bytesRead)
 				percentDone = int64(float64(contentRead) / float64(contentLength) * 100)
-				progressBar := makeProgressBar(int(percentDone))
+				p.Render(int(percentDone))
 				downloadFile.Write(buf[:bytesRead])
 				if err == nil {
-					fmt.Printf("%d%% %s\r", percentDone, string(progressBar))
+					fmt.Printf("%d%% %s\r", percentDone, string(p))
 				}
 				if err != nil && (err == io.EOF) {
-					fmt.Printf("%d%% %s", percentDone, string(progressBar))
+					fmt.Printf("%d%% %s", percentDone, string(p))
 					return nil
 				} else if err != nil {
-					//fmt.Printf("Unknown error, %+v", err)
 					return fmt.Errorf("error: %w", err)
 				}
 			}
@@ -109,6 +90,7 @@ func getUrl(url string, contentLength int64) (err error) {
 
 func main() {
 	var url string
+	//progressBar := make(ProgressBar, 100)
 
 	if len(os.Args) < 2 {
 		url = "https://go.dev/dl/go1.23.1.darwin-amd64.pkg"
