@@ -34,10 +34,9 @@ func createTaskFile(taskFile string) (taskFileObj *os.File, funcErr error) { // 
 func processLine(line []byte) (newLine []byte, doPrint bool) {
 	lineString := string(line)
 	lineString = strings.TrimSpace(lineString)
-	//fmt.Printf("%s\n", lineString)
-	if lineString != "" {
-		newLine = append(line, byte(012)) // append newline
-		if strings.HasPrefix(lineString, "//") || strings.HasPrefix(lineString, "#") {
+	if lineString != "" { // only care about non empty lines, will NOT write empty lines back to the file
+		newLine = append(line, byte(012))                                              // append new line
+		if strings.HasPrefix(lineString, "//") || strings.HasPrefix(lineString, "#") { // keep comments in file, but do not print them
 			return newLine, false
 		} else {
 			return newLine, true
@@ -53,8 +52,6 @@ func printTasks(taskFile *os.File) error {
 	newLines := []byte{}
 
 	for scanner.Scan() {
-		//fmt.Printf("%s\n", scanner.Text())
-		//line := strings.TrimSpace(scanner.Text())
 		newLine, doPrint := processLine(scanner.Bytes())
 		if newLine != nil {
 			newLines = append(newLines, newLine...)
@@ -63,17 +60,6 @@ func printTasks(taskFile *os.File) error {
 			taskNumber++
 			fmt.Printf("%d.  %s", taskNumber, newLine)
 		}
-		/*		if line != "" {
-						newLines = append(newLines, scanner.Bytes()...)
-						newLines = append(newLines, byte(012))
-						if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "#") {
-							continue
-						} else {
-							taskNumber++
-						}
-					}
-				}
-		*/
 	}
 	scanError := scanner.Err()
 	if scanError != nil {
