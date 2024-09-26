@@ -8,6 +8,25 @@ import (
 	"os"
 )
 
+type ProgressBar []byte
+
+func (ProgressBar) Render(progress int) []byte {
+	progressBar := make([]byte, 100)
+	progressByte := byte(0174) //Pipe
+	emptyByte := byte(040)     // Space
+	for i := 0; i < 100; i++ {
+		if i < progress {
+			progressBar[i] = progressByte
+		} else if i >= progress && i < 99 {
+			progressBar[i] = emptyByte
+		} else {
+			progressBar[i] = progressByte
+		}
+	}
+	return progressBar
+
+}
+
 func headUrl(url string) (contentLength int64, err error) {
 	headResponse, err := http.Head(url)
 	if err != nil {
