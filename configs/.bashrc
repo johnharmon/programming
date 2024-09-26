@@ -662,3 +662,10 @@ function python-daily() {
 	echo -e "if __name__ == '__main__':\n\tmain()" >> ${pythonFile}
 }
 export EDITOR=/usr/bin/vim
+
+
+function cdf (){ # Function to cd into local directory based off .*<pattern>.* matching in current directory
+	file_list=$(find . -maxdepth 1 -type d -iregex ".*${1}.*" 2>/dev/null | head -n 1)
+	 
+
+}
