@@ -6,42 +6,8 @@ import (
 	"net"
 )
 
-type ChatMessage struct { // All messages will be wrapped/unwrapped via this struct on either side
-	Username     string `json:"username"`
-	Message      string `json:"message"`
-	Timestamp    int64  `json:"timestamp"`
-	ConnectionID int    `json:"connection_id"`
-}
-
-type ChatConnectionState struct { // Will be used to update the server that connections are being made/terminated
-	Username     string `json:"username"`
-	State        string `json:"connection_state"`
-	ConnectionID int    `json:"connection_id"`
-}
-
-type ChatClient struct {
-	Username          string
-	ConnectionAddress net.IP
-	ConnectionChannel chan ChatMessage
-	ConnectionID      int
-}
-
-type ClientUpdate struct {
-	ClientID     string
-	ConnectionID int
-	Channel      chan ChatMessage
-	Action       string // "connect" or "disconnect"
-}
-
 func NewClientUpdate(clientID string, connectionID int, chatChan chan ChatMessage, action string) ClientUpdate {
 
-}
-
-type GlobalBroadcaster struct {
-	globalProducer chan ChatMessage
-	//globalConsumers map[string]chan ChatMessage // map of all channels clients are consuming from, whenever anything is sent to the global producer, it replicates to all global consumers
-	ClientUpdates chan ClientUpdate  // channel that takes connection states, used to update the internal map of client channeld to send to
-	globalClients map[int]ChatClient // map of chat clients, try to coordinate ChatClient.ConnectionID with the map key
 }
 
 func (gb *GlobalBroadcaster) addConnection(conn *net.Conn) error {
@@ -76,6 +42,8 @@ func NewChatClient(cu ClientUpdate) ChatClient {
 }
 
 func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
+	gb.globalClientUpdateMut.Lock()
+	defer gb.globalClientUpdateMut.Unlock()
 	if cu.Action == "connect" {
 		//gb.globalClients[cu.ConnectionID] = NewChatClient(cu)
 		gb.globalClients[cu.ConnectionID] = NewChatClient(cu)
@@ -101,7 +69,12 @@ func ManageGlobalBroadcaster(gb *GlobalBroadcaster) {
 }
 
 func handleConnection(conn net.Conn, gb *GlobalBroadcaster, lci *int) error {
-	clientUpdate := ClientUpdate{}
+	clientUpdate := ClientUpdate{
+		ClientID:     "",
+		ConnectionID: *lci + 1,
+		Channel:      make(chan ChatMessage),
+		Action:       "connect",
+	}
 	dataBuf := []byte{}
 	_, err := conn.Read(dataBuf)
 	if err != nil {
