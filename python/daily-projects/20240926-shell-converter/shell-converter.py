@@ -8,7 +8,7 @@ import collections
 import re
 
 
-def validate_assignment(line) -> (bool, dict):
+def validate_assignment(line) -> bool:
 		open_doubles = 0
 		open_singles = 0
 		is_valid = False
@@ -38,7 +38,7 @@ def validate_assignment(line) -> (bool, dict):
 			elif character == '=':
 				if open_singles == 0 and open_doubles == 0:
 					return True
-		return False
+		return False, {}
 
 
 
