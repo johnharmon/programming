@@ -8,7 +8,7 @@ import collections
 import re
 
 
-def validate_assignment(line) -> bool:
+def validate_assignment(line) -> (bool, dict):
 		open_doubles = 0
 		open_singles = 0
 		is_valid = False
@@ -20,10 +20,10 @@ def validate_assignment(line) -> bool:
 					continue
 				elif open_singles < 1:
 					open_singles += 1
-					print(f'Opening single quote begins.\nRemaining line: {line[index:]}')
+					print(f'Opening single quote begins.\nRemaining line: {line[index:]}', end='')
 				else:
 					open_singles -= 1
-					print(f'Closing single quote\nRemaining line: {line[index:]}')
+					print(f'Closing single quote\nRemaining line: {line[index:]}', end='')
 				
 			elif character == '"':
 				#print('double boi')
@@ -31,10 +31,10 @@ def validate_assignment(line) -> bool:
 					continue
 				elif open_doubles < 1:
 					open_doubles += 1
-					print(f'Opening double quote begins\nRemaining line: {line[index:]}')
+					print(f'Opening double quote begins\nRemaining line: {line[index:]}', end='')
 				elif open_doubles > 0:
 					open_doubles -= 1
-					print(f'Closing double quote\nRemaining line: {line[index:]}')
+					print(f'Closing double quote\nRemaining line: {line[index:]}', end='')
 			elif character == '=':
 				if open_singles == 0 and open_doubles == 0:
 					return True
@@ -74,7 +74,7 @@ def main():
 		##sy.write(yaml.dump(shell_data, default_flow_style=False))
 	with open(sys.argv[1], 'r') as input_file:
 		for line in input_file.readlines():
-			print(validate_assignment(line))
+			print(validate_assignment(f'{line}\n'))
 
 if __name__ == '__main__':
 	main()
