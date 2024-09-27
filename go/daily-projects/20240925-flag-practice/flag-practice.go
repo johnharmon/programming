@@ -24,25 +24,31 @@ func addLine(content []byte, newLine []byte) (newContent []byte) {
 	return content
 }
 
-func createTaskFile(taskFile string) (taskFileObj *os.File, funcErr error) { // returns an open file, be sure to close it :)
+func openTaskFile(taskFile string) (taskFileObj *os.File, funcErr error) {
 	fileInfo, err := os.Stat(taskFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			_, createErr := os.Create(taskFile)
-			if createErr != nil {
-				return nil, fmt.Errorf("error creating new task file: %w", createErr)
-			}
-			fileInfo, err = os.Stat(taskFile)
+			taskFileObj, err = createTaskFile(taskFile)
 			if err != nil {
-				return nil, fmt.Errorf("error getting file stat: %w", err)
+				return nil, err
 			}
+			return taskFileObj, nil
 		} else {
-			return nil, fmt.Errorf("error getting file stat: %w", err)
+			return nil, fmt.Errorf("unknown error on file stat %w", err)
 		}
+	} else {
+		taskFileObj, funcErr = os.OpenFile(taskFile, os.O_RDWR|os.O_CREATE, fileInfo.Mode())
+		if err != nil {
+			return nil, fmt.Errorf("error opening existing file: %w", funcErr)
+		}
+		return taskFileObj, nil
 	}
-	taskFileObj, openErr := os.OpenFile(taskFile, os.O_RDWR|os.O_CREATE, fileInfo.Mode())
-	if openErr != nil {
-		return nil, fmt.Errorf("error opening created file: %w", openErr)
+}
+
+func createTaskFile(taskFile string) (taskFileObj *os.File, funcErr error) { // returns an open file, be sure to close it :)
+	_, createErr := os.Create(taskFile)
+	if createErr != nil {
+		return nil, fmt.Errorf("error creating new task file: %w", createErr)
 	}
 	return taskFileObj, nil
 }
@@ -61,12 +67,21 @@ func processLine(line []byte) (newLine []byte, doPrint bool) {
 		return nil, false
 	}
 }
+func makeTaskList(taskFile *os.File) (tasks [][]byte, err error) {
+	scanner := bufio.NewScanner(taskFile)
+	for scanner.Scan() {
+		newLine, doPrint := processLine(scanner.Bytes())
+		if newLine != nil && doPrint {
+			tasks = append(tasks, newLine)
+		}
+	}
+	return tasks, nil
+}
 
 func printTasks(taskFile *os.File) error {
 	scanner := bufio.NewScanner(taskFile)
 	taskNumber := 0
 	newLines := []byte{}
-
 	for scanner.Scan() {
 		newLine, doPrint := processLine(scanner.Bytes())
 		if newLine != nil {
@@ -118,9 +133,42 @@ func addTask(taskFile *os.File, taskString string) (content []byte) {
 	return newFileBytes
 }
 
+func removeTaskByValue(taskFile *os.File, taskString string) (removed bool, removeErr error) {
+	tasks, err := makeTaskList(taskFile)
+	newTasks := []byte{}
+	if err != nil {
+		return false, fmt.Errorf("error generating task list: %w", err)
+	}
+	for index, task := range tasks {
+		if string(task) != taskString {
+			newTasks = append(newTasks, task...)
+		} else {
+			fmt.Printf("Removing task %s at position %d\n", taskString, index)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func removeTask(taskNumber int, taskFile *os.File) (removed bool, err error) {
+	taskList, err := makeTaskList(taskFile)
+	newTaskList := []byte{}
+	if err != nil {
+		return false, fmt.Errorf("Error getting task list: %w", err)
+	}
+	for index, task := range taskList {
+		if index+1 != taskNumber {
+			newTaskList = append(newTaskList, task...)
+		}
+	}
+	writeTaskFile(taskFile, newTaskList)
+	return true, nil
+
+}
+
 func main() {
 	taskFile := "./.taskfile"
-	taskFileObj, err := createTaskFile(taskFile)
+	taskFileObj, err := openTaskFile(taskFile)
 	if err != nil {
 		fmt.Printf("Error creating task file: %s\n", err)
 		defer taskFileObj.Close()
@@ -149,7 +197,35 @@ func main() {
 	if list {
 		printTasks(taskFileObj)
 	} else if add != "" {
-		addTask(taskFileObj, add)
+		newFileBytes := addTask(taskFileObj, add)
+		writeTaskFile(taskFileObj, newFileBytes)
+	} else if remove != 0 {
+		removeTask(remove, taskFileObj)
 	}
 
 }
+
+/*
+func createTaskFile(taskFile string) (taskFileObj *os.File, funcErr error) { // returns an open file, be sure to close it :)
+	fileInfo, err := os.Stat(taskFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			_, createErr := os.Create(taskFile)
+			if createErr != nil {
+				return nil, fmt.Errorf("error creating new task file: %w", createErr)
+			}
+			fileInfo, err = os.Stat(taskFile)
+			if err != nil {
+				return nil, fmt.Errorf("error getting file stat: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("error getting file stat: %w", err)
+		}
+	}
+	taskFileObj, openErr := os.OpenFile(taskFile, os.O_RDWR|os.O_CREATE, fileInfo.Mode())
+	if openErr != nil {
+		return nil, fmt.Errorf("error opening created file: %w", openErr)
+	}
+	return taskFileObj, nil
+}
+*/
