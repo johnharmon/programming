@@ -10,7 +10,7 @@ type GlobalBroadcaster struct {
 	//globalConsumers map[string]chan ChatMessage // map of all channels clients are consuming from, whenever anything is sent to the global producer, it replicates to all global consumers
 	ClientUpdates         chan ClientUpdate  // channel that takes connection states, used to update the internal map of client channeld to send to
 	globalClients         map[int]ChatClient // map of chat clients, try to coordinate ChatClient.ConnectionID with the map key
-	globalClientUpdateMut sync.Mutex
+	globalClientUpdateMut sync.Mutex         // Mutex to lock client map as clients are added/removed
 }
 
 type ChatMessage struct { // All messages will be wrapped/unwrapped via this struct on either side
@@ -29,13 +29,17 @@ type ChatConnectionState struct { // Will be used to update the server that conn
 type ChatClient struct { // Represents a connected chat client
 	Username          string
 	ConnectionAddress net.IP
-	ConnectionChannel chan ChatMessage
+	ClientToServer    chan ChatMessage // Messages coming FROM the client. Messages will be unmarshalled from the raw connection then put on this channel
+	ServerToClient    chan []byte      // Messages going TO the client. Global messages will be marshalled first then put on this channel to be written to the raw conection
 	ConnectionID      int
+	Connection        net.Conn
 }
 
 type ClientUpdate struct { // Represents a state change in chat clients, either connecting a new one or disconnecting an existing one
-	ClientID     string
+	ClientID     string `json:"client_id"`
 	ConnectionID int
 	Channel      chan ChatMessage
-	Action       string // "connect" or "disconnect"
+	Action       string // "connect" or "disconnect" `json:"action"`
+	RemoteAddr   net.Addr
+	Connection   net.Conn
 }
