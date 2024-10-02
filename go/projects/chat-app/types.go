@@ -32,7 +32,8 @@ type ChatClient struct { // Represents a connected chat client
 	ClientToServer    chan ChatMessage // Messages coming FROM the client. Messages will be unmarshalled from the raw connection then put on this channel
 	ServerToClient    chan []byte      // Messages going TO the client. Global messages will be marshalled first then put on this channel to be written to the raw conection
 	ConnectionID      int
-	Connection        net.Conn
+	Connection        net.Conn // Connection to read from
+	MessageBuffer     []byte   // Any bytes that have been read since the last mesage delimiter was detected // Any bytes that have been read since the last mesage delimiter was detected // Any bytes that have been read since the last mesage delimiter was detected
 }
 
 type ClientUpdate struct { // Represents a state change in chat clients, either connecting a new one or disconnecting an existing one

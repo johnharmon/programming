@@ -20,6 +20,7 @@ var upgrader = websocket.Upgrader{
 
 const (
 	messageEnd = 0x00
+	//messageSep = byte(messageEnd)
 )
 
 func websocketHandler(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +88,27 @@ func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
 		return false
 	}
 	return false
+}
+
+func (cc *ChatClient) ReadMessage() (cm ChatMessage, funcErr error) {
+	messageBytes := make([]byte, 1024)
+	messageSep := make([]byte, 1)
+	messageSep[0] = byte(messageEnd)
+	_, err := cc.Connection.Read(messageBytes)
+	if err != nil {
+		fmt.Printf("Error reading from client: %s\n", err)
+		return ChatMessage{}, err
+	}
+	endOfMessage := bytes.Index(messageBytes, messageSep)
+	if endOfMessage != -1 {
+		messageTail := messageBytes[endOfMessage:]
+		messageBytes = append(cc.MessageBuffer, messageBytes[:endOfMessage]...)
+		cc.MessageBuffer = messageTail
+	} else {
+		cc.MessageBuffer = append(cc.MessageBuffer, messageBytes...)
+		//json.Marshal()
+	}
+
 }
 
 func ManageGlobalBroadcaster(gb *GlobalBroadcaster) {
