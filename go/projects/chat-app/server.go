@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
@@ -30,19 +32,37 @@ func NewClientUpdate(clientID string, connectionID int, chatChan chan ChatMessag
 	return ClientUpdate{}
 }
 
-func (gb *GlobalBroadcaster) GetChatClient(ConnectionID int) *ChatClient {
-	for connID, client := range gb.globalClients {
-		if connID == ConnectionID {
-			return &client
-		}
+func (gb *GlobalBroadcaster) GetChatClient(ConnectionID uint64) *ChatClient {
+	client, exists := gb.globalClients[ConnectionID]
+	if exists {
+		return &client
+	} else {
+		return nil
 	}
-	return nil
 }
 
 func (gb *GlobalBroadcaster) addConnection(conn *net.Conn) error {
 	return nil
 }
 
+func (cc *ChatClient) ListenInbound() error { // Listens for raw byte streams from the client connection to be unmarshalled from json
+	for {
+		messageErr := cc.ReadMessage()
+		if messageErr != nil {
+			fmt.Errorf("error reading from %s: %w", cc.ConnectionID, messageErr)
+		}
+
+		//		select {
+		//		case messageFromServer := <-cc.ServerToClient:
+		//			cc.Connection.Write(messageFromServer)
+		//
+		//		case messageToServer := <-cc.ClientToServer:
+		//			messageBytes := json.Unmarshal(messageToServer, ChatMessage{Username: cc.Username})
+		//		}
+		//	}
+
+	}
+}
 func (gb *GlobalBroadcaster) Broadcast(cm ChatMessage) {
 	chatMessageBytes, err := json.Marshal(cm)
 	if err != nil {
@@ -50,7 +70,7 @@ func (gb *GlobalBroadcaster) Broadcast(cm ChatMessage) {
 	}
 	for _, chatClient := range gb.globalClients {
 		if chatClient.ConnectionID != cm.ConnectionID {
-			chatClient.ServerToClient <- cm
+			chatClient.ServerToClient <- chatMessageBytes
 		}
 	}
 }
@@ -64,15 +84,18 @@ func (gb *GlobalBroadcaster) RemoveClient(cu ClientUpdate) bool {
 	}
 	return false
 }
-func NewChatClient(cu ClientUpdate) ChatClient {
+func NewChatClient(cu ClientUpdate, gb *GlobalBroadcaster) ChatClient {
 	cc := ChatClient{
-		Username:          cu.ClientID,
-		ConnectionAddress: nil,
-		ServerToClient:    make(chan []byte),
-		ClientToServer:    make(chan ChatMessage),
-		ConnectionID:      cu.ConnectionID,
-		Connection:        cu.Connection,
+		Username:       cu.ClientID,
+		LocalAddress:   cu.Connection.LocalAddr(),
+		RemoteAddress:  cu.Connection.RemoteAddr(),
+		Connection:     cu.Connection,
+		ClientToServer: gb.globalProducer,
+		ServerToClient: make(chan []byte),
+		ReadErrors:     make(chan error),
+		WriteErrors:    make(chan error),
 	}
+	cc.ConnectionID = GenConnectionHash(cu.Connection)
 	return cc
 }
 
@@ -81,7 +104,7 @@ func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
 	defer gb.globalClientUpdateMut.Unlock()
 	if cu.Action == "connect" {
 		//gb.globalClients[cu.ConnectionID] = NewChatClient(cu)
-		gb.globalClients[cu.ConnectionID] = NewChatClient(cu)
+		gb.globalClients[cu.ConnectionID] = NewChatClient(cu, gb)
 		return true
 	} else if cu.Action == "disconnect" {
 		gb.RemoveClient(cu)
@@ -90,25 +113,32 @@ func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
 	return false
 }
 
-func (cc *ChatClient) ReadMessage() (cm ChatMessage, funcErr error) {
+func (cc *ChatClient) ReadMessage() (funcErr error) {
 	messageBytes := make([]byte, 1024)
 	messageSep := make([]byte, 1)
 	messageSep[0] = byte(messageEnd)
-	_, err := cc.Connection.Read(messageBytes)
-	if err != nil {
-		fmt.Printf("Error reading from client: %s\n", err)
-		return ChatMessage{}, err
+	messageBuffer := []byte{}
+	for {
+		_, err := cc.Connection.Read(messageBytes)
+		if err != nil {
+			cc.ReadErrors <- fmt.Errorf("error reading from client: %w", err)
+		}
+		endOfMessage := bytes.Index(messageBytes, messageSep)
+		if endOfMessage != -1 {
+			messageTail := messageBytes[endOfMessage+1:]
+			messageBytes = append(messageBuffer, messageBytes[:endOfMessage]...)
+			cc.MessageBuffer = messageTail
+			chatMessage := &ChatMessage{Username: cc.Username, ConnectionID: cc.ConnectionID}
+			unmarshallError := json.Unmarshal(messageBytes, chatMessage)
+			if unmarshallError != nil {
+				fmt.Errorf("error unmarshalling message: %w", unmarshallError)
+			}
+			cc.ClientToServer <- *chatMessage
+			return nil
+		} else {
+			cc.MessageBuffer = append(cc.MessageBuffer, messageBytes...)
+		}
 	}
-	endOfMessage := bytes.Index(messageBytes, messageSep)
-	if endOfMessage != -1 {
-		messageTail := messageBytes[endOfMessage:]
-		messageBytes = append(cc.MessageBuffer, messageBytes[:endOfMessage]...)
-		cc.MessageBuffer = messageTail
-	} else {
-		cc.MessageBuffer = append(cc.MessageBuffer, messageBytes...)
-		//json.Marshal()
-	}
-
 }
 
 func ManageGlobalBroadcaster(gb *GlobalBroadcaster) {
@@ -139,14 +169,30 @@ func ReadClient(cc *ChatClient) (message []byte, tail []byte) {
 		//json.Marshal()
 	}
 	return message, tail
-
 }
+
+// Generate a hash for a connection using the format of the 4 tuple connection identifier
+func GenConnectionHash(conn net.Conn) uint64 {
+	// Split local and remote addresses along colons (once)
+	localAddress := strings.SplitN(conn.LocalAddr().String(), ":", 1)
+	remoteAddress := strings.SplitN(conn.RemoteAddr().String(), ":", 1)
+	h := fnv.New64a() // Generate 64bit hash (so it can fit in uint64) to ID the connection
+	// Create string from local and remote addresses, using colons to delimit sections
+	hashString := fmt.Sprintf("%s:%s-%s:%s",
+		localAddress[0], localAddress[1], remoteAddress[0], remoteAddress[1])
+	h.Write([]byte(hashString)) // Write the formatted string to the hash buffer
+	return h.Sum64()            // Returns a uint64 hash value
+}
+
+// Usage
+//hashKey := generateHash("192.168.1.10", 8080, "192.168.1.20", 50001)
+//fmt.Println("Hash Key:", hashKey)
 
 func ClientListener(cc *ChatClient) {
 	inboundBuffer := []byte{}
 	previousBuffer := []byte{}
 	messageSep := append([]byte{}, byte(messageEnd))
-	message := []byte{}
+	//message := []byte{}
 	for {
 		_, err := cc.Connection.Read(inboundBuffer)
 		if err != nil {
@@ -154,13 +200,12 @@ func ClientListener(cc *ChatClient) {
 		}
 		endOfMessage := bytes.Index(inboundBuffer, messageSep)
 		if endOfMessage != -1 {
-			message = append(previousBuffer, inboundBuffer[:endOfMessage]...)
+			message := append(previousBuffer, inboundBuffer[:endOfMessage]...)
 			previousBuffer = inboundBuffer[endOfMessage:]
 
 		} else {
 			previousBuffer = append(previousBuffer, inboundBuffer...)
 		}
-		//copy()
 	}
 }
 
