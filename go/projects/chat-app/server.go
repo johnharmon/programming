@@ -22,6 +22,7 @@ var upgrader = websocket.Upgrader{
 
 const (
 	messageEnd = 0x00
+	MessageSep = byte(0x00)
 	//messageSep = byte(messageEnd)
 )
 
@@ -51,16 +52,6 @@ func (cc *ChatClient) ListenInbound() error { // Listens for raw byte streams fr
 		if messageErr != nil {
 			fmt.Errorf("error reading from %s: %w", cc.ConnectionID, messageErr)
 		}
-
-		//		select {
-		//		case messageFromServer := <-cc.ServerToClient:
-		//			cc.Connection.Write(messageFromServer)
-		//
-		//		case messageToServer := <-cc.ClientToServer:
-		//			messageBytes := json.Unmarshal(messageToServer, ChatMessage{Username: cc.Username})
-		//		}
-		//	}
-
 	}
 }
 func (gb *GlobalBroadcaster) Broadcast(cm ChatMessage) {
@@ -115,25 +106,24 @@ func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
 
 func (cc *ChatClient) ReadMessage() (funcErr error) {
 	messageBytes := make([]byte, 1024)
-	messageSep := make([]byte, 1)
-	messageSep[0] = byte(messageEnd)
-	messageBuffer := []byte{}
+	//messageSep := make([]byte, 1)
+	//messageSep[0] = byte(messageEnd)
 	for {
 		_, err := cc.Connection.Read(messageBytes)
 		if err != nil {
 			cc.ReadErrors <- fmt.Errorf("error reading from client: %w", err)
 		}
-		endOfMessage := bytes.Index(messageBytes, messageSep)
+		endOfMessage := bytes.IndexByte(messageBytes, MessageSep)
 		if endOfMessage != -1 {
 			messageTail := messageBytes[endOfMessage+1:]
-			messageBytes = append(messageBuffer, messageBytes[:endOfMessage]...)
+			messageBytes = append(cc.MessageBuffer, messageBytes[:endOfMessage]...)
 			cc.MessageBuffer = messageTail
-			chatMessage := &ChatMessage{Username: cc.Username, ConnectionID: cc.ConnectionID}
-			unmarshallError := json.Unmarshal(messageBytes, chatMessage)
+			chatMessage := ChatMessage{Username: cc.Username, ConnectionID: cc.ConnectionID}
+			unmarshallError := json.Unmarshal(messageBytes, &chatMessage)
 			if unmarshallError != nil {
 				fmt.Errorf("error unmarshalling message: %w", unmarshallError)
 			}
-			cc.ClientToServer <- *chatMessage
+			cc.ClientToServer <- chatMessage
 			return nil
 		} else {
 			cc.MessageBuffer = append(cc.MessageBuffer, messageBytes...)
@@ -218,12 +208,11 @@ func ManageChatClient(cc *ChatClient, gb *GlobalBroadcaster) {
 	}
 }
 
-func handleConnection(conn net.Conn, gb *GlobalBroadcaster, lci *int) error {
-	*lci++                          // increment last connection id by 1
+func handleConnection(conn net.Conn, gb *GlobalBroadcaster) error {
 	remoteAddr := conn.RemoteAddr() // Get remote address of connection
 	clientUpdate := ClientUpdate{
 		ClientID:     "",
-		ConnectionID: *lci,
+		ConnectionID: GenConnectionHash(conn),
 		Channel:      make(chan ChatMessage),
 		Action:       "connect",
 		RemoteAddr:   remoteAddr,
@@ -239,7 +228,7 @@ func handleConnection(conn net.Conn, gb *GlobalBroadcaster, lci *int) error {
 		return fmt.Errorf("error unmarshalling data into ChatClient instance: %w", uErr)
 	}
 	gb.ClientUpdates <- clientUpdate
-	newClient := gb.GetChatClient(*lci)
+	newClient := gb.GetChatClient(clientUpdate.ConnectionID)
 	ManageChatClient(newClient, gb)
 
 	return nil
@@ -253,8 +242,6 @@ func main() {
 	if len(ActiveConnections) < 1 {
 		fmt.Printf("\r")
 	}
-
-	lastConnectionID := 0
 	listener, err := net.Listen("tcp", ":8000")
 	if err != nil {
 		fmt.Println("Error starting server:", err)
@@ -274,6 +261,20 @@ func main() {
 			continue
 		}
 		// Handle each connection in a new goroutine.
-		go handleConnection(conn, &broadcaster, &lastConnectionID)
+		go handleConnection(conn, &broadcaster)
 	}
 }
+
+/*
+##########FUNCTION FLOW FOR CONNECTING CLIENTS##########
+
+
+main() -> handleConnection(net.Conn, *GlobalBroadcaster) { *GlobalBraodcaster.ClientUPdates <- ClientUpdate{}} -> ManageChatClient(newClient) \
+{*GlobalBroadcaster.globalProducer <- *ChatClient.ClientToServer }
+
+
+
+
+########################################################
+
+*/
