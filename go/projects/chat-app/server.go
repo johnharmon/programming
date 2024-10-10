@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -48,33 +49,22 @@ func (gb *GlobalBroadcaster) addConnection(conn *net.Conn) error {
 
 func (cc *ChatClient) ListenInbound() error { // Listens for raw byte streams from the client connection to be unmarshalled from json
 	for {
-		messageErr := cc.ReadMessage()
+		cc.ReadMessage()
 		if messageErr != nil {
-			fmt.Errorf("error reading from %s: %w", cc.ConnectionID, messageErr)
-		}
-	}
-}
-func (gb *GlobalBroadcaster) Broadcast(cm ChatMessage) {
-	chatMessageBytes, err := json.Marshal(cm)
-	if err != nil {
-		fmt.Printf("Error mashalling message: %s\n", err)
-	}
-	for _, chatClient := range gb.globalClients {
-		if chatClient.ConnectionID != cm.ConnectionID {
-			chatClient.ServerToClient <- chatMessageBytes
+			return fmt.Errorf("error reading from %d: %w", cc.ConnectionID, messageErr)
 		}
 	}
 }
 
-func (gb *GlobalBroadcaster) RemoveClient(cu ClientUpdate) bool {
-	for k, v := range gb.globalClients {
-		if v.ConnectionID == cu.ConnectionID {
-			delete(gb.globalClients, k)
-			return true
-		}
-	}
-	return false
-}
+//	func (gb *GlobalBroadcaster) RemoveClient(cu ClientUpdate) bool {
+//		for k, v := range gb.globalClients {
+//			if v.ConnectionID == cu.ConnectionID {
+//				delete(gb.globalClients, k)
+//				return true
+//			}
+//		}
+//		return false
+//	}
 func NewChatClient(cu ClientUpdate, gb *GlobalBroadcaster) ChatClient {
 	cc := ChatClient{
 		Username:       cu.ClientID,
@@ -90,46 +80,19 @@ func NewChatClient(cu ClientUpdate, gb *GlobalBroadcaster) ChatClient {
 	return cc
 }
 
-func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
-	gb.globalClientUpdateMut.Lock()
-	defer gb.globalClientUpdateMut.Unlock()
-	if cu.Action == "connect" {
-		//gb.globalClients[cu.ConnectionID] = NewChatClient(cu)
-		gb.globalClients[cu.ConnectionID] = NewChatClient(cu, gb)
-		return true
-	} else if cu.Action == "disconnect" {
-		gb.RemoveClient(cu)
-		return false
-	}
-	return false
-}
-
-func (cc *ChatClient) ReadMessage() (funcErr error) {
-	messageBytes := make([]byte, 1024)
-	//messageSep := make([]byte, 1)
-	//messageSep[0] = byte(messageEnd)
-	for {
-		_, err := cc.Connection.Read(messageBytes)
-		if err != nil {
-			cc.ReadErrors <- fmt.Errorf("error reading from client: %w", err)
-		}
-		endOfMessage := bytes.IndexByte(messageBytes, MessageSep)
-		if endOfMessage != -1 {
-			messageTail := messageBytes[endOfMessage+1:]
-			messageBytes = append(cc.MessageBuffer, messageBytes[:endOfMessage]...)
-			cc.MessageBuffer = messageTail
-			chatMessage := ChatMessage{Username: cc.Username, ConnectionID: cc.ConnectionID}
-			unmarshallError := json.Unmarshal(messageBytes, &chatMessage)
-			if unmarshallError != nil {
-				fmt.Errorf("error unmarshalling message: %w", unmarshallError)
-			}
-			cc.ClientToServer <- chatMessage
-			return nil
-		} else {
-			cc.MessageBuffer = append(cc.MessageBuffer, messageBytes...)
-		}
-	}
-}
+//func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
+//	gb.globalClientUpdateMut.Lock()
+//	defer gb.globalClientUpdateMut.Unlock()
+//	if cu.Action == "connect" {
+//		//gb.globalClients[cu.ConnectionID] = NewChatClient(cu)
+//		gb.globalClients[cu.ConnectionID] = NewChatClient(cu, gb)
+//		return true
+//	} else if cu.Action == "disconnect" {
+//		gb.RemoveClient(cu)
+//		return false
+//	}
+//	return false
+//}
 
 func ManageGlobalBroadcaster(gb *GlobalBroadcaster) {
 	for {
@@ -174,36 +137,66 @@ func GenConnectionHash(conn net.Conn) uint64 {
 	return h.Sum64()            // Returns a uint64 hash value
 }
 
-// Usage
-//hashKey := generateHash("192.168.1.10", 8080, "192.168.1.20", 50001)
-//fmt.Println("Hash Key:", hashKey)
-
-func ClientListener(cc *ChatClient) {
-	inboundBuffer := []byte{}
-	previousBuffer := []byte{}
-	messageSep := append([]byte{}, byte(messageEnd))
-	//message := []byte{}
+// region CLIENT IO
+func ClientWriter(cc *ChatClient) {
 	for {
-		_, err := cc.Connection.Read(inboundBuffer)
-		if err != nil {
-			fmt.Printf("Error reading from connection: %s", err)
-		}
-		endOfMessage := bytes.Index(inboundBuffer, messageSep)
-		if endOfMessage != -1 {
-			message := append(previousBuffer, inboundBuffer[:endOfMessage]...)
-			previousBuffer = inboundBuffer[endOfMessage:]
-
-		} else {
-			previousBuffer = append(previousBuffer, inboundBuffer...)
+		select {
+		case serverMessage := <-cc.ServerToClientMessage:
+			serverMessageRaw, mErr := json.Marshal(&serverMessage)
+			if mErr != nil {
+				cc.MarshallErrorsOut <- mErr
+			} else {
+				serverMessageRaw = append(serverMessageRaw, MessageSep)
+				bytesWritten, wErr := cc.Connection.Write(serverMessageRaw)
+				if wErr != nil {
+					cc.WriteErrors <- wErr
+				}
+				fmt.Printf("%d bytes written to %s\n", bytesWritten, cc.Username)
+			}
+		case <-cc.ClientDone:
+			return
 		}
 	}
 }
 
+func ClientListener(cc *ChatClient) {
+	for {
+		go cc.ReadMessage()
+		select {
+		case <-cc.ClientDone:
+			return
+		case serverMessage := <-cc.ServerToClient:
+			serverMessage = append(serverMessage, MessageSep)
+			_, err := cc.Connection.Write(serverMessage)
+			if err != nil {
+				cc.WriteErrors <- err
+			}
+		}
+	}
+}
+
+// endregion
+
+func MakeDisconnectMessage(cc *ChatClient) ChatMessage {
+	disconnectMessage := ChatMessage{
+		Username:     cc.Username,
+		Message:      fmt.Sprintf("User %s has disconnected\n", cc.Username),
+		Timestamp:    time.Now(),
+		ConnectionID: cc.ConnectionID,
+	}
+	return disconnectMessage
+
+}
+
 func ManageChatClient(cc *ChatClient, gb *GlobalBroadcaster) {
+	go ClientListener(cc)
 	for {
 		select {
 		case clientMessage := <-cc.ClientToServer:
 			gb.globalProducer <- clientMessage
+			continue
+		case <-cc.ClientDone:
+			gb.globalProducer <- MakeDisconnectMessage(cc)
 		}
 	}
 }
@@ -265,16 +258,36 @@ func main() {
 	}
 }
 
+// region DOCUMENTATION
 /*
 ##########FUNCTION FLOW FOR CONNECTING CLIENTS##########
-
 
 main() -> handleConnection(net.Conn, *GlobalBroadcaster) { *GlobalBraodcaster.ClientUPdates <- ClientUpdate{}} -> ManageChatClient(newClient) \
 {*GlobalBroadcaster.globalProducer <- *ChatClient.ClientToServer }
 
+
+main()
+|
+V
+handleConnection(net.Conn, *GlobalBroadcaster) {
+	*GlobalBraodcaster.ClientUPdates <- ClientUpdate{}
+}
+|
+V
+ManageChatClient(ChatClient) {
+	*GlobalBroadccaster.globalProducer <- *ChatClient.ClientToServer
+}
+|
+V
 
 
 
 ########################################################
 
 */
+
+// endregion
+
+// Usage
+//hashKey := generateHash("192.168.1.10", 8080, "192.168.1.20", 50001)
+//fmt.Println("Hash Key:", hashKey)
