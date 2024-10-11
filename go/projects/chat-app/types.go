@@ -23,7 +23,6 @@ func (gb *GlobalBroadcaster) UpdateClient(cu ClientUpdate) bool {
 	gb.globalClientUpdateMut.Lock()
 	defer gb.globalClientUpdateMut.Unlock()
 	if cu.Action == "connect" {
-		//gb.globalClients[cu.ConnectionID] = NewChatClient(cu)
 		gb.globalClients[cu.ConnectionID] = NewChatClient(cu, gb)
 		return true
 	} else if cu.Action == "disconnect" {
@@ -55,8 +54,27 @@ func (gb *GlobalBroadcaster) Broadcast(cm ChatMessage) {
 	}
 }
 
+func (gb *GlobalBroadcaster) GetChatClient(ConnectionID uint64) *ChatClient {
+	client, exists := gb.globalClients[ConnectionID]
+	if exists {
+		return &client
+	} else {
+		return nil
+	}
+}
+
+func (gb *GlobalBroadcaster) addConnection(conn *net.Conn) error {
+	return nil
+}
+
 // endregion
 
+// Region Separator
+// Region Separator
+// Region Separator
+// Region Separator
+
+// region CHAT MESSAGE
 type ChatMessage struct { // All messages will be wrapped/unwrapped via this struct on either side
 	Username     string    `json:"username"`
 	Message      string    `json:"message"`
@@ -64,11 +82,28 @@ type ChatMessage struct { // All messages will be wrapped/unwrapped via this str
 	ConnectionID uint64    `json:"connection_id"`
 }
 
+// endregion
+
+// Region Separator
+// Region Separator
+// Region Separator
+// Region Separator
+// Region Separator
+
+// region CHAT CONNECTION STATE
 type ChatConnectionState struct { // Will be used to update the server that connections are being made/terminated
 	Username     string `json:"username"`
 	State        string `json:"connection_state"`
 	ConnectionID uint64 `json:"connection_id"`
 }
+
+// endregion
+
+// Region Separator
+// Region Separator
+// Region Separator
+// Region Separator
+// Region Separator
 
 // region CHAT CLIENT
 type ChatClient struct { // Represents a connected chat client
@@ -124,8 +159,23 @@ func (cc *ChatClient) WriteMessage() {
 
 }
 
-//endregion
+func (cc *ChatClient) ListenInbound() error { // Listens for raw byte streams from the client connection to be unmarshalled from json
+	for {
+		cc.ReadMessage()
+		if messageErr != nil {
+			return fmt.Errorf("error reading from %d: %w", cc.ConnectionID, messageErr)
+		}
+	}
+}
 
+// endregion
+// Region Separator
+// Region Separator
+// Region Separator
+// Region Separator
+// Region Separator
+
+// region CLIENT UPDATE
 type ClientUpdate struct { // Represents a state change in chat clients, either connecting a new one or disconnecting an existing one
 	ClientID     string `json:"client_id"`
 	ConnectionID uint64
@@ -134,3 +184,5 @@ type ClientUpdate struct { // Represents a state change in chat clients, either 
 	RemoteAddr   net.Addr
 	Connection   net.Conn
 }
+
+// endregion
