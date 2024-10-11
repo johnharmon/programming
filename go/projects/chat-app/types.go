@@ -111,6 +111,12 @@ func (cc *ChatClient) ReadMessage() {
 		} else {
 			cc.MessageBuffer = append(cc.MessageBuffer, messageBytes...)
 		}
+		select {
+		case <-cc.ClientDone:
+			return
+		default:
+			continue
+		}
 	}
 }
 
