@@ -1,3 +1,4 @@
+---
 - name: "PLaybook to test json_query filter with the sort_by function"
   hosts: localhost
   gather_facts: false
@@ -41,7 +42,12 @@
 
     - name: "Set subnet dictionary to suite and node type"
       set_fact:
-        subnet_list: "{{ subnet_dictionary['APP01']['subnets']['production'] | dict2items | json_query('[*].value') }}"
+        subnet_list: >
+          "{{ 
+            subnet_dictionary['APP01']['subnets']['production'] |
+            dict2items |
+            json_query('[*].value')
+          }}"
 
     - name: "debug subnet_dictionary"
       copy:
@@ -64,62 +70,50 @@
       ansible.builtin.debug:
         msg: "{{ item | length }}"
       loop: "{{ nested_list }}"
-
-
- #   - name: "Create subnet_list"
- #     set_fact:
- #       subnet_list "{{ subnet_dictionary | dict2items | json_query('[*].[value]') | list}}"
-
- #   - name: "debug subnet_list"
- #     debug:
- #       msg: "{{ subnet_list | to_nice_yaml(indent=2) }}"
-    # - name: "Test nmap results"
-    #   ansible.builtin.command:
-    #     cmd: "nmap -sn 192.168.86.0/24"
-    #   changed_when: false
-    #   register: nmap_results
-
-    # - name: "Set nmap results"
-    #   ansible.builtin.set_fact:
-    #     nmap_result: "{{ output | regex_search('[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}') }}"
-    #   loop: "{{ nmap_results.stdout_lines }}"
-    #   loop_control:
-    #     loop_var: output
-    #   register: nmap_results2
-
-    # - name: "Debug nmap result"
-    #   ansible.builtin.debug:
-    #     msg: "{{ nmap_results2.results | json_query('[*].ansible_facts') }}"
-
-    # - name: "Set regex_findall fact"
-    #   ansible.builtin.set_fact:
-    #     regex_findall_fact: "{{ nmap_results.stdout | regex_findall('([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})') | list }}"
-
-    # - name: "Debug regex_findall"
-    #   ansible.builtin.debug:
-    #     msg: "{{ regex_findall_fact }}"
-
-    # - name: "Generate ips for network"
-    #   ansible.builtin.command:
-    #     cmd: "python -c 'import ipaddress; [print(str(ip)) for ip in ipaddress.IPv4Network(\"192.168.86.0/24\")]'"
-    #   changed_when: false
-    #   register: ips
-
-    # - name: "Debug ips"
-    #   ansible.builtin.debug:
-    #     msg: "{{ ips.stdout_lines }}"
-
-    # - name: "Remove ips from network"
-    #   ansible.builtin.set_fact:
-    #     ips: "{{ ips.stdout_lines | difference(regex_findall_fact) }}"
-
-    # - name: "Debug ips"
-    #   ansible.builtin.debug:
-    #     msg: "{{ ips }}"
-
-    # - name: "Test jinja filter order of operations"
-    #   ansible.builtin.debug:
-    #     msg: "{{ 'hello' | lower ~ ' ' ~ 'hello' | upper  }}"
+    - name: "Create subnet_list"
+      set_fact:
+        subnet_list "{{ subnet_dictionary | dict2items | json_query('[*].[value]') | list}}"
+    - name: "debug subnet_list"
+      debug:
+        msg: "{{ subnet_list | to_nice_yaml(indent=2) }}"
+  - name: "Test nmap results"
+    ansible.builtin.command:
+      cmd: "nmap -sn 192.168.86.0/24"
+    changed_when: false
+    register: nmap_results
+  - name: "Set nmap results"
+    ansible.builtin.set_fact:
+      nmap_result: "{{ output | regex_search('[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}') }}"
+    loop: "{{ nmap_results.stdout_lines }}"
+    loop_control:
+      loop_var: output
+    register: nmap_results2
+  - name: "Debug nmap result"
+    ansible.builtin.debug:
+      msg: "{{ nmap_results2.results | json_query('[*].ansible_facts') }}"
+  - name: "Set regex_findall fact"
+    ansible.builtin.set_fact:
+      regex_findall_fact: "{{ nmap_results.stdout | regex_findall('([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})') | list }}"
+  - name: "Debug regex_findall"
+    ansible.builtin.debug:
+      msg: "{{ regex_findall_fact }}"
+  - name: "Generate ips for network"
+    ansible.builtin.command:
+      cmd: "python -c 'import ipaddress; [print(str(ip)) for ip in ipaddress.IPv4Network(\"192.168.86.0/24\")]'"
+    changed_when: false
+    register: ips
+  - name: "Debug ips"
+    ansible.builtin.debug:
+      msg: "{{ ips.stdout_lines }}"
+  - name: "Remove ips from network"
+    ansible.builtin.set_fact:
+      ips: "{{ ips.stdout_lines | difference(regex_findall_fact) }}"
+  - name: "Debug ips"
+    ansible.builtin.debug:
+      msg: "{{ ips }}"
+  - name: "Test jinja filter order of operations"
+    ansible.builtin.debug:
+      msg: "{{ 'hello' | lower ~ ' ' ~ 'hello' | upper  }}"
 
     - name: "Set large resource profile"
       ansible.builtin.set_fact:
