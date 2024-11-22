@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"sort"
 )
 
@@ -36,6 +35,74 @@ func (head *ListHead) RevIter() func(func(*ListNode) bool) {
 			}
 		}
 	}
+}
+
+func calcRealIndexWithBounds(length int, index int) (realIndex int, indexErr error) {
+	if index > 0 && index >= length {
+		indexErr = fmt.Errorf("Index out of bounds")
+		return realIndex, indexErr
+	} else if index < 0 && -index > length {
+		indexErr = fmt.Errorf("Index out of bounds")
+		return realIndex, indexErr
+	} else {
+		realIndex = calcRealIndex(length, index)
+		return realIndex, nil
+	}
+}
+
+func (head *ListHead) Update(newNode *ListNode, index int) (indexErr error) {
+	realIndex, indexErr := calcRealIndexWithBounds(head.length, index)
+	if indexErr != nil {
+		return indexErr
+	}
+	if realIndex >= 0 {
+		currentIndex := 0
+		for current := head.head; currentIndex <= realIndex; current = current.Next {
+			if currentIndex == realIndex {
+				previousNode := current.Previous
+				nextNode := current.Next
+				previousNode.Next = nextNode
+				nextNode.Previous = previousNode
+			}
+			currentIndex++
+		}
+	} else {
+		currentIndex := -1
+		for current := head.tail; currentIndex >= realIndex; current = current.Previous {
+			if currentIndex == realIndex {
+				previousNode := current.Previous
+				nextNode := current.Next
+				previousNode.Next = nextNode
+				nextNode.Previous = previousNode
+			}
+			currentIndex--
+		}
+	}
+	return indexErr
+}
+
+func (head *ListHead) Switch(index1 int, index2 int) (switchError error) {
+	newNode1, indexErr1 := head.Index(index1)
+	if indexErr1 != nil {
+		switchError = indexErr1
+		return switchError
+	}
+	newNode2, indexErr2 := head.Index(index2)
+	if indexErr2 != nil {
+		switchError = indexErr2
+		return switchError
+	}
+	indexErr1 = head.Update(newNode2, index1)
+	indexErr2 = head.Update(newNode1, index2)
+	if indexErr1 != nil {
+		switchError = indexErr1
+		return switchError
+	}
+	if indexErr2 != nil {
+		switchError = indexErr2
+		return switchError
+	}
+	return switchError
 }
 
 func (head *ListHead) AppendVal(value any) {
@@ -87,10 +154,14 @@ func (head *ListHead) fwdIndex(index int) (node *ListNode, indexErr error) {
 	}
 }
 
+// Calculates the closest real pos/negative index for a node based on the index passed
+// and the length of the list, this may cause it to switch the pos/neg value of the index if it would go past the
+// middle node in the traversal alled for it
 func calcRealIndex(length int, index int) (realIndex int) {
 	if index >= 0 {
+		// This check will mean that it will reverse index into the middle nodes on odd sized linked lists
 		if index >= length/2 {
-			realIndex = (length - index) * -1
+			realIndex = -(length - index)
 		} else {
 			realIndex = index
 		}
@@ -106,15 +177,13 @@ func calcRealIndex(length int, index int) (realIndex int) {
 }
 
 func (head *ListHead) Index(index int) (node *ListNode, indexErr error) {
-	if index >= head.length || -index > head.length {
-		indexErr = fmt.Errorf("Index Error out of bounds")
+	realIndex, indexErr := calcRealIndexWithBounds(head.length, index)
+	if indexErr != nil {
+		return node, indexErr
+	} else if realIndex >= 0 {
+		node, indexErr = head.fwdIndex(realIndex)
 	} else {
-		realIndex := calcRealIndex(head.length, index)
-		if realIndex >= 0 {
-			node, indexErr = head.fwdIndex(realIndex)
-		} else {
-			node, indexErr = head.revIndex(realIndex)
-		}
+		node, indexErr = head.revIndex(realIndex)
 	}
 	return node, indexErr
 }
