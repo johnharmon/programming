@@ -18,7 +18,6 @@
       ansible.builtin.uri:
         url: "{{ patch_url }}"
         ## the above variable should have the URL for downloading the patch
-#        url: https://updates.oracle.com/Orion/Services/download/p36195566_190000_Linux-x86-64.zip?aru=25615984&patch_file=p36195566_190000_Linux-x86-64.zip
         method: GET
         user: "{{ ORACLE_USERNAME }}"
         password: "{{ ORACLE_PASSWORD }}"
@@ -46,8 +45,6 @@
               }
             ]
           }}
-#          patch_files: "{{ (patch_files | default([])) + url_download.path.split('/')[-1] }}"
-#          patch_file_paths: "{{ (patch_files | default([])) + url_download.path }}"
 
     - name: Use webserver as proxy
       when: use_webserver is defined and use_webserver | bool == true
@@ -98,14 +95,6 @@
         dest: "{{ patch_file.unarchive_path }}"
         remote_src: true 
 
-#    - name: unzip downloaded patch
-#      run_once: true
-#      become: true
-#      become_user: oracle
-#      ansible.builtin.shell:
-#        chdir:  "{{ ORACLE_PATCHES| default('/some_file_share') }}"
-#        cmd: unzip  "{{ url_download.path.split('/')[-1] }}"
-
     - name: Apply Patch
       become: true
       become_user: oracle
@@ -148,4 +137,3 @@
           {% endif %}
           
           
-      #{{ output.patch_name }} was successful{% if output.patch_success | bool == true %}{% else %}{{ output.patch_name }} was not successful{% endif %}"
