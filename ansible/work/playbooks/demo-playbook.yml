@@ -1,0 +1,10 @@
+---
+- name: "Demo Playbook"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include the demo role"
+      ansible.builtin.include_role: 
+        name: demo-role
+        tasks_from: main.yml
+

@@ -1,0 +1,8 @@
+---
+- name: "Setup Git ssh Server"
+  hosts: "{{ HOSTS | default('localhost') }}"
+  gather_facts: false
+  tasks:
+    - name: "Include oracle patching role"
+      ansible.builtin.include_role:
+        name: "oracle_patch"

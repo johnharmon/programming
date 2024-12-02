@@ -4,6 +4,7 @@
   run_once: true
   ansible.builtin.set_fact:
     oracle_patch_path: "{{ ORACLE_PATCH_PATH | default('/some/fileshare') }}"
+    use_webserver: "{{ USE_WEBSERVER | default(false) }}"
 
 - name: Download Patch
   delegate_to: localhost
@@ -29,6 +30,7 @@
     # Create a list of dictionaries holding important info for each patch
     # 'file' holds the actual filename
     # 'path' holds the full path to the file
+    # 'unarchive_path' holds the path to run the unarchive from (working directory)
     # 'patch_role_path' holds the path to the file when it is temporarily stored in the role_path (this is a special value ansible will always provide when inside a role)
     # 'directory' holds the directory that will be created by unzipping the file
     patch_files: >
