@@ -3,14 +3,13 @@
 
 ##### WILL INCLUE TASK FILES FOR SPECIFIC TOPICS ######
 
-
 - name: Include lookkup tasks
  # DOCS: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
  # Includes a list of tasks
   ansible.builtin.include_tasks: "{{ role_path }}/tasks/lookup.yml"
 
-#- name: Include lookkup tasks
-#  ansible.builtin.include_tasks: "{{ role_path }}/tasks/lookup.yml"
+- name: Include basic filter tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/filter.yml"
 #
-#- name: Include lookkup tasks
-#  ansible.builtin.include_tasks: "{{ role_path }}/tasks/lookup_adv.yml"
+- name: Include lookkup tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/filter_advanced.yml"

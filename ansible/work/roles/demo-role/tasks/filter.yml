@@ -13,6 +13,10 @@
     # Filter Docs: https://jinja.palletsprojects.com/en/stable/templates/#jinja-filters.default
     # Jinja-tests docs: https://jinja.palletsprojects.com/en/stable/templates/#jinja-tests.defined
 
+- name: "Debug defaulted variable"
+  ansible.builtin.debug:
+    var: external_variable
+
 
 - name: "Check if a value is treated as true by ansible/python"
   vars:
@@ -34,12 +38,20 @@
   # RFC Docs:https://datatracker.ietf.org/doc/html/rfc4648
   # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/b64encode_filter.html
 
+- name: "Debug base64 encoded content"
+  ansible.builtin.debug:
+    var: b64_encoded_string
+
 - name: "Base 64 decode a value"
   ansible.builtin.set_fact:
-    b64_decoded_string: "{{ 'hello there' | ansible.builtin.b64decode }}"
+    b64_decoded_string: "{{ b64_encoded_string | ansible.builtin.b64decode }}"
   # The b64encode filter tages a given input (must be valid b64 encoded string) and base64 decodes it according to RFC 4648
   # RFC Docs:https://datatracker.ietf.org/doc/html/rfc4648
   # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/b64decode_filter.html
+
+- name: "Debug base64 decoded content"
+  ansible.builtin.debug:
+    var: b64_decoded_string
 
 - name: "Debug encoded and decoded strings"
   ansible.builtin.debug:
@@ -55,29 +67,35 @@
   vars:
     mypath: "{{ role_path }}/files/file.txt"
   ansible.builtin.set_fact:
-    dirname: "{{ mypath | ansible.builtin.dirname }}"
+    mydirname: "{{ mypath | ansible.builtin.dirname }}"
     # This filter gets the full path to the parent diretory of the path passed to it
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dirname_filter.html
-    basername: "{{ mypath | ansible.builtin.basename }}"
+    mybasename: "{{ mypath | ansible.builtin.basename }}"
     # This filter gets the name of the laft path element passed to it (final file/direcory name"
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/basename_filter.html
 
 - name: "Debug our new variables"
   ansible.builtin.debug:
     msg: |
-      Directory path: "{{ dirname }}"
-      File name: "{{ basename }}"
+      Directory path: "{{ mydirname }}"
+      File name: "{{ mybasename }}"
 
 - name: "Extract information from json and yaml files"
   ansible.builtin.set_fact:
-    yaml_vars: "{{ ansible.builtin.lookup('file', role_path ~ '/files/info.yml') | ansible.builtin.from_yaml }}"
+    #test: true
+    yaml_vars: "{{ lookup('ansible.builtin.file', role_path ~ '/files/info.yml') | ansible.builtin.from_yaml }}"
     # The from_yaml filter will attempt to convert given input into a proper variable structure using the yaml serializer
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_filter.html
-    json_vars: "{{ ansible.builtin.lookup('file', role_path ~ '/files/info.json') | ansible.builtin.from_json }}"
+    json_vars: "{{ lookup('ansible.builtin.file', role_path ~ '/files/info.json') | ansible.builtin.from_json }}"
     # The from_json filter will attempt to convert given input into a proper variable structure using the json serializer
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_json_filter.html
     #
 
+- name: "Debug our serialized variables"
+  ansible.builtin.debug:
+    msg: |
+      yaml_vars: "{{ yaml_vars }}"
+      json_vars: "{{ json_vars }}"
 
 - name: "Set generic list and dictionary for use in later transformations"
   ansible.builtin.set_fact:
@@ -90,7 +108,7 @@
       - key: 'three'
         value: 3
     # Devine a dictionary to convert into a list
-    my_dict:
+    mydict:
       four: 4
       five: 5
       six: 6
@@ -109,7 +127,7 @@
   ansible.builtin.debug:
     msg: |
       Transformed list: {{ myitems2dict | to_nice_json(indent=2) }}
-      Transformed dict: {{ mydict2itmes | to_nice_json(indent=2) }}
+      Transformed dict: {{ mydict2items | to_nice_json(indent=2) }}
     # The to_nice_json filter takes an ansible data structure and pertty formats it to json with the supplied indent (default is 4)
     # A similar filter called to_nice_yaml also exists and does the same thing but outputs yaml and also takes an optional indentadion argument
 
@@ -118,7 +136,8 @@
     # Create sentence to demonstrate regex use cases
     mysentence: "The brown fox quick brown fox jumps over the lazy fox dog"
   ansible.builtin.set_fact:
-    search_result: "{{ mysentence | ansible.builtin.regex_search('\\(?<=brown\\s+\\)fox\\(?=\\s+\\)\\(?!\\s+quick\\)') }}"
+    search_result: "{{ mysentence | ansible.builtin.regex_search('(?<=brown\\s)fox(?!\\s+quick).*') }}"
+    #search_result: "{{ mysentence | ansible.builtin.regex_search('\\(?<=brown\\s+\\)fox\\(?=\\s+\\)\\(?!\\s+quick\\)') }}"
     # The ansible.builtin.regex_search filter returns the first instance of a regex pattern found in a string
     # This usage is only extracting for then it is preceeded by 'brown ' and follwed by a space that is not followed wy the word quick (this results in it finding only the second 'fox' occurence in the used string
     # You can also remove all the escapes and pass this through ansible.builtin.regex_escape
@@ -139,27 +158,4 @@
       search result: "{{ search_result }}"
       findall_result: "{{ findall_result }}"
       replace_result: "{{ replace_result }}"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
