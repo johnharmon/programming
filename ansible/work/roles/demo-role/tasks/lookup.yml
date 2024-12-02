@@ -1,0 +1,118 @@
+---
+# tasks file for demo-role
+##### LOOKUP DEMO #####
+# Lookups are used to pull informatioun from external data sources
+# If you are an environment of ansible-core >= 2.10 you can get a list of lookups plugins ansible knows about by running:
+#   ansible-doc -t lookup --list
+
+
+- name: "Debug role_path"
+  ansible.builtin.debug:
+    var: role_path
+
+- name: "Lookup info from a file"
+  ansible.builtin.set_fact:
+  # Sets a fact (variable)
+  # Module Docs:
+  #   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+    file_content: "{{ lookup('ansible.builtin.file', role_path ~ '/files/file.txt') }}"
+    # ansible.builtin.file looks up the content of a file
+    # Lookup docs:
+    #   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_lookup.html
+
+- name: "Debug file_content"
+  ansible.builtin.debug:
+    var: file_content
+
+
+- name: "Lookup a list of multiple files"
+  ansible.builtin.set_fact:
+    file_list: "{{ lookup('ansible.builtin.fileglob', role_path ~ '/files/*.txt') }}"
+    # ansible.builtin.fileglob returns a list of files matching the glob pattern non-recursively
+    # Lookup docs:
+    #   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/fileglob_lookup.html
+
+- name: "Debug file_content"
+  ansible.builtin.debug:
+    var: file_list
+
+- name: "Lookup info from a csv file"
+  ansible.builtin.set_fact:
+    csv_file_content: "{{ lookup('ansible.builtin.csvfile', 'test1', file=role_path ~ '/files/info.csv', keycol=0) }}"
+    # ansible.builtin.csvfile looks up the content of a csv file
+    # Lookup docs:
+    #   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/csvfile_lookup.html
+
+- name: "Debug csv lookup result"
+  ansible.builtin.debug:
+    var: csv_file_content
+
+- name: "Lookup info from a ini file"
+  ansible.builtin.set_fact:
+    ini_file_content: "{{ lookup('ansible.builtin.ini', 'member3', section='group', file=role_path ~ '/files/info.ini') }}"
+    # ansible.builtin.csvfile looks up the content of a csv file
+    # Lookup docs:
+    #   https://docs.ansible.com/ansible/latest/collections/ansible/builtin/csvfile_lookup.html
+
+- name: "Debug ini lookup result"
+  ansible.builtin.debug:
+    var: ini_file_content
+
+- name: "Lookup info from A a jinja2 template"
+  ansible.builtin.set_fact:
+    template_results: "{{ lookup('ansible.builtin.template', role_path ~ '/templates/template.j2', template_vars={'FILE_CONTENT': file_content}) }}"
+  # ansible.builtin.template passes in the current environment as well as any specific template vars and uses the jinja2 templating engine to generate a resultant output and return it
+  # Lookup docs:
+  # Lookup itself: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
+  # Jinja2 Documentation: https://jinja.palletsprojects.com/en/stable/
+
+- name: "Debug template lookup result"
+  ansible.builtin.debug:
+    var: template_results
+
+- name: "Lookup variables from the environment"
+  ansible.builtin.set_fact:
+    username: "{{ lookup('ansible.builtin.env', 'USER') }}"
+    # ansible.builtin.env looks up values from the shell environment
+    # Lookup docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
+
+- name: "Debug env lookup result"
+  ansible.builtin.debug:
+    var: username
+
+- name: "Lookup variable names matching a  regex pattern"
+  ansible.builtin.set_fact:
+    user_vars: "{{ lookup('ansible.builtin.varnames', '.*user.*') }}"
+    # ansible.builtin.env looks up variable names from the ansible runtime that match a pattern
+    # In this case, we match all variables containing the word user in them
+    # Lookup docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/varnames_lookup.html
+
+- name: "Debug varnames lookup result"
+  ansible.builtin.debug:
+    var: user_vars
+
+
+- name: "Lookup variables values from other variable names"
+  vars:
+    variablename: hello
+    myvar: name
+  ansible.builtin.set_fact:
+    derived_value: "{{ lookup('ansible.builtin.vars', 'variable' ~ myvar) }}"
+
+    # ansible.builtin.env looks up variables whose names are contained in the values of other variables
+    # In this example, the lookup gets ran looking for 'variable' concatenated with the value from myvar ('name')
+    # Ths result of this is that it looks for a variable called 'variablename' which has a value of hello
+    # The value of our 'derived_value' is then set to hello
+    # Lookup docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
+
+- name: "Debug var lookup result"
+  ansible.builtin.debug:
+    var: derived_value
+
+
+
+
+
+
+
+
