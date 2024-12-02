@@ -1,0 +1,67 @@
+---
+- name: "Setup Git ssh Server"
+  hosts: "{{ hostname | default('localhost') }}"
+  gather_facts: true
+  tasks:
+    - name: "Set config file block"
+      when: config_file is defined and config_file | bool
+      block:
+        - name: "Lookup Config"
+          ansible.builtin.set_fact:
+            git_config: "{{ lookup('file', config_file) | from_yaml }}"
+
+    - name: "Ensure git is installed"
+      ansible.builtin.dnf:
+        packages:
+          - git
+          - ssh
+
+
+    - name: "Create git user"
+      become: true
+      ansible.builtin.user:
+        name: "git"
+        shell: "/bin/sh"
+        create_home: true
+        comment: "Git SSH server user"
+        generate_ssh_key: true
+
+    - name: " append public keys to authorized_keys"
+      block:
+        - name: "Ensure .ssh directory exists"
+          become: true
+          become_user: "git"
+          ansible.builtin.file:
+            path: "~/.ssh"
+            state: directory
+            mode: "0644"
+
+        - name: "Ensure authorized_keys exists"
+          become: true
+          become_user: "git"
+          ansible.builtin.file:
+            path: "~/.ssh/authorized_keys"
+            state: file
+
+        - name: "Template out ssh authorized_keys file"
+          delegate_to: localhost
+          ansible.builtin.set_fact:
+            authorized_keys_content: "{{ lookup('template', 'templates/authorized_keys.j2', template_vars={'authorized_keys': authorized_keys}) }}"
+
+        - name: "Dump keys into file"
+          become: true
+          become_user: "git"
+          ansible.builtin.copy:
+            content: "{{ authorized_keys_content }}"
+            dest: "~/.ssh/authorized_keys"
+            force: true
+            mode: "0644"
+            owner: "git"
+            group: "git"
+
+    - name: "Ensure sshd is enabled"
+      become: true
+      become_user: root
+      ansible.builtin.service:
+        name: sshd
+        enabled: true

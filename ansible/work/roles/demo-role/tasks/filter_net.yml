@@ -1,0 +1,14 @@
+---
+
+# DEMONSTRATE IPADDR (subnet, next_nth_usable, etc)
+# https://docs.ansible.com/ansible/latest/collections/ansible/utils/docsite/filters_ipaddr.html
+
+# DEMONSTRATE IPMATH
+# https://docs.ansible.com/ansible/latest/collections/ansible/utils/docsite/filters_ipmath.html
+#
+# DEMONSTRATE NETWORK_IN_NETWORK
+# https://docs.ansible.com/ansible/latest/collections/ansible/utils/docsite/filters_network_in_network.html
+#
+# DEMONSTRATE NETWORK_IN_USABLE
+# https://docs.ansible.com/ansible/latest/collections/ansible/utils/docsite/filters_network_in_usable.html
+

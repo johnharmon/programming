@@ -17,6 +17,36 @@ type ListHead struct {
 	length int
 }
 
+// Checks if a given positive or negative index is within the boundaries of the list
+func (head *ListHead) IsIB(index int) bool {
+	if index >= 0 {
+		if index >= head.length {
+			return false
+		}
+		return true
+	}
+	if -index > head.length {
+		return false
+	}
+	return true
+}
+
+// Splices another linked list into the next of the given index of the calling linked list
+func (head *ListHead) Splice(spliceHead *ListHead, index int) error {
+	if head.IsIB(index) {
+		return fmt.Errorf("Index out of bounds")
+	}
+	spliceStart, _ := head.Index(index)
+	spliceEnd, endErr := head.Index(index + 1)
+	if endErr != nil {
+		return fmt.Errorf("Index out of bounds")
+	}
+	spliceStart.Next = spliceHead.head
+	spliceEnd.Previous = spliceHead.tail
+	head.length += spliceHead.length
+	return nil
+}
+
 func (head *ListHead) Iter() func(func(*ListNode) bool) {
 	return func(yield func(*ListNode) bool) {
 		for current := head.head; current != nil; current = current.Next {
@@ -81,6 +111,15 @@ func (head *ListHead) Update(newNode *ListNode, index int) (indexErr error) {
 	return indexErr
 }
 
+func (head *ListHead) UpdateVal(index int, value any) (updateErr error) {
+	updateNode, updateErr := head.Index(index)
+	if updateErr != nil {
+		return updateErr
+	}
+	updateNode.value = value
+	return nil
+}
+
 func (head *ListHead) Switch(index1 int, index2 int) (switchError error) {
 	newNode1, indexErr1 := head.Index(index1)
 	if indexErr1 != nil {
@@ -92,8 +131,8 @@ func (head *ListHead) Switch(index1 int, index2 int) (switchError error) {
 		switchError = indexErr2
 		return switchError
 	}
-	indexErr1 = head.Update(newNode2, index1)
-	indexErr2 = head.Update(newNode1, index2)
+	indexErr1 = head.UpdateVal(index1, newNode2.value)
+	indexErr2 = head.UpdateVal(index2, newNode1.value)
 	if indexErr1 != nil {
 		switchError = indexErr1
 		return switchError
@@ -156,7 +195,7 @@ func (head *ListHead) fwdIndex(index int) (node *ListNode, indexErr error) {
 
 // Calculates the closest real pos/negative index for a node based on the index passed
 // and the length of the list, this may cause it to switch the pos/neg value of the index if it would go past the
-// middle node in the traversal alled for it
+// middle node in the basic traversal called by the passed index
 func calcRealIndex(length int, index int) (realIndex int) {
 	if index >= 0 {
 		// This check will mean that it will reverse index into the middle nodes on odd sized linked lists
