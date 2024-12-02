@@ -1,0 +1,9 @@
+struct:
+  property: 'value1'
+  property2:
+    sub_property:
+      - item1 
+      - item2
+      - sub_sub_property:
+          key: value 
+
