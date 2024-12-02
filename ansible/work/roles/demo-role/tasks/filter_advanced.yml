@@ -6,13 +6,17 @@
     # For whatever reason lets say we want the name of the project, and that the name is not statically provided
     # How would we go about exracting that?
     # Lets use a combination of ansible filters and python string methods
-    git_project_name: "{{ (git_url | ansible.builtin.split('/') | ansible.builtin.last).strip('.git') }}"
+    git_project_name: "{{ (git_url | ansible.builtin.split('/') | last).strip('.git') }}"
     # Here we use the ansible.builtin.split filter, which takes a string and splits it along the specified character, returning a list as the result
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/split_filter.html
     # Next we use the ansible.builtin.last filter which just selects the last item from a list
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/last_filter.hml
     # Lastly we use the python string metho .strip(). This will take a character sequence and remove that sequence from the beginning/end of the string
     # Python String docs: https://docs.python.org/3.12/library/stdtypes.html#text-sequence-type-str
+
+- name: "Debug our string manipulation"
+  ansible.builtin.debug:
+    var: git_project_name
 
 - name: "Use the map filter to apply another filter to each element of a list"
   vars:
@@ -83,12 +87,14 @@
   loop: "{{ service_accounts | zip(krb_spns) | list }}"
   # The zip filter lets you loop on 2 or more lists together, moving through their indicies together
   # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/zip_filter.html
-  ansible.windows.win_shell: |
-    New-Aduser -Name {{ item.0 }} - SamAccountName {{ item.0 }}
-    Set-Aduser -Identity {{ item.0 }} -ServicePrincipalNames @{Add={{ item.1 }}}
-    ktpass /princ {{ item.1 }}@EXAMPLE.COM /mapuser {{ item.0 }}@EXAMPLE.COM /crypto ALL /ptype KRB5_NT_PRINCIPAL /pass <password> /out </path/to/some/share>
+  # ansible.builtin.win_shell
   # The win_shell module is just like the shell module but for windows/powershell
   # Module Docs: https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_shell_module.html
+  ansible.builtin.debug:
+    msg: |
+      New-Aduser -Name {{ item.0 }} - SamAccountName {{ item.0 }}
+      Set-Aduser -Identity {{ item.0 }} -ServicePrincipalNames @{Add={{ item.1 }}}
+      ktpass /princ {{ item.1 }}@EXAMPLE.COM /mapuser {{ item.0 }}@EXAMPLE.COM /crypto ALL /ptype KRB5_NT_PRINCIPAL /pass <password> /out </path/to/some/share>
 
 - name: "Use ternary filter to determine outcome"
   when: run_firewall is defined and run_firewall | bool is true
@@ -188,7 +194,7 @@
 
     - name: "Json Query to sort json_data variable by a certain property"
       ansible.builtin.debug:
-        msg: "{{ json_data | to_json | from_json | (json_query('[] | sort_by(@.subnet_reference.name)')) }}"
+        msg: "{{ json_data | to_json | from_json | community.general.json_query('[] | sort_by(@, &subnet_reference.name)') }}"
         # This uses json_query sort the list called json_data by a sub property of the main list item
 
     - name: "Filter people by age"
