@@ -1,0 +1,31 @@
+--- 
+{% import 'macros.j2' as macros %}
+
+
+
+# cloud-config 
+# put one-time boot config stuff here
+boodcmd: 
+
+# SSH setttings
+allow_public_ssh_keys: true 
+disable_root: true 
+
+# Create user(s)
+users: 
+  - name: admin 
+    primary_group: admin 
+    groups: allusers 
+    lock_passwd: false
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    passwd: "{{ (CLOUD_ADMIN_PASSWD | default('passowrd')) | ansible.builtin.password_hash }}"
+
+# Configure networking
+run: 
+  - >-
+    nmcli con mod {{ MGT_IF_NAME | default('eth0') }} 
+      ipv4.method manual
+      +ipv4.addresses {{ MGT_IF_ADDRESS | default('192.168.1.2') }}
+      +ipv4.gateway  {{ MGT_GATEWAY | default('192.168.1.1') }}
+     +ipv4.routes {{ macros.format_routes((IPV4_ROUTES | default([['192.168.100.0/24', '192.168.100.1']]))) }} 
+      +ipv4.ipv4.dns {{ macros.format_dns((DNS_SERVERS | default(['dns1.example.com']))) }}

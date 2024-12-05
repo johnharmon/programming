@@ -1,6 +1,20 @@
 ---
 
 # DEMONSTRATE IPADDR (subnet, next_nth_usable, etc)
+
+- name: Demonstrate general ipaddr usage
+  vars:
+    test_list: ['192.168.1.2', '192.168.500.2', '192.168.100.10/24', 'yes', 'google.com', true, '192.168.1.', 6]
+  ansible.builtin.set_fact:
+    valid_ip_addresses: "{{ test_list | anislbe.utils.ipaddr('address') }}"
+    # Will filter out all invalid ip addresses
+    valid_networks: "{{ test_list | ansible.utils.ipaddr('network') }}"
+    # Will filter out anything that is not a valid network representation
+    is_in_network: "{{ test_list | ansible.utils.ipaddr('192.168.1.0/30') }}"
+    # Will return only the items from the list that are within the network
+    ip_at_index: "{{ test_list | ansible.utils.ipaddr('net') | ansible.utils.ipaddr(10) }}"
+    ip_at_index_negative: "{{ test_list | ansible.utils.ipaddr('net') | ansible.utils.ipaddr(-5) }}"
+
 # https://docs.ansible.com/ansible/latest/collections/ansible/utils/docsite/filters_ipaddr.html
 
 # DEMONSTRATE IPMATH

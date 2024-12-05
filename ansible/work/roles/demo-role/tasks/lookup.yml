@@ -60,7 +60,7 @@
 
 - name: "Lookup info from A a jinja2 template"
   ansible.builtin.set_fact:
-    template_results: "{{ lookup('ansible.builtin.template', role_path ~ '/templates/template.j2', template_vars={'FILE_CONTENT': file_content}) }}"
+    template_results: "{{ lookup('ansible.builtin.template', role_path ~ '/templates/wrapper.j2', template_vars={'FILE_CONTENT': file_content}) }}"
   # ansible.builtin.template passes in the current environment as well as any specific template vars and uses the jinja2 templating engine to generate a resultant output and return it
   # Lookup docs:
   # Lookup itself: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/set_fact_module.html
@@ -108,11 +108,3 @@
 - name: "Debug var lookup result"
   ansible.builtin.debug:
     var: derived_value
-
-
-
-
-
-
-
-

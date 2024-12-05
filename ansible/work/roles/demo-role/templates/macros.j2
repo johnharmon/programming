@@ -1,0 +1,19 @@
+{% macro format_routes(route_list) -%}
+  {%- for route in  route_list -%}
+    {%- if loop.last -%}
+      {{- route.0 ~ ' ' ~ route.1 -}}
+    {%- else -%}
+      {{- route.0 ~ ' ' ~ route.1 ~ ',' -}}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{% macro format_dns(dns_servers)%}
+  {%- for dns_server in  dns_servers -%}
+    {%- if loop.last -%}
+      {{- dns_server -}}
+    {%- else -%}
+      {{- dns_server ~ ',' -}}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endmacro -%}
