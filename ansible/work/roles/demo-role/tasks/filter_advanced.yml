@@ -167,7 +167,7 @@
             dns:
               a_record_suffix: "vm3"
               cname_list:
-                - "cn3-1"
+                - "cn0-1"
                 - "cn3-2"
                 - "cn3-3"
             resource_profile: "large"
@@ -214,7 +214,7 @@
       ansible.builtin.debug:
         msg: >-
           {{ people | json_query("[?age > `30` && contains(['Smith', 'Doe'], name) || name == 'Jane' && age == `29`].{age: name, name: age}") }}
-        # This does the same filtering as before, but then does a 'projection', where it creates a new data structure, this time switching the name and age values
+      # This does the same filtering as before, but then does a 'projection', where it creates a new data structure, this time switching the name and age values
 
     - name: "Sort resource profiles by name"
       ansible.builtin.debug:
@@ -225,7 +225,7 @@
     - name: "Demonstrate flattening with json_query"
       ansible.builtin.debug:
         msg: "{{ nested_data | json_query('[]') }}"
-      # When running json_query like this, it will implicitly 'flatten' any lists 
+      # When running json_query like this, it will implicitly 'flatten' any lists
       # this means that if any element underneath the main list passed to json query is itself also a list, it will pull all those values in the list out to make them top level values of the main list
 
     - name: "Demonstrate unflattening with json_query"
@@ -234,3 +234,22 @@
       # running json_query this way (with the * in the brackets) will not flatten the list and leave it intact
   # Filter Docs: https://docs.ansible.com/ansible/latest/collections/community/general/json_query_filter.html
 # jmespath docs: https://jmespath.org/tutorial.html
+
+
+- name: "Demonstrat jinja templating in debug"
+  ansible.builtin.debug:
+    msg: |
+      {% for num in range(1,10) %}
+       {{- num }}
+      {% endfor %}
+
+- name: "Set fact from lines lookup"
+  ansible.builtin.set_fact:
+    lookup_lines: "{{ lookup('ansible.builtin.lines', 'ls -l ~/') }}"
+
+- name: "Demonstrate lines lookup"
+  ansible.builtin.debug:
+    msg: |
+      {% for line in (lookup('ansible.builtin.lines', 'ls -l ~/') | ansible.builtin.split(',')) %}
+        {{- line}}
+      {% endfor %}

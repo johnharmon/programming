@@ -11,5 +11,8 @@
 - name: Include basic filter tasks
   ansible.builtin.include_tasks: "{{ role_path }}/tasks/filter.yml"
 #
-- name: Include lookkup tasks
+- name: Include advanced filter tasks
   ansible.builtin.include_tasks: "{{ role_path }}/tasks/filter_advanced.yml"
+
+- name: Include templating tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/templating.yml"
