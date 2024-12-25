@@ -17,3 +17,25 @@
     {%- endif -%}
   {%- endfor -%}
 {%- endmacro -%}
+
+{% macro powershell_list(items) -%}
+  '@('
+  {%- for item in items -%}
+    "{{- item -}}"
+    {%- if not loop.last -%}
+      {{- ',' -}}
+    {%- endif -%}
+  {%- endfor -%}
+  ')'
+{%- endmaro -%}
+
+{% macro powershell_dict(items) -%}
+  '@{'
+  {%- for item in items -%}
+    {{ item.key }}' = "'{{ item.value }}'"'
+    {%- if not loop.last -%}
+      {{- ';' -}}
+    {%- endif -%}
+  {%- endfor -%}
+  '}'
+{% endmacro %}
