@@ -26,9 +26,9 @@ type Claims struct {
 
 func validateJwt(tokenString string, jwtSecret []byte) (valid bool, token *jwt.Token, validErr error) {
 	// claims := &jwt.RegisteredClaims{}
-	// claims := &Claims{}
-	// token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (key any, keyErr error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (key any, keyErr error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (key any, keyErr error) {
+		// token, err := jwt.Parse(tokenString, func(token *jwt.Token) (key any, keyErr error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			keyErr = fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		} else {
@@ -50,9 +50,10 @@ func ValidateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.R
 			fmt.Fprintf(w, "Unable to fetch cookie\n")
 		}
 		_, token, err := validateJwt(tokenString.Value, jwtSecret)
-		fmt.Fprintf(w, "Token is: %v\n", token)
+		fmt.Fprintf(w, "Token is: %v\n", *token)
 		// fmt.Fprintf(w, "%v\n", token)
 		fmt.Fprintf(w, "Token Validity: %v\n", token.Valid)
+		fmt.Fprintf(w, "Token expiration: %s\n", token.Claims.(*Claims).ExpiresAt)
 		fmt.Fprintf(w, "Errors: %v\n", err)
 	}
 }
@@ -64,28 +65,29 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 		if signErr != nil {
 			fmt.Fprintf(w, "Error signing token: %v\n", signErr)
 		}
+		tokenExpiration, err := token.Claims.GetExpirationTime()
+		if err != nil {
+			fmt.Fprintf(w, "Error getting expiration time: %s", err)
+		}
 		http.SetCookie(w, &http.Cookie{
-			Name:  "set_cookie",
-			Value: signedToken,
-			Path:  "/",
+			Name:    "set_cookie",
+			Value:   signedToken,
+			Path:    "/",
+			Expires: tokenExpiration.Time,
 		})
-		// w.Header().Add("set_cookie", signedToken)
 		fmt.Fprintln(w, signedToken)
 	}
 }
 
 func CreateWebToken() *jwt.Token {
-	expirationTime := time.Now().Add(60 * time.Minute).Unix()
-	//	claims := &Claims{
-	//		RegisteredClaims: jwt.RegisteredClaims{
-	//			ExpiresAt: jwt.NewNumericDate(expirationTime),
-	//		},
-	//	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"username": "placeholder",
-		"exp":      expirationTime,
-	})
-	// token := jwt.New(jwt.SigningMethodHS256)
+	expirationTime := time.Now().Add(60 * time.Minute)
+	claims := &Claims{
+		Username: "test-user",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token
 }
 
