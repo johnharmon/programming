@@ -27,5 +27,5 @@ run:
       ipv4.method manual
       +ipv4.addresses {{ MGT_IF_ADDRESS | default('192.168.1.2') }}
       +ipv4.gateway  {{ MGT_GATEWAY | default('192.168.1.1') }}
-     +ipv4.routes {{ macros.format_routes((IPV4_ROUTES | default([['192.168.100.0/24', '192.168.100.1']]))) }} 
+      +ipv4.routes {{ macros.format_routes((IPV4_ROUTES | default([['192.168.100.0/24', '192.168.100.1']]))) }} 
       +ipv4.ipv4.dns {{ macros.format_dns((DNS_SERVERS | default(['dns1.example.com']))) }}

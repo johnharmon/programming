@@ -99,7 +99,7 @@
   ansible.builtin.set_fact:
     derived_value: "{{ lookup('ansible.builtin.vars', 'variable' ~ myvar) }}"
 
-    # ansible.builtin.env looks up variables whose names are contained in the values of other variables
+    # ansible.builtin.vars looks up variables whose names are contained in the values of other variables
     # In this example, the lookup gets ran looking for 'variable' concatenated with the value from myvar ('name')
     # Ths result of this is that it looks for a variable called 'variablename' which has a value of hello
     # The value of our 'derived_value' is then set to hello
