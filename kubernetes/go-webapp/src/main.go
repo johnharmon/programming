@@ -42,7 +42,7 @@ func validateJwt(tokenString string, jwtSecret []byte) (token *jwt.Token, validE
 	return token, validErr
 }
 
-func TokenValidationMiddleware(next http.HandlerFunc, jwtSecret []byte, cookieName string) http.Handler {
+func TokenValidationMiddleware(next http.HandlerFunc, jwtSecret []byte, cookieName string) func(http.ResponseWriter, *http.Request) {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenCookie, err := r.Cookie(cookieName)
 		if err != nil {
@@ -98,6 +98,11 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 	}
 }
 
+func ProtectedRouteHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Contratulations, the token was valid and you now have access to protected resources")
+	return
+}
+
 func CreateWebToken() *jwt.Token {
 	expirationTime := time.Now().Add(60 * time.Minute)
 	claims := &Claims{
@@ -130,6 +135,7 @@ func main() {
 	http.HandleFunc("/test", testResponse)
 	http.HandleFunc("/jwt/token/get", http.HandlerFunc(CreateWebTokenHandler(secret)))
 	http.HandleFunc("/jwt/token/validate", http.HandlerFunc(ValidateWebTokenHandlerDebugger(secret)))
+	http.HandleFunc("/jwt/token/protected", http.HandlerFunc(TokenValidationMiddleware(ProtectedRouteHandler, secret, "set_cookie")))
 	fmt.Printf("Starting server on port 8080")
 	serveErr := http.ListenAndServe(":8080", nil)
 	if serveErr != nil {
