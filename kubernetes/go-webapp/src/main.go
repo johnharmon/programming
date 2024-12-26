@@ -24,7 +24,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func validateJwt(tokenString string, jwtSecret []byte) (valid bool, token *jwt.Token, validErr error) {
+func validateJwt(tokenString string, jwtSecret []byte) (token *jwt.Token, validErr error) {
 	// claims := &jwt.RegisteredClaims{}
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (key any, keyErr error) {
@@ -36,25 +36,44 @@ func validateJwt(tokenString string, jwtSecret []byte) (valid bool, token *jwt.T
 		}
 		return key, keyErr
 	})
-	if err != nil || !token.Valid {
-		valid = false
+	if err != nil {
 		validErr = err
 	}
-	return valid, token, validErr
+	return token, validErr
 }
 
-func ValidateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Request) {
+func TokenValidationMiddleware(next http.HandlerFunc, jwtSecret []byte, cookieName string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenCookie, err := r.Cookie(cookieName)
+		if err != nil {
+			fmt.Fprintf(w, "Error retrieving cookie: %+v\n", err)
+			return
+		}
+		token, err := validateJwt(tokenCookie.Value, jwtSecret)
+		if err != nil {
+			fmt.Fprintf(w, "Error validating cookie: %+v\n", err)
+			return
+		}
+		if !token.Valid {
+			fmt.Fprintf(w, "Error code: %d - Unauthorized - Token Invalid\n", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func ValidateWebTokenHandlerDebugger(jwtSecret []byte) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenString, err := r.Cookie("set_cookie")
 		if err != nil {
 			fmt.Fprintf(w, "Unable to fetch cookie\n")
 		}
-		_, token, err := validateJwt(tokenString.Value, jwtSecret)
-		fmt.Fprintf(w, "Token is: %v\n", *token)
-		// fmt.Fprintf(w, "%v\n", token)
-		fmt.Fprintf(w, "Token Validity: %v\n", token.Valid)
-		fmt.Fprintf(w, "Token expiration: %s\n", token.Claims.(*Claims).ExpiresAt)
-		fmt.Fprintf(w, "Errors: %v\n", err)
+		token, err := validateJwt(tokenString.Value, jwtSecret)
+		fmt.Fprintf(w, "Token is: %+v\n", *token)
+		fmt.Fprintf(w, "Token Validity: %+v\n", token.Valid)
+		fmt.Fprintf(w, "Token expiration: %+v\n", token.Claims.(*Claims).ExpiresAt)
+		fmt.Fprintf(w, "Claims: %+v\n", token.Claims.(*Claims))
+		fmt.Fprintf(w, "Errors: %+v\n", err)
 	}
 }
 
@@ -110,7 +129,7 @@ func main() {
 	}
 	http.HandleFunc("/test", testResponse)
 	http.HandleFunc("/jwt/token/get", http.HandlerFunc(CreateWebTokenHandler(secret)))
-	http.HandleFunc("/jwt/token/validate", http.HandlerFunc(ValidateWebTokenHandler(secret)))
+	http.HandleFunc("/jwt/token/validate", http.HandlerFunc(ValidateWebTokenHandlerDebugger(secret)))
 	fmt.Printf("Starting server on port 8080")
 	serveErr := http.ListenAndServe(":8080", nil)
 	if serveErr != nil {
