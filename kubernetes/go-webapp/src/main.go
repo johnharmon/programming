@@ -42,11 +42,30 @@ func validateJwt(tokenString string, jwtSecret []byte) (token *jwt.Token, validE
 	return token, validErr
 }
 
-func TokenValidationMiddleware(next http.HandlerFunc, jwtSecret []byte, cookieName string) func(http.ResponseWriter, *http.Request) {
+func TokenValidationMiddlewareHandler(next http.Handler, jwtSecret []byte, cookieName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenCookie, err := r.Cookie(cookieName)
 		if err != nil {
-			fmt.Fprintf(w, "Error retrieving cookie: %+v\n", err)
+			fmt.Fprintf(w, "Error retreiving cookie: %+v\n", err)
+			return
+		}
+		token, err := validateJwt(tokenCookie.Value, jwtSecret)
+		if err != nil {
+			fmt.Fprintf(w, "Error validating cookie: %+v\n", err)
+			return
+		}
+		if !token.Valid {
+			fmt.Fprintf(w, "Error code: %d - Unauthorized - Token Invalid\n", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+func TokenValidationMiddleware(next http.Handler, jwtSecret []byte, cookieName string) func(http.ResponseWriter, *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenCookie, err := r.Cookie(cookieName)
+		if err != nil {
+			fmt.Fprintf(w, "Error retreiving cookie: %+v\n", err)
 			return
 		}
 		token, err := validateJwt(tokenCookie.Value, jwtSecret)
@@ -100,7 +119,6 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 
 func ProtectedRouteHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Contratulations, the token was valid and you now have access to protected resources")
-	return
 }
 
 func CreateWebToken() *jwt.Token {
@@ -109,6 +127,7 @@ func CreateWebToken() *jwt.Token {
 		Username: "test-user",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -118,7 +137,7 @@ func CreateWebToken() *jwt.Token {
 func SignWebToken(token *jwt.Token, jwtSecret any) (signedToken string, signErr error) {
 	signedToken, err := token.SignedString(jwtSecret)
 	if err != nil {
-		signErr = fmt.Errorf("Error signing token: %v", err)
+		signErr = fmt.Errorf("error signing token: %v", err)
 	}
 	return signedToken, signErr
 }
@@ -133,9 +152,10 @@ func main() {
 		log.Fatalf("Error generating secret:\n\t%v", err)
 	}
 	http.HandleFunc("/test", testResponse)
-	http.HandleFunc("/jwt/token/get", http.HandlerFunc(CreateWebTokenHandler(secret)))
-	http.HandleFunc("/jwt/token/validate", http.HandlerFunc(ValidateWebTokenHandlerDebugger(secret)))
-	http.HandleFunc("/jwt/token/protected", http.HandlerFunc(TokenValidationMiddleware(ProtectedRouteHandler, secret, "set_cookie")))
+	http.HandleFunc("/jwt/token/get", CreateWebTokenHandler(secret))
+	http.HandleFunc("/jwt/token/validate", ValidateWebTokenHandlerDebugger(secret))
+	http.HandleFunc("/jwt/token/protected", TokenValidationMiddleware(http.HandlerFunc(ProtectedRouteHandler), secret, "set_cookie"))
+	http.Handle("/jwt/token/protected", TokenValidationMiddlewareHandler(http.HandlerFunc(ProtectedRouteHandler), secret, "set_cookie"))
 	fmt.Printf("Starting server on port 8080")
 	serveErr := http.ListenAndServe(":8080", nil)
 	if serveErr != nil {
