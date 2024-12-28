@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,7 +18,7 @@ func generateJWTSecret() (key []byte, keyErr error) {
 	jwtSecret := make([]byte, 32)
 
 	if _, randErr := rand.Read(jwtSecret); randErr != nil {
-		return key, fmt.Errorf("Failed to generate secret!\n%v", randErr)
+		return key, fmt.Errorf("failed to generate secret!\n%v", randErr)
 	}
 	return jwtSecret, nil
 }
@@ -104,7 +105,7 @@ func ValidateWebTokenHandlerDebugger(jwtSecret []byte) func(http.ResponseWriter,
 func DisplayKeyMapHandler(w http.ResponseWriter, r *http.Request) {
 	for key, value := range jwtKeyMap {
 		fmt.Fprintf(w, "KEY: %s\n", key)
-		fmt.Fprintf(w, "VALUE:\n\t%+v\n", value)
+		fmt.Fprintf(w, "VALUE:\t%+v\n\n", value)
 	}
 }
 
@@ -112,7 +113,7 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenUUID := uuid.NewString()
 		token := CreateWebToken(tokenUUID)
-		signedToken, signErr := SignWebToken(token, jwtSecret)
+		signedToken, tokenSecret, signErr := SignWebToken(token)
 		if signErr != nil {
 			fmt.Fprintf(w, "Error signing token: %v\n", signErr)
 		}
@@ -127,7 +128,7 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 			Expires: tokenExpiration.Time,
 		})
 		fmt.Fprintln(w, signedToken)
-		jwtKey := NewJwtKeyWithUUID(jwtSecret, tokenUUID)
+		jwtKey := NewJwtKeyWithUUID(tokenSecret, tokenUUID)
 		jwtKey.GetSecret()
 		fmt.Printf("%+v\n", jwtKey)
 		jwtKeyMap[tokenUUID] = &jwtKey
@@ -152,12 +153,24 @@ func CreateWebToken(uuidString string) *jwt.Token {
 	return token
 }
 
-func SignWebToken(token *jwt.Token, jwtSecret any) (signedToken string, signErr error) {
+func SignWebTokenWithSecret(token *jwt.Token, jwtSecret any) (signedToken string, signErr error) {
 	signedToken, err := token.SignedString(jwtSecret)
 	if err != nil {
 		signErr = fmt.Errorf("error signing token: %v", err)
 	}
 	return signedToken, signErr
+}
+
+func SignWebToken(token *jwt.Token) (signedToken string, jwtSecret []byte, signErr error) {
+	jwtSecret, err := generateJWTSecret()
+	if err != nil {
+		signErr = fmt.Errorf("error creating secret: %+v", err)
+	}
+	signedToken, err = token.SignedString(jwtSecret)
+	if err != nil {
+		signErr = errors.Join(signErr, fmt.Errorf("error signing token: %v", err))
+	}
+	return signedToken, jwtSecret, signErr
 }
 
 func testResponse(w http.ResponseWriter, r *http.Request) {
