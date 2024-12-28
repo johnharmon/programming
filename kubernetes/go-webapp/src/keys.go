@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,8 +30,22 @@ func DecodeJwtSecrets(keyMap map[string]*JwtKey) {
 	}
 }
 
+func NewJwtKey(secret []byte) (key JwtKey) {
+	key.KID = uuid.NewString()
+	key.KeySecret = secret
+	key.KeySecretString = base64.StdEncoding.EncodeToString(secret)
+	return key
+}
+
+func NewJwtKeyWithUUID(secret []byte, uuidString string) (key JwtKey) {
+	key.KID = uuidString
+	key.KeySecret = secret
+	key.KeySecretString = base64.StdEncoding.EncodeToString(secret)
+	return key
+}
+
 // Assume yaml has been unmarshalled into a list of keys
-func NewJwtKey(map[string]string) *JwtKey {
+func NewJwtKeyFromYaml(map[string]string) *JwtKey {
 	return &JwtKey{}
 }
 
