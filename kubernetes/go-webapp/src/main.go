@@ -8,7 +8,10 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
+
+var jwtKeyMap map[string]*JwtKey
 
 func generateJWTSecret() (key []byte, keyErr error) {
 	jwtSecret := make([]byte, 32)
@@ -21,14 +24,13 @@ func generateJWTSecret() (key []byte, keyErr error) {
 
 type Claims struct {
 	Username string `json:"username"`
+	KID      string `json:"kid"`
 	jwt.RegisteredClaims
 }
 
 func validateJwt(tokenString string, jwtSecret []byte) (token *jwt.Token, validErr error) {
-	// claims := &jwt.RegisteredClaims{}
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (key any, keyErr error) {
-		// token, err := jwt.Parse(tokenString, func(token *jwt.Token) (key any, keyErr error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			keyErr = fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		} else {
@@ -65,16 +67,17 @@ func TokenValidationMiddleware(next http.Handler, jwtSecret []byte, cookieName s
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenCookie, err := r.Cookie(cookieName)
 		if err != nil {
+			http.Error(w, "Missing req1uired cookie\n", http.StatusNotAcceptable)
 			fmt.Fprintf(w, "Error retreiving cookie: %+v\n", err)
 			return
 		}
 		token, err := validateJwt(tokenCookie.Value, jwtSecret)
 		if err != nil {
-			fmt.Fprintf(w, "Error validating cookie: %+v\n", err)
+			http.Error(w, "Error - Cannot validate token\n", http.StatusBadRequest)
 			return
 		}
 		if !token.Valid {
-			fmt.Fprintf(w, "Error code: %d - Unauthorized - Token Invalid\n", http.StatusUnauthorized)
+			http.Error(w, "Unauthorized - Token Invalid\n", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -125,6 +128,7 @@ func CreateWebToken() *jwt.Token {
 	expirationTime := time.Now().Add(60 * time.Minute)
 	claims := &Claims{
 		Username: "test-user",
+		KID:      uuid.NewString(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
