@@ -93,6 +93,10 @@ func ValidateWebTokenHandlerDebugger(jwtSecret []byte) func(http.ResponseWriter,
 			fmt.Fprintf(w, "Unable to fetch cookie\n")
 		}
 		token, claims, err := validateJwt(tokenString.Value)
+		if err != nil {
+			fmt.Fprintf(w, "error validating web token:\n\t%+v", err)
+			return
+		}
 		fmt.Fprintf(w, "Token is: %+v\n", *token)
 		fmt.Fprintf(w, "Token Validity: %+v\n", token.Valid)
 		fmt.Fprintf(w, "Token expiration: %+v\n", token.Claims.(*Claims).ExpiresAt)
