@@ -28,13 +28,12 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func validateJwt(tokenString string, jwtSecret []byte) (token *jwt.Token, claims *Claims, validErr error) {
+func validateJwt(tokenString string) (token *jwt.Token, claims *Claims, validErr error) {
 	claims = &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (key any, keyErr error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			keyErr = fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		} else {
-			key = jwtSecret
 			jwtKeyMap[claims.KID].GetSecret()
 			key = jwtKeyMap[claims.KID].KeySecret
 		}
@@ -53,7 +52,7 @@ func TokenValidationMiddlewareHandler(next http.Handler, jwtSecret []byte, cooki
 			fmt.Fprintf(w, "Error retreiving cookie: %+v\n", err)
 			return
 		}
-		token, _, err := validateJwt(tokenCookie.Value, jwtSecret)
+		token, _, err := validateJwt(tokenCookie.Value)
 		if err != nil {
 			fmt.Fprintf(w, "Error validating cookie: %+v\n", err)
 			return
@@ -73,7 +72,7 @@ func TokenValidationMiddleware(next http.Handler, jwtSecret []byte, cookieName s
 			fmt.Fprintf(w, "Error retreiving cookie: %+v\n", err)
 			return
 		}
-		token, _, err := validateJwt(tokenCookie.Value, jwtSecret)
+		token, _, err := validateJwt(tokenCookie.Value)
 		if err != nil {
 			http.Error(w, "Error - Cannot validate token\n", http.StatusBadRequest)
 			return
@@ -92,7 +91,7 @@ func ValidateWebTokenHandlerDebugger(jwtSecret []byte) func(http.ResponseWriter,
 		if err != nil {
 			fmt.Fprintf(w, "Unable to fetch cookie\n")
 		}
-		token, claims, err := validateJwt(tokenString.Value, jwtSecret)
+		token, claims, err := validateJwt(tokenString.Value)
 		fmt.Fprintf(w, "Token is: %+v\n", *token)
 		fmt.Fprintf(w, "Token Validity: %+v\n", token.Valid)
 		fmt.Fprintf(w, "Token expiration: %+v\n", token.Claims.(*Claims).ExpiresAt)
