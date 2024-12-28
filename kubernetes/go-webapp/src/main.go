@@ -90,14 +90,15 @@ func ValidateWebTokenHandlerDebugger(jwtSecret []byte) func(http.ResponseWriter,
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenString, err := r.Cookie("set_cookie")
 		if err != nil {
-			fmt.Fprintf(w, "Unable to fetch cookie\n")
+			fmt.Fprintf(w, "Unable to fetch cookie:\n\t%+v", err)
+			return
 		}
 		token, claims, err := validateJwt(tokenString.Value)
 		if err != nil {
 			fmt.Fprintf(w, "error validating web token:\n\t%+v", err)
 			return
 		}
-		fmt.Fprintf(w, "Token is: %+v\n", *token)
+		fmt.Fprintf(w, "Token is: %+v\n", token)
 		fmt.Fprintf(w, "Token Validity: %+v\n", token.Valid)
 		fmt.Fprintf(w, "Token expiration: %+v\n", token.Claims.(*Claims).ExpiresAt)
 		fmt.Fprintf(w, "Claims: %+v\n", token.Claims.(*Claims))
@@ -121,15 +122,16 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 		if signErr != nil {
 			fmt.Fprintf(w, "Error signing token: %v\n", signErr)
 		}
-		tokenExpiration, err := token.Claims.GetExpirationTime()
+		_, err := token.Claims.GetExpirationTime()
 		if err != nil {
 			fmt.Fprintf(w, "Error getting expiration time: %s", err)
 		}
 		http.SetCookie(w, &http.Cookie{
-			Name:    "set_cookie",
-			Value:   signedToken,
-			Path:    "/",
-			Expires: tokenExpiration.Time,
+			Name:  "set_cookie",
+			Value: signedToken,
+			Path:  "/",
+			//Expires: tokenExpiration.Time,
+			Expires: time.Now().Add(time.Hour),
 		})
 		fmt.Fprintln(w, signedToken)
 		jwtKey := NewJwtKeyWithUUID(tokenSecret, tokenUUID)
@@ -144,13 +146,14 @@ func ProtectedRouteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateWebToken(uuidString string) *jwt.Token {
-	expirationTime := time.Now().Add(60 * time.Minute)
+	expirationTime := time.Now().Add(time.Hour * 1)
 	claims := &Claims{
 		Username: "test-user",
 		KID:      uuidString,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "jharmon-dev",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
