@@ -1,0 +1,20 @@
+---
+server:
+  name: "webapp"
+  port:
+    - 8080
+    - 8443
+  address:
+    - "127.0.0.1"
+
+jwt_config:
+  token:
+    expiration:
+      expiration_unit: "hour"
+      expiration_mult: 1
+    issuer: "webapp"
+    audience: "dev"
+    subject: "testing"
+  cookie:
+    expiration_unit: "hour"
+    expiration_mult: 1
