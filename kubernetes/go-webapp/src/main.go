@@ -20,6 +20,7 @@ func main() {
 	http.HandleFunc("/jwt/token/validate", ValidateWebTokenHandlerDebugger(secret))
 	http.HandleFunc("/jwt/token/protected", TokenValidationMiddleware(http.HandlerFunc(ProtectedRouteHandler), secret, "set_cookie"))
 	http.HandleFunc("/jwt/token/keymap", TokenValidationMiddleware(http.HandlerFunc(DisplayKeyMapHandler), secret, "set_cookie"))
+	http.HandleFunc("/index", ServeStaticContent(files, "files/index.html"))
 	http.Handle("/jwt/token/protected2", TokenValidationMiddlewareHandler(http.HandlerFunc(ProtectedRouteHandler), secret, "set_cookie"))
 	fmt.Printf("Starting server on port 8080")
 	serveErr := http.ListenAndServe(":8080", nil)
