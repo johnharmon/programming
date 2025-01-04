@@ -31,6 +31,7 @@ func DecodeJwtSecrets(keyMap map[string]*JwtKey) {
 }
 
 func NewJwtKey(secret []byte) (key *JwtKey) {
+	key = &JwtKey{}
 	key.KID = uuid.NewString()
 	key.KeySecret = secret
 	key.KeySecretString = base64.StdEncoding.EncodeToString(secret)
@@ -38,6 +39,7 @@ func NewJwtKey(secret []byte) (key *JwtKey) {
 }
 
 func NewJwtKeyWithUUID(secret []byte, uuidString string) (key *JwtKey) {
+	key = &JwtKey{}
 	key.KID = uuidString
 	key.KeySecret = secret
 	key.KeySecretString = base64.StdEncoding.EncodeToString(secret)
