@@ -110,7 +110,7 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 		jwtKey := NewJwtKeyWithUUID(tokenSecret, tokenUUID)
 		jwtKey.GetSecret()
 		fmt.Printf("%+v\n", jwtKey)
-		jwtKeyMap[tokenUUID] = &jwtKey
+		jwtKeyMap[tokenUUID] = jwtKey
 	}
 }
 
