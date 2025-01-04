@@ -1,0 +1,115 @@
+{% set proxmox_node_name = (proxmox_node_name | default('proxmox')) %}
+
+{{ proxmox_header }}
+
+
+/* VM RESOURCES */
+
+
+{% for num in range(proxmox_kube.control_nodes | int) %}
+{% set vm_name = "kube-control-node" ~ loop.index %}
+resource "proxmox_virtual_environment_vm" "{{ vm_name }}" {
+    name = "{{ vm_name }}"
+    description = "Control Node {{ loop.index }} for kube cluster"
+    tags = ["kube", "control_node", "terraform"]
+    node_name = "{{ proxmox_kube.proxmox_node_name | default("proxmox") v}}"
+    disk {
+        datastore_id = "{{ proxmox_kube.proxmox_datastore_vms_id | default('vm_pool_1') }}"
+        file_id = "{{ proxmox_kude.image_id | default("local:iso/Rocky-9.3-x86_64-minimal.iso") }}"
+        interface = "ide0"
+    }
+
+    disk {
+        datastore_id = "{{ proxmox_kube.proxmox_datastore_vms_id | default('vm_pool_1') }}"
+        interface = "scsi0"
+        size = 40
+        iothread = true
+        aio = "native"
+        file_format = "raw" 
+
+    }
+    initialization {
+        ip_config {
+            ipv4 {
+                address = "dhcp"
+            }
+        }
+    }
+
+    user_account {
+        keys = [trimspace(file("~/.ssh/id_rsa.pub"))]
+        username = "kubeadmin" 
+        password = var.kubeadmin_password
+    }
+}
+{% endfor %}
+
+{% for num in range(proxmox_kube.worker_nodes | int) %}
+{% set vm_name = "kube-worker-node" ~ loop.index %}
+resource "proxmox_virtual_environment_vm" "{{ vm_name }}" {
+    name = "{{ vm_name }}"
+    description = "Worker Node {{ loop.index }} for kube cluster"
+    tags = ["kube", "worker", "terraform"]
+    node_name = "{{ proxmox_kube.proxmox_node_name | default("proxmox") v}}"
+    disk {
+        datastore_id = "{{ proxmox_kube.proxmox_datastore_vms_id | default('vm_pool_1') }}"
+        file_id = proxmox_virtual_environment_file.local_kube_image.id 
+        interface = "ide0"
+    }
+    disk {
+        datastore_id = "{{ proxmox_kube.proxmox_datastore_vms_id | default('vm_pool_1') }}"
+        interface = "scsi0"
+        size = 40
+        iothread = true
+        aio = "native"
+        file_format = "raw" 
+
+    }
+    initialization {
+        ip_config {
+            ipv4 {
+                address = "dhcp"
+            }
+        }
+    }
+
+    user_account {
+        keys = [trimspace(file("~/.ssh/id_rsa.pub"))]
+        username = "kubeadmin" 
+        password = var.kubeadmin_password
+    }
+}
+{% endfor %}
+
+
+
+/* FILE RESOURCES */
+
+resource "proxmox_virtual_environment_download_file" "kube_image" {
+    content_type = "{{ proxmox_kube.image_type | default('iso') }}"
+    node_name = "{{ proxmox_kube.proxmox_node_name }}"
+    datastore_id = "{{ proxmox_datastore_iso_id | default('local') }}"
+    url = "{{ proxmox_kube.image_url | default('https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.4-x86_64-minimal.iso') }}"
+}
+
+resource "proxmox_virtual_environment_file" "local_kube_image" {
+    content_type = "{{ proxmox_kube.image_type | default('iso') }}"
+    node_name = "{{ proxmox_kube.proxmox_node_name }}"
+    datastore_id = "{{ proxmox_datastore_iso_id | default('local') }}"
+    source_file {
+        path = "{{ proxmox_kube.image_path | default('Rocky-9.3-x86_64-minimal.iso') }}"
+    }
+
+}
+
+/* DATA SOURCES */
+
+data "proxmox_virtual_environment_vms" "vm_list" {
+    tags = ["templates"]
+}
+
+data "proxmox_virtual_environment_datastores" "datastores" {
+    node_name = "{{ proxmox_kube.proxmox_node_name }}"
+    datastore_id = "{{ proxmox_datastore_iso_id | default('local') }}"
+    content_type = "{{ proxmox_kube.image_type | default('iso') }}"
+}

@@ -1,0 +1,9 @@
+[Unit]
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/network_startup.sh
+
+[Install]
+WantedBy=default.target
+

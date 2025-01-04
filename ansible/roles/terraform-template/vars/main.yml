@@ -1,0 +1,44 @@
+---
+# vars file for terraform-template
+proxmox_header: |
+  terraform {
+    required_providers {
+      proxmox = {
+        source = "bpg/proxmox"
+        version = ">= 0.61.0"
+      }
+      random = {
+        source ="hashicorp/random"
+        version = ">= 3.0"
+      }
+      ansible = {
+        source = "ansible/ansible"
+        version = ">= 1.3.0"
+      }
+    }
+  }
+  provider "proxmox" {
+    insecure  = true
+    endpoint = var.proxmox_endpoint
+    username = var.proxmox_username
+    password = var.proxmox_password
+    ssh {
+      agent = true
+      username = split("@", var.proxmox_username)[0]
+      private_key = file(var.proxmox_ssh_private_key)
+    }
+  }
+
+deployments:
+  proxmox_kube:
+    control_nodes: 2
+    worker_nodes: 3
+  proxmox_free_ipa:
+    ip: 'dhcp'
+    hostname: 'freeipa'
+    template_name: 'proxmox_free_ipa.tf.j2'
+    vm_name: 'freeipa'
+    dns_servers: ['192.168.86.5']
+    dns_search: ['harmonlab.com']
+    freeipa_iso: 'Rocky-9.3-x86_64-minimal.iso'
+    vars_template: 'freeipa_vars.tf.j2'

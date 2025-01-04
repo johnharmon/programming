@@ -1,0 +1,38 @@
+#!/bin/bash
+
+options=$(getopt -o "" --long color:,text: -- "$@" )
+
+echo $options
+eval set -- $options
+
+colorset='31'
+output=''
+
+
+while /bin/true; do
+	case $1 in
+		--color)
+			shift
+			echo $1
+			if [[ $1 == 'red' ]] || [[ $1 == 'Red' ]] || [[ $1 == 'RED' ]];
+			then
+				colorset='31'
+			elif [[ $1 == 'blue' ]] || [[ $1 == 'Blue' ]] || [[ $1 == 'BLUE' ]];
+			then
+				colorset='34'
+			fi
+			;;
+		--text)
+			shift
+			output=$1
+			;;
+		--)
+			shift
+			break
+			;;
+	esac
+	shift
+done
+
+
+echo -e "\e[1;${colorset}m$output\e[0m" 

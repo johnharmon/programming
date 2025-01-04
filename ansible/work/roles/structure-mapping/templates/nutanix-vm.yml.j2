@@ -1,0 +1,12 @@
+---
+{% for num in range(10) %}
+hostname{{ num }}:
+  - interface1:
+    subnet:
+      name:  'subnet{{ num }}'
+      uuid: {{ num | random | to_uuid }}
+  - interface2:
+    subnet:
+      name:  'subnet{{ (num|int) * 11 }}'
+      uuid: {{ ( num | int * 11) | random | to_uuid }}
+{% endfor %}

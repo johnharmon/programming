@@ -1,0 +1,172 @@
+#!/bin/zsh
+
+# Need to add dynamic assignment of these variables
+#OSCOTS_PARAMS="/var/adm/aehf/mcs/oscots/data/local/oscotsparams.dat"
+OSCOTS_PARAMS="/home/jharmon/OSCOTS_PARAMS.dat"
+STAGE_FILE='/home/jharmon/ACCS7'
+
+choose_stage_file(){
+    local STAGE_FILE=$(OCM_network_config.zsh --file ${OUTPUT_FILE} -c get_metadata CONFIGURATION)
+    echo ${STAGE_FILE}
+}
+
+get_pg_type_one(){
+    #This function is used to decide wich PG is of type 1
+    #Grep for PG_TYPE=1
+    local PG_TYPE_1=$(egrep '^PG[0-9]_TYPE=1' ${OSCOTS_PARAMS})
+    #Check to see if multiple PGs were assigned type one, this should never trigger on a good .dat file
+    if [[ -n $(echo $PG_TYPE_1 | awk '{print $2}') ]]; then
+        printf "Multiple lines of PG[X]_TYPE=1 detected in ${OSCOTS_PARAMS}\n Please address this issue and run this script again\n"
+        exit 1
+    fi
+    #Use awk to extract the 3rd character from the PG_TYPE=1
+    local PG_TYPE_1_NUMBER=$( echo ${PG_TYPE_1} | awk '{print substr($0,3,1)}')
+    #echo the resulting integer so that we know what PG to delete and where to start moving the rest of the PGs down from
+    echo ${PG_TYPE_1_NUMBER}
+}
+
+set_pg_group_number(){
+    #extract number of PGs
+    local  PG_NUM=$(grep "NUM_PG" ${OSCOTS_PARAMS} | awk '{print substr($0,8,1)}')
+    #Decrement the value by one
+    (( PG_NUM-- ))
+    #Replace the number of PGs with the new value
+    sed  -i "s/NUM_PG=.*/NUM_PG=${PG_NUM}/" ${OSCOTS_PARAMS}
+    
+}
+
+delete_pg_type_one(){
+    #Assign the integer value of PGx_TYPE=ONE as the first argument
+    local PG_NUM=$1
+    #Delete all lines starting with PGx.*
+    sed -i "/^PG${PG_NUM}.*/d" ${OSCOTS_PARAMS}
+}
+
+get_highest_pg(){
+    #Used to figure out the highest numbered PG so that the script knows how far up numerically to look for PGs to move down by 1
+    local highest_pg=$(egrep '^PG[0-9]{1,}.*' ${OSCOTS_PARAMS} | awk '{print substr($0,3,2)}' | sort -n -r | sed -n '1p')
+    #String slicing to remove any trailing underscores if the PG number is a single digit
+    highest_pg=${highest_pg%_}
+    echo ${highest_pg}
+}
+
+move_pg_types(){
+    #This function moves all PGs after whichever PG was of type one down by one (So PGx is moved to PG(x-1) for all PGs after PGx_TYPE=1
+    #This is assuming argument 1 is the PG that was of type one initially
+    local CURRENT_PG=$1
+    #Increment value to get the first PG we need to move
+    ((CURRENT_PG++))
+    #Call our get_highest_pg function so we can calculate the range for our loop
+    highest_pg=$(get_highest_pg)
+    #Loop over a sequence of numbers starting from the first one we need to move down by one to the last as calculated by our function
+    for num in $(seq ${CURRENT_PG} ${highest_pg}); do
+        #Calculate the PG number the target group will need to be moved to
+        local new_pg_number=$(bc <<< "${num}-1")
+        #Replace all instances of PGx with PG(x-1)
+        sed -i  "s/^PG${num}/PG${new_pg_number}/g" ${OSCOTS_PARAMS}
+    done
+}
+
+modify_digi_config(){
+    #This function checks for differences between the presence of DIGIs in each PG for the stage file VS OSCOTS_PARAMS.dat and updates the latter accordingly
+    #Check what PGs no longer have a digi in the stage file
+    pg_digi_values=$(egrep '^PG[0-9]{1,}_HAS_DIGI=0' ${STAGE_FILE} | awk '{print substr($0,3,1)}')
+    #Ensure the result has at least one value
+    if [[ -n ${pg_digi_values} ]]; then
+        while read pg_number; do
+            #Replace any instances of existing DIGIs with 0 for PGs that don't have DIGIs in the stage file
+            sed -i "s/^PG${pg_number}_HAS_DIGI=1/PG${pg_number}_HAS_DIGI=0/" ${OSCOTS_PARAMS}
+            #Delete DIGI_NAME and DIGI_IP for PGs that don't have DIGIs
+            sed -i "/\(^PG${pg_number}_DIGI_NAME.*\)\|\(^PG${pg_number}_DIGI_IP.*\)/d" ${OSCOTS_PARAMS}
+            done <<< ${pg_digi_values}
+    fi
+}
+
+modify_switch_config(){
+#This function is very similar to the modify_digi_config function, the only major differences are the contents of the sed commands
+    pg_switch_values=$(egrep '^PG[0-9]{1,}_HAS_9300.*' ${STAGE_FILE})
+    echo ${pg_switch_values}
+    if [[ -n ${pg_switch_values} ]]; then
+        while read pg_switch_value; do
+            echo "reading pg_switch_values"
+    #Pull out the status (existence) and the PG number for each switch
+            pg_switch_status=$(cut -d '=' -f 2 <<< ${pg_switch_value})
+            pg_switch_number=$( awk '{print substr($0,3,1)}' <<< ${pg_switch_value})
+            #check if the switch exists for each processor group and modify the OSCOTS_PARAMS.dat file accordingly
+            if [[ ${pg_switch_status} -eq 0 ]]; then
+                echo "Modifying settings for ${pg_switch_number}"
+                sed -i "s/^PG${pg_switch_number}_HAS_9300=1/PG${pg_switch_number}_HAS_9300=0/" ${OSCOTS_PARAMS}
+                sed -i "/\(^PG${pg_switch_number}_9300_NAME.*\)\|\(^PG${pg_switch_number}_9300_IP.*\)/d" ${OSCOTS_PARAMS}
+            fi
+            done <<< ${pg_switch_values}
+    fi
+}
+
+
+set_default_routers(){
+    
+    default_routers=$(egrep '^PG[0-9]{1,}_DEFAULT_ROUTER.*' ${STAGE_FILE})
+    #new_router_pgs=$(egrep '^PG[0-9]{1,}_DEFAULT_ROUTER.*' ${STAGE_FILE} | awk '{print substr($0,3,2)}')
+    #old_router_pgs=$(egrep '^Pg[0-9]{1,}_DEFAULT_ROUTER.*' ${STAGE_FILE
+    while read line; do
+        router_number=$(cut -d '_' -f 1 <<< ${line} | cut -d 'G' -f 2)
+        sed -i "s/PG${router_number}_DEFAULT_ROUTER.*/${line}/" ${OSCOTS_PARAMS}
+        #sed -i "/PG${router_number}_DEFAULT_ROUTER.*/d" ${OSCOTS_PARAMS}
+    done <<< ${default_routers}
+    if [[ $(egrep '^DEFAULT_ROUTER.*' ${STAGE_FILE} &>/dev/null; echo $?) -ne 0 ]]; then
+        sed -i '/^DEFAULT_ROUTER.*/d' ${OSCOTS_PARAMS}
+    elif [[ $(egrep '^DEFAULT_ROUTER.*' ${OSCOTS_PARAMS} &>/dev/null; echo $?) -ne 0 ]]; then
+        def_router=$(egrep '^DEFAULT_ROUTER.*' ${STAGE_FILE})
+        echo ${def_router} >> ${OSCOTS_PARAMS}
+    else
+        def_router=$(egrep '^DEFAULT_ROUTER.*' ${STAGE_FILE})
+        sed -i "s/^DEFAULT_ROUTER.*/${def_router}/" ${OSCOTS_PARAMS}
+    fi
+   # local highest_pg=$(get_highest_pg)
+   # for router_pg in $(seq 1 ${highest_pg}); do
+   #     if [[ $(echo ${new_router_pgs} | grep ${router_pg} &>/dev/null; echo $?) -ne 0 ]]; then
+   #        sed -i "/PG${router_pg}_DEFAULT_ROUTER.*/d" ${OSCOTS_PARAMS} 
+   #     fi
+   # done
+
+}
+
+add_ntp_entries(){
+    #Pull new NTP entries from the stage file
+    ntp_entries=$(grep 'NTP' ${STAGE_FILE})
+    #Ensure there are entries to pull before deleting old ones
+    if [[ -n ${ntp_entries} ]]; then
+        #Delete old entries
+        sed -i '/NTP/d' ${OSCOTS_PARAMS}
+        #Append new entries onto the end of OSCOTS_PARAMS (note, printf here is used as ntp_entries is just a space separated list but printf automatically
+        #sees each space-delimited word as a separate %s, thus inserting new lines between each entry
+        printf "%s\n" ${ntp_entries} >> ${OSCOTS_PARAMS}
+   fi
+}
+
+if [[ ! -e ${OSCOTS_PARAMS} ]]; then
+   #Ensure the OSCOTS_PARAMS exists before trying to create a backup of it 
+   cp ${OSCOTS_PARAMS} ${OSCOTS_PARAMS}.bkup
+fi
+#STAGE_FILE=$(choose_stage_file)
+PG_TYPE_ONE=$(get_pg_type_one)
+#Ensure that we can pull out a good PGx_TYPE=1 before running functions that rely on it existing
+if [[ -n ${PG_TYPE_ONE} ]]; then
+    set_pg_group_number
+    delete_pg_type_one "${PG_TYPE_ONE}"
+    move_pg_types ${PG_TYPE_ONE}
+fi
+
+#Call the rest of the functions in order and unset global variables
+modify_digi_config
+modify_switch_config
+set_default_routers
+add_ntp_entries
+
+
+
+
+
+
+
+

@@ -1,0 +1,117 @@
+---
+#- name: "Set node length"
+#  set_fact:
+#    node_length: "{{ server_type | length }}"
+#
+#- name: "Set node node_type"
+#  set_fact:
+#    node_type: "{{ 'msn' if app_short_name is search('msn-v') else 'msn-low' if app_short_name is search('msn-low') else 'external-user' if app_short name is search('external-user') else 'internal-user' if app_short_name is search('internal-user') else 'element'  }}"
+#
+#- name: "Set search position, last index if element, first index if mission"
+#  set_fact:
+#    search_position: "{{ 0 if node_type is search('msn') else -1 }}"
+#
+
+- name: "Set suite_type"
+  set_fact:
+    suite_type: 'msn-high'
+
+- name: "Set suite_length of of type" 
+  set_fact: 
+    suite_length: "{{ (42 | int) if suite_type is search('msn-high') else (7 | int) if suite_type is search('msn-low') else (3 | int) if suite_type is search('user') else (3 | int) if suite_type is search('user') else (2 | int) if suite_type is search('element') else 0 }}"
+
+- name: "Set subnet dictionary"
+  set_fact:
+    subnet_dictionary: "{{ lookup('vars', suite) }}"
+
+- name: "pull subnet for node_type"
+  set_fact:
+    subnet_dictionary: "{{ subnet_dictionary['subnets'][node_type] }}"
+
+- name: "Debug subnet dictionary"
+  copy:
+    content: "{{ subnet_dictionary | to_yaml(indent=2) }}"
+    dest: "{{ role_path }}/files/subnet-dictionary.yml"
+
+- name: "Set subnet list"
+  set_fact:
+    subnet_list: "{{ subnet_dictionary | dict2items | json_query('[*].value') }}" # Build subnet list from subnet dictionary, useing the derived node_type, allowing access to a single level dictionary
+
+- name: "Debug subnet list"  
+  copy:
+    content: "{{ subnet_dictionary | to_json(indent=2) }}"
+    dest: "{{ role_path }}/files/subnet-list.json"
+
+- name: "Check if inventory exists"
+  stat:
+    path: "/home/jharmon/programming/ansible/work/inventory/{{ suite }}.yml"
+  register: inventory_exists
+
+# - name: "set inventory exists to False for testing"
+#   set_fact:
+#     inventory_exists:
+#       stat:
+#         exists: True
+
+- name: "Debug inventory path"
+  debug:
+    msg: "/home/jharmon/programming/ansible/work/inventory/{{ suite }}.yml"
+
+- name: debug inventory_exists
+  debug:
+    msg: "{{ inventory_exists | to_nice_yaml(indent=2) }}"
+
+- name: "Debug script command"
+  debug:
+    msg: "suite_ips.py --initial_inventory {{ inventory_exists.stat.exists | bool }} --subnets '{{ subnet_dictionary | to_json }}'"
+
+- name: "Run suite_ips.py (initial inventory)"
+  script: "suite_ips.py --initial_inventory {{ inventory_exists.stat.exists }} --subnets '{{ subnet_dictionary | to_json }}' --ip_scan False"
+  register: suite_ips 
+  args:
+    chdir: "{{ role_path }}/files/"
+  when: not inventory_exists.stat.exists 
+
+- name: "debug script line"
+  debug:
+    msg: "suite_ips.py --subnets '{{ subnet_dictionary | to_json }}'"
+
+- name: "Run suite_ips.py (update inventory)"
+  #script: "suite_ips.py --initial_inventory {{ not inventory_exists.stat.exists }} --subnets '{{ subnet_dictionary | to_json }}'"
+  script: "suite_ips.py --subnets '{{ subnet_dictionary | to_json }}'"
+  register: suite_ip
+  args:
+    chdir: "{{ role_path }}/files/"
+  when: inventory_exists.stat.exists
+
+- name: "Load suite_ips.py results"
+  set_fact:
+    available_ips: "{{ lookup('file', role_path ~ '/files/available-ips.yml') | from_yaml }}"
+
+- name: "Debug available_ips"
+  copy:
+    content: "{{ available_ips | to_nice_yaml(indent=2) }}"
+    dest: "{{ role_path }}/files/available-ips.yml"
+
+- name: "Find available ips per interface"
+  set_fact:
+    available_ips_per_interface: "{{ available_ips_per_interface | default({}) | combine({item.1.key: item.0.value}) }}"
+  loop: "{{ (available_ips | dict2items | sort(attribute='key')) | zip(subnet_dictionary | dict2items | sort(attribute='value')) }}"
+
+
+  
+- name: "Debug available_ips_per_interface"
+  copy:
+    content: "{{ available_ips_per_interface | to_nice_yaml(indent=2) }}"
+    dest: "{{ role_path }}/files/available-ips-per-interface.yml"
+
+- name: "find index of available consecutive ips"   
+  set_fact:
+    ip_space_lengths: "{{ ip_space_lengths | default([]) + [ip_space | length | int] }}"
+  loop: "{{ available_ips_per_interface.mgt }}"
+  loop_control:
+    loop_var: ip_space
+
+
+
+

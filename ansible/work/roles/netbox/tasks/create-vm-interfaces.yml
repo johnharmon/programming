@@ -1,0 +1,55 @@
+- name: "Set interface list"
+  set_fact:
+    interface_list: "{{ nutanix_vm.spec.resources.nic_list }}"
+
+- name: "Template interface bodies"
+  set_fact:
+    netbox_interfaces: "{{ netbox_interfaces | default([]) + [lookup('template', 'nutanix-vm-to-netbox-interface.yml.j2')  | from_yaml] }}"
+  loop: "{{ interface_list }}"
+  loop_control:
+    loop_var: interface
+
+- name: "Get and set vlan IDs" 
+  block:
+    - name: "Query netbox for vlan IDs"
+      uri:
+        url: "{{ netbox_url }}/api/ipam/vlans/?name={{ interface.untagged_vlan }}"
+        method: GET
+        headers: "{{ netbox_headers }}"
+        validate_certs: False
+      register: netbox_untagged_vlan
+      loop: "{{ netbox_interfaces }}"
+      loop_control:
+        loop_var: interface
+
+    - name: "Set vlan IDs"
+      set_fact:
+        netbox_interfaces: "{{ netbox_interfaces | map('combine', {'untagged_vlan': netbox_untagged_vlan.json.results[index].id}) | list }}"
+      loop: "{{ netbox_interfaces | length | range | list }}"
+      loop_control:
+        loop_var: index
+  rescue:
+    - name: "Fail if vlan not found"
+      fail:
+        msg: "VLAN {{ netbox_interfaces[0].untagged_vlan }} not found in netbox"
+
+- name: "Set vrf ID"
+  set_fact:
+    netbox_interfaces: "{{ netbox_interfaces | map('combine', {'vrf': netbox_ipv4_body.vrf) | list }}"
+  loop: "{{ netbox_interfaces }}"
+  loop_control:
+    loop_var: interface
+
+- name: "Upload VM interfaces"
+  uri:
+    url: "{{ netbox_url }}/api/virtualization/interfaces/"
+    body: "{{ netbox_interfaces | to_json }}"
+    body_format: json
+    method: POST
+    headers: "{{ netbox_headers }}"
+    status_code: 201
+    validate_certs: False
+  register: netbox_interfaces
+
+
+  

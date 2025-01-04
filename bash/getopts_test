@@ -1,0 +1,31 @@
+#!/bin/bash
+
+while getopts "a:b:c:d:" opt; do
+	case "${opt}" in 
+		a)
+			echo ${OPTIND}
+			val=${!OPTIND}
+			echo ${val}
+			echo ${OPTARG}
+			;;
+		b)
+			echo ${OPTIND}
+			val=${!OPTIND}
+			echo ${val}
+			echo ${OPTARG}
+			;;
+		c)
+			echo ${OPTIND}
+			val=${!OPTIND}
+			echo ${val}
+			echo ${OPTARG}
+			;;
+		d)
+			echo ${OPTIND}
+			val=${!OPTIND}
+			echo ${val}
+			echo ${OPTARG}
+			;;
+
+	esac
+done

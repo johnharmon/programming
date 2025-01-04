@@ -1,0 +1,212 @@
+{
+    "workbench.colorTheme": "Ayu Dark Bordered",
+    "editor.folding": true,
+    "editor.foldOnClick": false ,
+    "workbench.colorCustomizations": {
+        "editor.foreground": "#97a6e7"
+    },
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": [
+                    "variable",
+                ],
+                "settings": {
+                    "foreground": "#97a6e7",
+                },
+            },
+            {
+                "scope": [
+                    "storage.type.function",
+                ],
+                "settings": {
+                    "fontStyle": "italic"
+                },
+            },
+            {
+                "scope": [
+                    "storage",
+                ],
+                "settings": {
+                    "fontStyle": "italic"
+                },
+            },
+            {
+                "scope": [
+                    "keyword",
+                ],
+                "settings": {
+                "fontStyle": "italic"
+                },
+            },
+            {
+                "scope": [
+                    "entity.name.function",
+                ],
+                "settings": {
+                "foreground": "#ffb454",
+                "fontStyle": "bold" 
+                },
+            },
+            {
+                "scope": [
+                    "meta.function-call.generic",
+                ],
+                "settings": {
+                "foreground": "#ffb454",
+                "fontStyle": "bold" 
+                },
+            },
+            {
+                "scope": [
+                    "support.function",
+                ],
+                "settings": {
+                "foreground": "#ffb454",
+                "fontStyle": "bold" 
+                },
+            },
+            {
+                "scope": [
+                    "variable.other.property",
+                ],
+                "settings": {
+                "foreground": "#00D045"
+                },
+            },
+        ],
+    },
+    "vim.easymotion": true,
+    "vim.incsearch": true,
+    "vim.foldfix": true,
+    "vim.useSystemClipboard": true,
+    "vim.useCtrlKeys": true,
+    "vim.hlsearch": true,
+    "vim.smartcase": true,
+    "vim.ignorecase": true,
+    "vim.showcmd": true,
+    "vim.leader": "<space>",
+    "vim.insertModeKeyBindingsNonRecursive": [
+        {
+            "before": [
+                "j",
+                "k"
+            ],
+            "after": [
+                "<Esc>"
+            ]
+        }
+    ],
+    "vim.visualModeKeyBindingsNonRecursive": [
+        {
+            "before": [
+                "f",
+                "d"
+            ],
+            "after": [
+                "<Esc>"
+            ]
+        }
+    ],
+    "vim.normalModeKeyBindingsNonRecursive": [
+        {
+            "before": [
+                "-"
+            ],
+            "after": [
+                "d",
+                "d",
+                "p"
+            ]
+        },
+        {
+            "before": [
+                "_"
+            ],
+            "after": [
+                "d",
+                "d",
+                "k",
+                "<s-p>"
+            ]
+        },
+        {
+            "before": [
+                "<enter>"
+            ],
+            "after": [
+                "i",
+                "<enter>",
+                "<Esc>"
+            ]
+        },
+        {
+            "before": [
+                "<BS>"
+            ],
+            "after": [
+                "i",
+                "<BS>",
+                "<esc>",
+                "l"
+            ]
+        },
+        {
+            "before": [
+                "<C-j>"
+            ],
+            "after": [
+                "3",
+                "0",
+                "j"
+            ]
+        },
+        {
+            "before": [
+                "<C-k>"
+            ],
+            "after": [
+                "3",
+                "0",
+                "k"
+            ]
+        },
+        {
+            "before": [
+                "<leader>",
+                "q"
+            ],
+            "after": [
+                ":",
+                "q",
+                "!",
+                "<enter>"
+            ]
+        },
+    ],
+    "remote.SSH.remotePlatform": {
+        "192.168.86.3": "linux",
+        "156.82.68.28": "linux",
+        "10.0.0.162": "linux"
+    },
+    "workbench.startupEditor": "none",
+    "redhat.telemetry.enabled": true,
+    "security.workspace.trust.untrustedFiles": "open",
+    "git.ignoreLegacyWarning": true,
+    "settingsSync.ignoredSettings": [
+        "-python.defaultInterpreterPath"
+    ],
+    "terminal.integrated.enableMultiLinePasteWarning": false,
+    "remote.SSH.connectTimeout": 60,
+    "remote.SSH.useLocalServer":  true,
+    "terminal.integrated.inheritEnv": false,
+    "remote.SSH.suppressWindowsSshWarning": true,
+    "github.copilot.enable": {
+        "*": false,
+        "plaintext": false,
+        "markdown": false,
+        "scminput": false
+    },
+    "tabnine.experimentalAutoImports": true
+
+}

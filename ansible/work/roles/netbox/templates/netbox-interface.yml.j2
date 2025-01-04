@@ -1,0 +1,6 @@
+virtual_machine: "{{  netbox_vm_id }}"
+name: "{{ interface.subnet_reference.name}}"
+mac_address: "{{ interface.mac_address }}"
+untagged_vlans: "{{ interface.subnet_reference.name }}"
+assigned_object_type: "virtualization.vminterface"
+assigned_object_id: "{{ netbox_vm_id }}"
