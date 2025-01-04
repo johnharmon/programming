@@ -1,0 +1,9 @@
+---
+# tasks file for template-test
+
+- name: Copy template file
+  template:
+    src: test.j2
+    dest: /tmp/template-test.yml
+  delegate_to: localhost
+  run_once: true

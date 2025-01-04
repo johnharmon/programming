@@ -1,0 +1,5 @@
+---
+# defaults file for netbox
+netbox_url: "http://localhost/8000/"
+netbox_api: "http://localhost/8000/api/" 
+update_primary_ip: False

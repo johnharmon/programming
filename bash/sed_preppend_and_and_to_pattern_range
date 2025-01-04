@@ -1,0 +1,6 @@
+sed '/^poopy$/{
+ione line before whole spaceand a second one sed_file
+}
+/^\[BOOK/{
+aone andtwo lines after
+}' sed_file

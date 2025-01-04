@@ -1,0 +1,11 @@
+#!/bin/bash
+for script in $(ls /home/jharmon/bashscripts); do 
+
+	if [[ ! -e /home/jharmon/bin/$script ]]; then
+		ln /home/jharmon/bashscripts/$script /home/jharmon/bin/$script
+	fi
+	
+	chmod u+x /home/jharmon/bin/*
+
+done
+

@@ -1,0 +1,4 @@
+Suite_test:
+  hosts:
+    host1:
+      ansible_host: 10.100.1.11

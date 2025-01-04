@@ -1,0 +1,7 @@
+---
+- name: "run role"
+  hosts: localhost
+  tasks:
+    - name: "include test role"
+      include_role:
+        name: work/roles/test-facts

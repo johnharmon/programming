@@ -1,0 +1,11 @@
+---
+  hosts: "{{ hostname }}"
+  tasks:
+      name: "Enable nopasswd for systemctl"
+        include_role: sudo-manipulation
+          tasks_from: nopasswd.yml
+      name: "Disable nopasswd for systemctl"
+        include_role: sudo-manipulation
+          tasks_from: stig.yml
+
+            

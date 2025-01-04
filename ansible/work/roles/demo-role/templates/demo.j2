@@ -1,0 +1,11 @@
+{% import macros.j2 as macros %}
+{% set app_profile_list = application_profile | dict2items %}
+
+{# Lets Set some data structures to be used by other tasks #}
+
+{# Powershell cname creation #}
+
+- powershell_cname_strings:
+{% for app_profile in app_profile_list %}
+  dns_string: {% macros.powershell_list(app_profile.cname_list) %}
+

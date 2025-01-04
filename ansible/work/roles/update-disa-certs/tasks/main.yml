@@ -1,0 +1,47 @@
+---
+- name: "Set hostname to lowercase {{ inventory_hostname }}"
+  set_fact:
+    hostname: "{{ inventory_hostname | lower }}"
+    
+- name: "Set lemp type"
+  set_fact:
+    sensor: "{% if 'msi' in hostname %}msi{% elif 'mil' in hostname %}millstione{% if 'altair' in hostname %}altair{% elif 'space-fence' in hostname %}space-fence{% endif %}"
+
+- name: "Set app_name"
+  set_fact:
+    app_name: "{{ sensor }}-lemp"
+
+- name: "Set app_directory"
+  set_fact:
+    app_directory: "/opt/C2BMC/apps/{{ app_name }}"
+
+- name: "Set cert directory path"
+  set_fact:
+    cert_path: "{{ app_directory }}/certs"
+
+- name: "Ensure certs directory exists"
+  file:
+    path: "{{ cert_path }}"
+    state: directory
+    owner: sysman
+    group: sysman
+
+- name: "Copy properties file to {{ app_name }}"
+  template:
+    src: "{{ lookup('template', em_suite.properties) }}"
+    dest: "{{ cert_path }}"
+    owner: sysman
+    group: sysman
+    mode: 644
+    force: True
+
+- name: "Copy cert to {{ app_name }}"
+  copy: 
+    scr: "{{ role_path }}/files/{{ cert_name }}"
+    dest: "{{ cert_path }}"
+    force: True
+    owner: sysman
+    group: sysman
+    mode: 644
+
+    

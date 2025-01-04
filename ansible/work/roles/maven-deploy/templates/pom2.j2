@@ -1,0 +1,51 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>{{ group_id }}</groupId>
+  <artifactId>{{ artifact_id }}</artifactId>
+  <version>{{ version }}</version>
+  
+  {% if use_parent_pom %}
+  <parent>
+    <groupId>{{ parent_group_id }}</groupId>
+    <artifactId>{{ parent_artifact_id }}</artifactId>
+    <version>{{ parent_version }}</version>
+    {% if relative_parent_path %}
+    <relativePath>{{ relative_parent_path }}</relativePath>
+    {% endif %}
+  </parent>
+  {% endif %}
+  
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>2.1</version>
+        <executions>
+          <execution>
+            <id>copy-dependencies</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <includeGroupIds>{{ group_id }}</includeGroupIds>
+              <includeArtifactIds>{{ artifact_id }}</includeArtifactIds>
+              <includeTypes>jar</includeTypes>
+              <outputDirectory>{{ output_directory }}</outputDirectory>
+              {% if artifact_type == 'rpm' %}
+              <stripVersion>true</stripVersion>
+              <stripClassifier>true</stripClassifier>
+              {% endif %}
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

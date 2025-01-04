@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  author: Alexande Saprykin
+  description: Role for testing Ansible Galaxy
+  company: ACME
+
+  license: MIT
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - xenial
+
+  cloud_platforms:
+    - OpenStack
+
+  galaxy_tags: []
+
+dependencies: []

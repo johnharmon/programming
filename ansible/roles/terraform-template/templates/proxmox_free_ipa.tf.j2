@@ -1,0 +1,108 @@
+{% set proxmox_node_name = (deployment_config.proxmox_node_name | default('proxmox')) %}
+{% set vm_name = deployment_config.vm_name %}
+{% set datastore_vms_id = deployment_config.datastore_vms_id | default('vm_pool_1') %}
+{% set ssh_key = deployment_config.ssh_key_file | default("~/.ssh/authorized_keys") %}
+{% set freeipa_iso = deployment_config.freeipa_iso %}
+{{ proxmox_header }}
+
+/* VARS */
+
+variable "proxmox_node_name"  {
+  description = "The name of the proxmox node"
+  default = "{{ proxmox_node_name}}"
+  type = string 
+}
+
+variable "proxmox_username" {
+  description = "The username for the proxmox node"
+  type = string
+  default = "harmonj@pam" 
+}
+
+variable "proxmox_password" {
+  description = "The password for the proxmox node"
+  type = string
+  sensitive = true
+}
+
+variable "proxmox_endpoint" {
+  description = "The endpoint for the proxmox node"
+  type = string
+  default = "https://proxmox.harmonlab.com:8006/"
+}
+
+variable "proxmox_ssh_private_key" {
+    description = "The path to the private key file for the proxmox node"
+    type = string
+    default = "{{ ssh_key }}"
+}
+
+/* DATA SOURCES */
+
+data "proxmox_virtual_environment_vms" "vm_list" {
+    node_name = "{{ proxmox_node_name}}"
+    filter {
+        name = "name" 
+        regex = true 
+        values = [".*(?i)freeipa.*"]
+    }
+}
+
+data "proxmox_virtual_environment_datastores" "datastores" {
+    node_name = "{{ proxmox_node_name }}"
+}
+
+/* LOCALS */
+
+locals {
+    vm_pool = [for datastore in data.proxmox_virtual_environment_datastores.proxmox.datastore_ids : datastore if datastore == "{{ datastore_vms_id }}"]
+}
+
+/* VM RESOURCES */
+
+resource "proxmox_virtual_environment_vm" "{{ vm_name }}" {
+    name = "{{ vm_name }}"
+    description = "Freeipa server"
+    tags = ["freeipa", "terraform"]
+    node_name = "{{ proxmox_node_name }}"
+    cdrom {
+        file_id = "local:iso/{{ deployment_config.freeipa_iso }}"
+        interface = "ide0"
+        enabled = true
+    }
+    disk {
+        datastore_id = local.vm_pool[0]
+        interface = "scsi0"
+        size = 20
+        aio = "native"
+        file_format = "raw"
+    }
+    cpu {
+        cores = 2
+        type = "x86-64-v2-AES"
+    }
+    memory {
+        dedicated = {{ deployment_config.vm_memory | default (4096)}}
+    }
+    network_device {
+        bridge = "vmbr0"
+        model = "virtio"
+    }
+    initialization {
+        datastore_id = local.vm_pool[0]
+        ip_config {
+            ipv4 {
+                address = "dhcp"
+            }
+        }
+        dns {
+            domain = "harmonlab.com" 
+            servers = [{% for dns_server in deployment_config.dns_servers %}{{ '"' ~ dns_server ~ '"' ~ (',' if not loop.last) }}{% endfor %}]
+        }
+        user_account {
+        keys = [trimspace(file("${pathexpand("~")}/.ssh/authorized_keys"))]
+        username = "cloud_user"
+        }
+    }
+}
+

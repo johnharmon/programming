@@ -1,0 +1,15 @@
+---
+- name: "lookup app var"
+  set_fact:
+      apps: "{{ lookup('vars', 'app') }}"
+
+- name: "set facts in loop"
+  set_fact:
+      app_name: "{{ app_item }}"
+  loop: "{{ apps }}"
+  loop_control:
+      loop_var: "app_item"
+
+- name: "debug app_name"
+  debug:
+      msg: "{{ app_name }}"
