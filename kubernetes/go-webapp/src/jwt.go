@@ -99,18 +99,16 @@ func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Req
 			fmt.Fprintf(w, "Error getting expiration time: %s", err)
 		}
 		http.SetCookie(w, &http.Cookie{
-			Name:  "set_cookie",
-			Value: signedToken,
-			Path:  "/",
-			//Expires: tokenExpiration.Time,
-			//Expires: time.Now().Add(time.Hour),
+			Name:    "set_cookie",
+			Value:   signedToken,
+			Path:    "/",
 			Expires: DefaultConfig.JWTConfig.Cookie.GetExpirationTime(),
 		})
 		fmt.Fprintln(w, signedToken)
 		jwtKey := NewJwtKeyWithUUID(tokenSecret, tokenUUID)
 		jwtKey.GetSecret()
 		fmt.Printf("%+v\n", jwtKey)
-		jwtKeyMap[tokenUUID] = &jwtKey
+		jwtKeyMap[tokenUUID] = jwtKey
 	}
 }
 
