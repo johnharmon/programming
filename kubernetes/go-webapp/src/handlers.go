@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-func ServeStaticContent(fs embed.FS, fileName string) func(http.ResponseWriter, *http.Request) {
+func ServeEmbeddedStaticContent(fs embed.FS, fileName string) func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		file, err := fs.ReadFile(fileName)
 		if err != nil {
