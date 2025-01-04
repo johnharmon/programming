@@ -1,0 +1,8 @@
+---
+  name: "Replace sudoers file in sudoers.d"
+    copy:
+      src: "{{ role_path }}/files/sudoers_nopasswd"
+      dest: "/etc/sudoers.d"
+      force: True
+    become: True
+

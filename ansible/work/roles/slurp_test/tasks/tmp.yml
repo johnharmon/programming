@@ -1,0 +1,138 @@
+---
+- name: "Set Patching facts and defaults"
+  delegate_to: localhost
+  run_once: true
+  ansible.builtin.set_fact:
+    oracle_patch_path: "{{ ORACLE_PATCH_PATH | default('/some/fileshare') }}"
+    use_webserver: "{{ USE_WEBSERVER | default(false) }}"
+
+- name: Download Patch
+  delegate_to: localhost
+  run_once: true
+  register: url_downloads
+  loop: "{{ PATCH_URL_LIST }}"
+  ## the above variable we need to provide URLs - this will be in main.yml of vars folder.
+  loop_control:
+    loop_var: patch_url
+  ansible.builtin.uri:
+    url: "{{ patch_url }}"
+    ## the above variable should have the URL for downloading the patch
+    method: GET
+    user: "{{ ORACLE_USERNAME }}"
+    password: "{{ ORACLE_PASSWORD }}"
+    dest: "{{ role_path }}/files/"
+
+- name: "Build list of file names and paths"
+  loop: "{{ url_downloads.results }}"
+  loop_control:
+    loop_var: "url_download"
+  ansible.builtin.set_fact:
+    # Create a list of dictionaries holding important info for each patch
+    # 'file' holds the actual filename
+    # 'path' holds the full path to the file
+    # 'unarchive_path' holds the path to run the unarchive from (working directory)
+    # 'patch_role_path' holds the path to the file when it is temporarily stored in the role_path (this is a special value ansible will always provide when inside a role)
+    # 'directory' holds the directory that will be created by unzipping the file
+    patch_files: >
+      {{
+        (patch_files | default([])) + [
+          {
+            'file': url_download.path.split('/')[-1],
+            'path': oracle_patch_path ~ url_download.path.split('/')[-1],
+            'unarchive_path': oracle_patch_path,
+            'patch_role_path':  role_path  ~ '/files/' ~ url_download.path.split('/')[-1],
+            'directory': (url_download.path.split('/')[-1] | ansible.builtin.regex_search('(?<=p)[0-9]+(?=_)'))
+          }
+        ]
+      }}
+
+- name: Use webserver as proxy
+  when: use_webserver is defined and use_webserver | bool
+  block:
+    - name: Upload from ansible to the webserver
+      delegate_to: "{{ WEB_SERVER | default('apansweb1p.idm.hedc.mil') }}"
+      run_once: true
+      become: true
+      loop: "{{ url_downloads.results }}"
+      loop_control:
+        loop_var: "url_download"
+      ansible.builtin.copy:
+        src: "{{ url_download.path }}"
+        dest: "{{ PATCH_PATH | default('/app/www/oraclePatches') }}"
+        owner: nginx
+        group: nginx
+        mode: "0644"
+
+    - name: Copy the downloaded file to share drive
+      deletgate_to: "{{ play_hosts[0] }}"
+      ## play_hosts[0] can be a host like jump server where the share is mounted.
+      run_once: true
+      register: url_download
+      loop: "{{ patch_files | zip(patch_file_paths) }}"
+      loop_control:
+      ansible.builtin.uri:
+        url: "https://apansweb1p.idm.hedc.mil/oraclePatches/{{ url_download.path.split('/')[-1] }}"
+        method: GET
+        dest: "{{ oracle_patch_path }}"
+
+- name: "Use copy module from container directly to the fileshare"
+  when: use_webserver is not defined or use_webserver | bool
+  delegate_to: "{{ play_hosts[0] }}"
+  loop: "{{ patch_files }}"
+  loop_control:
+    loop_var: patch_file
+  ansible.builtin.copy:
+    src: "{{ patch_file.role_path }}"
+    dest: "{{ patch_file.path }}"
+    force: true
+    mode: "0744"
+
+- name: Unzip downloaded patch(es)
+  loop: "{{ patch_files }}"
+  loop_control:
+    loop_var: patch_file
+  ansible.builtin.unarchive:
+    src: "{{ patch_file.path }}"
+    dest: "{{ patch_file.unarchive_path }}"
+    remote_src: true
+
+- name: Apply Patch
+  become: true
+  become_user: oracle
+  register: patch_results
+  loop: "{{ patch_files }}"
+  loop_control:
+    loop_var: patch_file
+  ansible.builtin.shell:
+    chdir: "{{ patch_file.unarchive_path ~ '/' ~ patch_file.directory }}"
+    cmd: echo 'Applying patch {{ patch_file.file }}' && opatch apply -invPtrLoc /app/oracle/db19/oraInst.loc -silent
+
+- name: Verify Patch Apply
+  delegate_to: localhost
+  loop: "{{ patch_results.results }}"
+  loop_control:
+    loop_var: result
+  ansible.builtin.set_fact:
+    patch_output: >
+      {{
+        (patch_output | default([])) + [
+          {
+            'patch_name':  (result.cmd | ansible.builtin.regex_search('(?<=Applying patch)[\w\.\-]+')),
+            'patch_success': (result.stdout ansible.builtin.regex_search('.*OPatch Succeeded.*',ignorecase=true))
+            'output': result.stdout
+            }
+        ]
+      }}
+
+- name: "Debug patch results"
+  delegate_to: localhost
+  loop: patch_output
+  loop_control:
+    loop_var: output
+  ansible.builtin.debug:
+    msg: >-
+      {% if output.patch_success | bool == true %}
+        {{- output.patch_name }} was successful
+      {% else %}
+        {{- output.patch_name }} was not successful: \n\t{{ output.output }}
+      {% endif %}

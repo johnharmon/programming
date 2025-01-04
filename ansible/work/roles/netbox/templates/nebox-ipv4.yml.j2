@@ -1,0 +1,9 @@
+{# Used to generate the ipv4 body for a post request ti /api/ipam/ip-addresses #}
+
+- address: "{{ hostvars[inventory_hostname]['c2bmc_mgt_if']['host_address']}}"
+  description: "C2BMC Management Interface"
+  tenant: "{{ netbox_vm_body.tenant}}"
+  status: "active"
+  vrf: "{{ vrf | default('ACEOPS') }}"
+  dns_name: "{{ inventory_hostname }}"
+  assigned_object_id: "{{ netbox_interface.id }}"

@@ -1,0 +1,29 @@
+In Ansible 2.9, the following Jinja2 tests are available:
+
+1. `defined`: This test checks if a variable is defined.
+2. `undefined`: This test checks if a variable is undefined.
+3. `none`: This test checks if a variable is `None`.
+4. `boolean`: This test checks if a variable is a boolean.
+5. `false`: This test checks if a variable is `False`.
+6. `true`: This test checks if a variable is `True`.
+7. `even`: This test checks if a variable is an even number.
+8. `odd`: This test checks if a variable is an odd number.
+9. `string`: This test checks if a variable is a string.
+10. `mapping`: This test checks if a variable is a dictionary.
+11. `number`: This test checks if a variable is a number.
+12. `sequence`: This test checks if a variable is a list.
+13. `iterable`: This test checks if a variable is iterable.
+14. `sameas`: This test checks if a variable is the same as another one.
+15. `lower`: This test checks if a string is all lower case.
+16. `upper`: This test checks if a string is all upper case.
+17. `other`: This test checks if a variable is something other than `None`, `False`, `0`, or an empty string.
+18. `regex_match`: This test checks if a string matches a regular expression.
+19. `regex_replace`: This test replaces all matches of a regular expression in a string.
+20. `regex_search`: This test searches a string for a regular expression.
+21. `search`: This test is similar to `regex_search`, but it uses a string instead of a regular expression.
+22. `match`: This test is similar to `regex_match`, but it uses a string instead of a regular expression.
+23. `in`: This test checks if a value is in a list.
+24. `not in`: This test checks if a value is not in a list.
+25. `divisibleby`: This test checks if a number is divisible by another number.
+
+You can use these tests in your Ansible playbooks to perform various checks on your variables.

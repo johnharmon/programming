@@ -1,0 +1,32 @@
+---
+suite1:
+  hosts:
+  msnh:
+    host1:
+      ansible_host: "10.177.105.11"
+    host6:
+      ansible_host: "10.177.105.13"
+    host2:
+      ansible_host: "192.168.137.2"
+    host3:
+      ansible_host: "192.168.137.50"
+  msnl:
+    host1:
+      ansible_host: "192.168.137.128"
+    host2:
+      ansible_host: "192.168.137.150"
+  user_int:
+    host1:
+      ansible_host: "192.168.138.20"
+    host2:
+      ansible_host: "192.168.138.21"
+  user_ext:
+    host1:
+      ansible_host: "10.177.100.30"
+    host2:
+      ansible_host: "10.177.100.31"
+  elements:
+    host1:
+      ansible_host: "10.1.1.20"
+    host2:
+      ansible_host: "10.1.1.30"

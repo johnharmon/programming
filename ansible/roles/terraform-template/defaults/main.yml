@@ -1,0 +1,3 @@
+---
+# defaults file for terraform-template
+terraform_path: "{{lookup('env', 'HOME') ~ '/programming/terraform/ansible-projects/'}}"

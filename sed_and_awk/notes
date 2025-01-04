@@ -1,0 +1,153 @@
+/* notes */
+
+
+
+These are notes for the O'Reillly book 'sed & awk' (second edition) (Doughberty & Robbins)
+
+Notes on opening chapters---{{{
+
+A few quick notes from chapters 1-3 ( most of them are things I already knew or is just background knowledge  )
+    sed maintains a 'pattern space' which is the current state of the line it is reading. If you applly multiple changes to this pattern space, it is updated dynamically, meaning if you are running 2 substitutions against the pattern space, the second substitution
+    will be ran agains the state of the pattern space AFTER the first substitution has occured
+
+    a start and end to a set of lines upon which sed should operate can be given multiple ways {
+        sed <start>,<end><command>/script/ where <start> and <end> are line numbers or metacharacters
+        sed /start_pattern/end_pattern/<command>/script where start_pattern and end_pattern are regular expressions (if end_pattern is never met, the command and script will be ran against the rest of the file until the end)_
+        the above can also be used with no end_pattern essentially running it only against individual lines that match the single pattern given
+        for any of the above range specifications, multiple commands can be ran against it by grouping{
+            sed /start_pattern/end_pattern/{
+                s/pattern1/pattern2/
+                s/pattern3/pattern4/
+                .
+                .
+                .
+                s/patternX/patternY
+            }
+        }
+    }
+
+    regex sidenote: if you want to include ']' as part of a character class, it must be the FIRST character after the opening '[' denoting the character class{
+        for example, 'dafahet[BOOK]asdber' can only be explicitly matched by:
+             '[[]BOOK[]]' if you NEED to have the  opening and closing [] be there, trying to escape the ']' in the second character class WILL NOT WORK
+    }
+    
+    the 'd' (delete) command has another interesting property in which no other commands will be executed against the pattern space if the delete command is executed, acting as a quasi form of flow control
+    
+
+    APPENDING AND INSERTING{
+        appending ans inserting are done with the 'a' and 'i' commands respectively
+        appending places the given text on the line after the pattern space (not affecting the pattern space itself nor the internal line counter) 
+        inserting places the given text on the line before the pattern space (not affecting it or the line counter)
+        both the text to append or insert must appear on a new line following a (i|a)\ as shown here{
+            /pattern1/pattern2/{
+                a\
+                    appended_line_1\
+                    appended_line_2\
+                i\
+                    inserted_line_1\
+                    inserted_line_2
+            }
+        }
+        if you want to append/insert multiple lines with a single a\ or i\, then subsequent lines to append or insert must also be terminated with a \ as shown above (the same behavior can also be done using multiple a\ or i\ commands)
+        the print command supplied after substitution is conditional upon a successful substitution being made
+    }
+
+
+
+"}}}
+        
+Explaining sed syntax and commands---{{{
+
+    basic syntax for sed is as follows{
+        sed [flags] <script> <input file/string,redirection,etc>
+
+        flags:{
+            see the man page, these are the easiest parts to understand
+            Notable flags{
+                -i: GNU sed only, edits file in place, you can append a <string> after the i to create a backup file with that string appended to the name
+                -n: suppress normal output, only print out lines that are actually actually operated on (i.e. they were within the pattern space and a command applied, were told to print, etc)
+                }
+        }
+
+        script:{
+            This is the heart and most complex part of sed and where the internal sed commands apply. Here are some basic components of a sed script{
+                Line/Adress range:{
+                    This is the part of the script that tells sed which section of the input to work on, with 4 basic methods of doing so{
+                        Method 1: Explicit line ranges- {
+                            This is in the form of: 
+                                sed [flags] '<starting_line_number>,<ending_line_number>[commands]'
+                                the ending_line_number value can be numeric, or $ for the last line
+                        }
+
+                        Method 2: Pattern matching for start and end of range- {
+                            This takes the form of:
+                               'sed [flags] /<pattern_start>/,/<pattern_end>/[commands]'
+                        }
+
+                        Method 3: Single pattern to match individual lines - {
+                            This takes the form of:
+                                'sed [flags] /<pattern>/[comands]'
+                                This will execute [commands] against any lines matching /<pattern>/
+                        }
+                        Method 4: Combination of explitict lines and patterns - {
+                            This syntax can be done by cobining either a starting/ending line number, and a starting/ending pattern to match
+                            Example syntax:
+                                'sed [flags] /<pattern_start>/,<line_end>[commands]'
+                            or the inverse:
+                                'sed [flags] <line_start>,/<pattern_end>/[commands]'
+                        }
+                    }
+                    On a final note regarding address ranges, multiple commands can be ran against an address range with the following syntax:{
+                        'sed [flags] '<address_range_specififcation>{
+                            <command1>
+                            <command2>
+                            .
+                            .
+                            .
+                            <commandX>
+                        }' <input_stream>
+                    }
+                        
+                }
+            Commands within the script section - {
+                s - substitute, used to replace one pattern with another {
+                    syntax:
+                        'sed [flags] <address_range>s/<original_pattern>/<new_pattern>/[<other commands>]'
+                    some notes on maintaining parts of the original pattern:
+                        sub-patterns of the original pattern can be preserved by enclosing them in () (These must be \ escaped even inside of single quotes)
+                        the sub-patterns can the be matched sequentially with \1-9 in the replacement pattern string
+                   sub-command: g - global, causes the substitute command to replace all occurences of <original_pattern> with <new_pattern> on the given line{
+                       lets say the line was '1 1 1 1 1 1 1 1 1' and you wanted to change all ones to zeros. 's/1/0/' would only substitute the first 1 with a zero, to substitute all of them
+                       you would need to supply 's/1/0/g' to replace ALL occurences of the first pattern with the second. 
+                }
+
+                d - delete, used to delete lines in the address range, any other commands to be ran against the current line in the pattern space will be ignored and the next line will then be evaluated against the script
+                n - next, causes next line to replace the one in the pattern space, and continues in the script WITHOUT returning to the top of the script
+                a - append, create new line after the pattern and insert new text into it, syntax is {
+                    'sed [flags] '<address_range_specification>'a\
+                    <first_line_to_append>\
+                    <second_line_to_append>
+                    ' <input_stream>
+                    A note on the syntax above: the append command must be followed by a \ and new line, with the text to append on the following line, and if you wish to append multliple lines, the termination of the previous line
+                    must also be \ escaped until you get to the last line you wish to append
+                }
+                i - insert, opposite of append, insert new lines before the matching address range, syntax is functionally identical to append{
+                    'sed [flags] '<address_range_specification>'i\
+                    <first_line_to_insert>\
+                    <second_line_to_insert>
+                    ' <input_stream>
+                    A note on the syntax above: the insert command must be followed by a \ and new line, with the text to insert on the following line, and if you wish to insert multliple lines, the termination of the previous line
+                    must also be \ escaped until you get to the last line you wish to insert
+                }
+                c - change, similar to substitute, but it replaces the entire contents of the pattern space. It follows the same syntax rules as insert and append when it comes to the new line following the change command itself
+                l - list, displays the contents of the pattern space, but will display non-printing characters using their ascii character code in the form '\<character_code>', this can be useful for detecting metacharacters, escapes, etc
+                
+
+
+
+
+
+
+
+
+
