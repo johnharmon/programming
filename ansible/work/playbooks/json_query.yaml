@@ -1,0 +1,278 @@
+---
+- name: "PLaybook to test json_query filter with the sort_by function"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Set nested data structure fact"
+      ansible.builtin.set_fact:
+        json_data:
+          - name: "vm1"
+            subnet_reference:
+              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+              kind: "subnet"
+              name: "subnet4"
+          - name: "vm2"
+            subnet_reference:
+              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+              kind: "subnet"
+              name: "subnet2"
+
+    - name: "Sort by name"
+      ansible.builtin.debug:
+        msg: "{{ json_data | to_json | from_json | (json_query('[] | sort_by(@.subnet_reference.name)')) }}"
+
+    - name: "Set subnet last ip usable"
+      ansible.builtin.set_fact:
+        first_ip: "{{ '192.168.116.0/24' | ipaddr('next_usable') }}"
+
+    - name: "display all ips in subnet"
+      debug:
+        msg: "{{ '192.168.116.0' | ipmath(item) }}"
+      loop: "{{ range(1, 255) | list }}"
+
+    - name: "lookup application subnet"
+      set_fact:
+        subnet_dictionary: "{{ lookup('file',  playbook_dir ~ '/../roles/app-depoloyment/vars/main.yml') | from_yaml }}"
+
+    - name: "debug subnet_dictionary"
+      copy:
+        content: "{{ subnet_dictionary | to_nice_yaml(indent=2) }}"
+        dest: "./subnet_dictionary.yml"
+        force: true
+
+    - name: "Set subnet dictionary to suite and node type"
+      set_fact:
+        subnet_list: >
+          "{{ 
+            subnet_dictionary['APP01']['subnets']['production'] |
+            dict2items |
+            json_query('[*].value')
+          }}"
+
+    - name: "debug subnet_dictionary"
+      copy:
+        content: "{{ subnet_list | to_nice_yaml(indent=2) }}"
+        dest: "./subnet_group.yml"
+        force: true
+
+    - name: "Set list of lists"
+      ansible.builtin.set_fact:
+        nested_list:
+          -
+            - "a"
+            - "b"
+          -
+            - "c"
+            - 'd'
+            - 'e'
+
+    - name: "Debug nested_list"
+      ansible.builtin.debug:
+        msg: "{{ item | length }}"
+      loop: "{{ nested_list }}"
+
+
+ #   - name: "Create subnet_list"
+ #     set_fact:
+ #       subnet_list "{{ subnet_dictionary | dict2items | json_query('[*].[value]') | list}}"
+
+ #   - name: "debug subnet_list"
+ #     debug:
+ #       msg: "{{ subnet_list | to_nice_yaml(indent=2) }}"
+    # - name: "Test nmap results"
+    #   ansible.builtin.command:
+    #     cmd: "nmap -sn 192.168.86.0/24"
+    #   changed_when: false
+    #   register: nmap_results
+
+    # - name: "Set nmap results"
+    #   ansible.builtin.set_fact:
+    #     nmap_result: "{{ output | regex_search('[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}') }}"
+    #   loop: "{{ nmap_results.stdout_lines }}"
+    #   loop_control:
+    #     loop_var: output
+    #   register: nmap_results2
+
+    # - name: "Debug nmap result"
+    #   ansible.builtin.debug:
+    #     msg: "{{ nmap_results2.results | json_query('[*].ansible_facts') }}"
+
+    # - name: "Set regex_findall fact"
+    #   ansible.builtin.set_fact:
+    #     regex_findall_fact: "{{ nmap_results.stdout | regex_findall('([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})') | list }}"
+
+    # - name: "Debug regex_findall"
+    #   ansible.builtin.debug:
+    #     msg: "{{ regex_findall_fact }}"
+
+    # - name: "Generate ips for network"
+    #   ansible.builtin.command:
+    #     cmd: "python -c 'import ipaddress; [print(str(ip)) for ip in ipaddress.IPv4Network(\"192.168.86.0/24\")]'"
+    #   changed_when: false
+    #   register: ips
+
+    # - name: "Debug ips"
+    #   ansible.builtin.debug:
+    #     msg: "{{ ips.stdout_lines }}"
+
+    # - name: "Remove ips from network"
+    #   ansible.builtin.set_fact:
+    #     ips: "{{ ips.stdout_lines | difference(regex_findall_fact) }}"
+
+    # - name: "Debug ips"
+    #   ansible.builtin.debug:
+    #     msg: "{{ ips }}"
+
+    # - name: "Test jinja filter order of operations"
+    #   ansible.builtin.debug:
+    #     msg: "{{ 'hello' | lower ~ ' ' ~ 'hello' | upper  }}"
+
+    - name: "Set large resource profile"
+      ansible.builtin.set_fact:
+        large:
+          mem_size_mib: 16384
+          v_cpu: 6
+          disk_size_gib: 512
+        medium:
+          mem_size_mib: 8192
+          v_cpu: 4
+          disk_size_gib: 256
+        small:
+          mem_size_mib: 4096
+          v_cpu: 2
+          disk_size_gib: 128
+
+
+    - name: "Print random value"
+      ansible.builtin.debug:
+        msg: "{{ 100 | int | random }}"
+
+
+    - name: "Declare unosorted list"
+      ansible.builtin.set_fact:
+        unsorted_list:
+          - letter: '_'
+          - letter: 'b'
+          - letter: 'a'
+          - letter: 'c'
+          - letter: 'z'
+          - letter: 'Z'
+          - letter: 'f'
+          - letter: '_'
+
+    - name: "Debug list after sorting"
+      ansible.builtin.debug:
+        msg: "{{ unsorted_list | sort(attribute='letter') }}"
+      failed_when: false
+
+    - name: "Set people fact"
+      ansible.builtin.set_fact:
+        people:
+          - name: John
+            age: 34
+          - name: Jane
+            age: 29
+          - name: Doe
+            age: 45
+          - name: Smith
+            age: 100
+
+    - name: "Sort people by age"
+      ansible.builtin.debug:
+        msg: "{{ people | json_query('[?@.age > `25`]') }}"
+
+    - name: "Query using contains filter"
+      ansible.builtin.debug:
+        msg: >-
+          {{ people | json_query("[?age > `30` && contains(['Smith', 'Doe'], name) || name == 'Jane' && age == `29`]") }}
+
+    - name: "Set nested data structure fact"
+      ansible.builtin.set_fact:
+        nested_data:
+          - name: "vm1"
+            subnet_reference:
+              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+              kind: "subnet"
+              name: "subnet4"
+          - name: "vm2"
+            subnet_reference:
+              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+              kind: "subnet"
+              name: "subnet2"
+          - - '0'
+            - 'a'
+            - 'b'
+            - 'c'
+            - 'd'
+            - - 'double'
+              - 'nested'
+              - 'list'
+
+    - name: "Flatten json_query"
+      ansible.builtin.debug:
+        msg: "{{ nested_data | json_query('[]') }}"
+
+    - name: "Unflatten json_query"
+      ansible.builtin.debug:
+        msg: "{{ nested_data | json_query('[*]') }}"
+
+
+    - name: "Complex dictionary"
+      ansible.builtin.set_fact:
+        msn:
+          192.168.1.10:
+            apps:
+              - 'app1'
+              - 'app2'
+              - 'app3'
+            dns:
+              a_record_suffix: "vm1"
+              cname_list:
+                - "cn1-1"
+                - "cn1-2"
+                - "cn1-3"
+            resource_profile: "small"
+          192.168.1.11:
+            apps:
+              - 'app4'
+              - 'app5'
+              - 'app6'
+            dns:
+              a_record_suffix: "vm2"
+              cname_list:
+                - "cn2-1"
+                - "cn2-2"
+                - "cn2-3"
+            resource_profile: "medium"
+          192.168.1.12:
+            apps:
+              - 'app7'
+              - 'app8'
+              - 'app9'
+            dns:
+              a_record_suffix: "vm3"
+              cname_list:
+                - "cn3-1"
+                - "cn3-2"
+                - "cn3-3"
+            resource_profile: "large"
+
+    - name: "Query complex dictionary"
+      ansible.builtin.debug:
+        msg: "{{ msn | dict2items }}"
+
+    - name: "Debug resource_profile sized"
+      ansible.builtin.debug:
+        msg: "{{ vars[msn['192.168.1.10']['resource_profile']] }}"
+
+    - name: "Debungus in lupus"
+      ansible.builtin.debug:
+        msg: "{{ vars[item.value.resource_profile].mem_size_mib }}"
+      loop: "{{ msn | dict2items }}"
+      loop_control:
+        loop_var: item
+        extended: true
+
+    - name: "Sort resource profiles by name"
+      ansible.builtin.debug:
+        msg: "{{ msn | dict2items | to_json | from_json | json_query('sort_by(@, &value.dns.cname_list[0])') }}"

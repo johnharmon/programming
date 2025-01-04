@@ -1,0 +1,18 @@
+---
+# tasks file for demo-role
+
+##### WILL INCLUE TASK FILES FOR SPECIFIC TOPICS ######
+
+- name: Include lookkup tasks
+ # DOCS: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/include_tasks_module.html
+ # Includes a list of tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/lookup.yml"
+
+- name: Include basic filter tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/filter.yml"
+#
+- name: Include advanced filter tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/filter_advanced.yml"
+
+- name: Include templating tasks
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/templating.yml"

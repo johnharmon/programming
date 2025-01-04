@@ -1,0 +1,178 @@
+---
+
+# Assumptons:
+# apps is a list that holds all of the applicaqtions for a given hostname
+# each element of the apps list is a dict holding the lookup results from the vars/main.yml with the given app name
+
+- name: "Set staging directory fact"
+  set_fact:
+    staging_directory: "/tmp/ansible_staging_directory"
+
+- name: "Check if staging directory exists"
+  stat:
+    path: "{{ staging_directory }}"
+  register: staging_directory_stat
+  run_once: True
+
+- name: "Make staging directory for ansible"
+  file:
+    path: "{{ staging_directory }}"
+    state: "directory"
+  when: not staging_directory_stat.stat.isdir
+  run_once: True
+
+- name: "Set fact for {{ inventory_hosname }} staging directory"
+  set_fact:
+    hostname_dir: "{{ staging_directory }}/{{ inventory_hostname }}"
+
+- name: "Check if {{ inventory_hostname }} directory exists"
+  stat:
+    path: "{{ hostname_dir }}"
+  register: inventory_hostname_stat
+
+- name: "Make directory for {{ inventory_hostname }}"
+  file:
+    path: "{{ hostname_dir }}"
+    state: "directory"
+  when: not inventory_hostname_stat.stat.isdir
+  
+#- name: "Check if {{ app }} directory exists"
+#  stat:
+#    path: "{{ hostname_dir }}/{{ app.mave.artifactId }}"
+#  register: app_stat
+
+- name: "Make directory for {{ app }}"
+  file:
+    path: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+    state: "directory"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: app
+
+- name: "Make storage directory for {{ app }} and its dependencies"
+  file:
+    path: "{{ hosntame_dir }}/{{ app.maven.artifactId }}/application"
+    state: "directory"
+
+- name: "Create pom.xml for {{ app }} from template"  
+  template: 
+    src: "{{ role_path }}/templates/pom.j2"
+    dest: "{{ hostname_dir }}/{{ app.maven.artifactId }}/pom.xml"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Pull down pom for {{ app }} using maven"
+  shell:
+    cmd: "mvn dependency:get -Doutputfile app_pom.xml"
+  chdir: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Overwrite templated pom with one pulled from nexus"
+  shell:
+    cmd: "mv app_pom.xml pom.xml"
+  chdir: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Pull down application and dependencies using pom and maven"
+  shell:
+    cmd: "mvn dependency:copy-dependencies -Doutputdir application"
+  chdir: "{{ hostname_dir }}/{{ app.maven.artifactId }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+  
+- name: "Set application directory fact"
+  set_fact:
+    app_dir: "{{ hostname_dir }}/{{ app.maven.artifactId }}/application"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Create lib directory"
+  file:
+    path: "{{ app_dir }}/lib"
+    state: directory
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+# Ghetto fix for symlink creation cause using mvn to pull down the poms means we don't actually get the version into ansible's memory
+- name: "Get jar file name"
+  shell:
+    cmd: | 
+      ls | grep -E "{{ app.maven.artifactId }}-[0-9].*\.jar"
+  chdir: "{{ app_dir }}"
+  register: grep_output
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Set jar file name fact"
+  set_fact:
+    app_jar: "{{ grep_output.stdout_lines[0] }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Move all jars besides {{ app_jar }} to the lib folder"
+  shell:
+    cmd: "for jar in $(ls | grep -v -E '^lib$|{{ app_jar }}); do mv $jar lib; done"
+  chdir: "{{ app_dir }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "Extract {{ app.maven.artifactId }}"
+  shell:
+    cmd: "jar -xf {{ app_jar }}"
+  chdir: "{{ app_dir }}"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+
+- name: "tar current directory structure to deploy on {{ inventory_hostname }}"
+  archive:
+    path: "{{ app_dir }}/"
+    dest: "{{ hostname_dir }}/{{ app.maven.artifactId }}/{{ app.maven.artifactId }}.tar"
+  loop: "{{ apps }}"
+  loop_control:
+    loop_var: "app"
+    
+########################Begin the installation template#################################
+
+- name: "Check if {{ app }} directory exists"
+  stat:
+    path: "/opt/C2BMC/apps/{{ app.maven.artifactId }}"
+  register: app_stat
+
+- name: "Create {{ app.maven.artifactId }} directory"
+  file: 
+    path: "/opt/C2BMC/apps/{{ app.maven.artifactId }}"
+    state: "directory"
+  when: not app_stat.stat.isdir
+
+#- name: "Copy over tar file"
+#  copy:
+#    src:  "{{ hostname_dir }}/{{ app.maven.artifactId }}/{{ app.maven.artifactId }}.tar"
+#    dest: "/opt/C2BMC/apps/{{ app.maven.artifactId }}.tar"
+
+- name: "Extract tar archive"
+  unarchive: 
+    copy: True
+    src: "{{ hostname_dir }}/{{ app.maven.artifactId }}/{{ app.maven.artifactId }}.tar"
+    dest: "/opt/C2BMC/apps/{{ app.maven.artifactId }}.tar"
+    owner: "sysman"
+    group: "sysman"
+    mode: "775"
+
+- name: "Remove tar archive after extraction"
+  file: 
+    path: "/opt/C2BMC/apps/{{ app.maven.artifactId }}.tar"
+    state: absent
+
+    

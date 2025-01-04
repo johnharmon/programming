@@ -1,0 +1,40 @@
+#!/bin/bash
+
+options=$(getopt -o ab:c: --long word1:,word2: -- "$@" )
+echo $options
+
+eval set -- "$options"
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-a)
+			echo "option a specified"
+		;;
+		-b)
+			if [[ ${2:0:1} == '-' ]]; then
+				echo "no value for -b provided, exiting"
+				exit 1
+			else
+				shift
+				echo "-b was provided the value: $1"
+			fi
+		;;
+		-c)
+			shift
+			echo "-c was provided the value: $1"
+		;;
+		--word1)
+			shift
+			echo "--word1 specified with $1 "
+		;;
+		--word2)
+			shift 
+			echo "--word2 was provided the value of $1"
+			;;
+		--)
+			shift
+			break
+		;;
+	esac
+	shift
+done

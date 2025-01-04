@@ -1,0 +1,36 @@
+---
+# tasks file for netbox
+# Test file for creating vlans and interfaces for VMs
+
+- name: "Vlan Tasks"
+  block:
+    
+    - name: "Check if vlan exists"
+      uri: 
+        url: "{{ netbox_api }}/ipam/vlans/?name={{ netbox_vlan_name }}"
+        method: GET
+        headers:
+          Authorization: "{{ netbox_api_key }}"
+          Accept: "application/json"
+      register: "vlan_response"
+
+    - name: "Analyze vlan_response"
+      set_fact:
+        vlan_method: "{{ 'POST' if vlan_response.json.count == 0 else 'PUT' }}"
+        vlan_id: "{{ vlan_response.json.results.0.id if vlan_response.json.count > 0 }}"
+
+    - name: "Set vlan_url fact"
+      set_fact:
+        vlan_url: "{{ netbox_api ~ 'ipan/vlans' if vlan_response.json.count == 0 else netbox_api ~ 'ipam/vlans/' ~ vlan_id ~ '/' }}"
+
+    - name: "Create/Update VLAN"
+      uri:
+        url: "{{ vlan_url }}"
+        method: "{{ vlan_method }}"
+        headers:
+          Authorization: "{{ netbox_api_key }}"
+          Content-Type: "application/json"
+        body:
+          name: "{{ netbox_vlan_name }}"
+          status: "active"
+          vid: "{{ vlan_id }}"

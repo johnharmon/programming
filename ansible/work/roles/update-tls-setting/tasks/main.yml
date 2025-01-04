@@ -1,0 +1,16 @@
+- name "Check for tls line in file":
+  shell:
+    cmd: |
+    grep -E '\s*<vmArg>-Dhttps.protocols=TLS1.2</vmArg>\s*'
+  register: tls-state
+
+- name: "Update TLS setting in startupt xml"
+  lineinfile:
+    regexp: '\s*<vmArg>-Dhttps.protocols=TLS1.2</vmArg>\s*'
+    path: "{{ app_dir }}/{{ app_name }}/data/csm_startup_scripts/startup.xml"
+    line: "<vmArg>-Dhttps.protocols=TLS1.2</vmArg>"
+    insertbefore: "regex-for-closing-vmArg-tag"
+    state: present
+  when: tls-state.rc != 0
+
+

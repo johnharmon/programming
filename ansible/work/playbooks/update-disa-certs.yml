@@ -1,0 +1,8 @@
+---
+hosts: "{{ hostname }}"
+vars_files:
+   - "../../vault/{{ lookup('env', USER).split(@)[0] }}"
+tasks:
+  - name: "Update certs on lemp"
+    include_role: "update-disa-certs"
+

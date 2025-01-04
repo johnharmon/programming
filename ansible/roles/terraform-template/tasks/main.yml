@@ -1,0 +1,65 @@
+---
+# tasks file for terraform-template
+- name: "Set deployment vars"
+  ansible.builtin.set_fact:
+    deployments: "{{ lookup('vars', 'deployments') }}"
+
+# - name: "Debug deployment"
+#   ansible.builtin.debug:
+#     msg: "{{ deployments[deployment].template_name }}"
+
+# - name: "Debug raw template file"
+#   ansible.builtin.debug:
+#     msg: "{{ lookup('file', (role_path ~ '/templates/' ~ deployments[deployment].template_name)) }}"
+
+- name: "Lookup template for deployment"
+  ansible.builtin.set_fact:
+    deployment_template: >-
+      {{
+        lookup(
+          'ansible.builtin.template',
+          deployments[deployment].template_name,
+          template_vars={'deployment_config': deployments[deployment]}
+        )
+      }}
+  delegate_to: localhost
+
+- name: "Template out file"
+  ansible.builtin.copy:
+    content: "{{ deployment_template }}"
+    dest: "~/.test.tf"
+    owner: "jharmon"
+    mode: "644"
+    force: true
+  delegate_to: localhost
+
+- name: "Create terraform project directory"
+  ansible.builtin.file:
+    state: "directory"
+    path: "{{ terraform_path ~ deployment }}"
+    mode: "755"
+    owner: "jharmon"
+    group: "jharmon"
+
+- name: "Copy template result into terrafrorm project"
+  ansible.builtin.copy:
+    content: "{{ deployment_template }}"
+    dest: "{{ terraform_path ~ deployment ~ '/main.tf' }}"
+    owner: "jharmon"
+    mode: "644"
+    force: true
+
+# - name: "Apply terraform"
+#   community.general.terraform:
+#     state: "present"
+#     project_path: "{{ terraform_path ~ deployments }}"
+
+# - name: "Debug template"
+#   ansible.builtin.debug:
+#     msg: "{{ deployment_template }}"
+
+
+- name: "install python crypto packages"
+  package:
+    name: python3-cryptography 
+    state: present 

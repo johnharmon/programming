@@ -1,0 +1,25 @@
+---
+# tasks file for slurp_test
+
+- name: "Slurp JSON file"
+  slurp:
+    src: "{{ role_path }}/files/test.json"
+  register: slurp_results
+
+- name: "Debug slurp"
+  debug:
+    msg: "{{ slurp_results }}"
+
+- name: "Decode slurp"
+  debug:
+    msg: "{{ slurp_results['content'] | b64decode | from_json | to_nice_json }}"
+
+- name: "Template slurp contents"
+  template:
+    src: "json_template.yml.j2"
+    dest: '/tmp/template.json'
+  register: "template_contents"
+
+- name: "Dump contents of template"
+  debug:
+    msg: "{{ template_contents }}"

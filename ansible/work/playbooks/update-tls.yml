@@ -1,0 +1,13 @@
+---
+hosts: "{{ hostname }}"
+vars_files:
+  - "{{ lookup(env, 'USER'.split(@)[0]) }}"
+vars:
+  ansible_ssh_user: "{{ standard_username }}"
+  ansible_ssh_pass: "{{ standard_password }}"
+  ansible_become_pass: "{{ standard_password }}"
+
+tasks:
+  - name: "Include TLS role"
+    include_role:
+      name: update-tls-setting

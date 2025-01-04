@@ -1,0 +1,11 @@
+---
+{% set my_list = ['one', 'two', 'three', 'four'] %}
+{% if my_list is defined %}
+items:
+{##}{% for item in my_list %}
+  - {{ item }}
+{####}{% for item2 in my_list %}
+    - {{ item2 }}
+{####}{% endfor %}
+{##}{% endfor %}
+{% endif %}
