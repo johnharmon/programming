@@ -1,9 +1,20 @@
 package main
 
 import (
+	"embed"
 	"fmt"
 	"net/http"
 )
+
+func ServeStaticContent(fs embed.FS, fileName string) func(http.ResponseWriter, *http.Request) {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		file, err := fs.ReadFile(fileName)
+		if err != nil {
+			rw.Write([]byte(fmt.Sprintf("Error opening file: %s\n", err)))
+		}
+		rw.Write(file)
+	}
+}
 
 func TokenValidationMiddlewareHandler(next http.Handler, jwtSecret []byte, cookieName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
