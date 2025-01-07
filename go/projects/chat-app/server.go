@@ -133,8 +133,18 @@ func ClientReader(cc *ChatClient) {
 	}
 }
 
-func readUntilSep(data []byte, sep byte) (dataRead []byte, dataLeft []byte, dErr error) {
+func readUntilSep(data []byte, sep byte) (dataRead []byte, dataLeft []byte, sepEncountered bool, dErr error) {
 	indexOfSep := bytes.IndexByte(data, sep)
+	sepEncountered = false
+	dErr = nil
+	if indexOfSep == -1 {
+		dataRead = data
+	} else {
+		dataRead = data[:indexOfSep]
+		dataLeft = data[indexOfSep:]
+		sepEncountered = true
+	}
+	return dataRead, dataLeft, sepEncountered, dErr
 
 }
 
