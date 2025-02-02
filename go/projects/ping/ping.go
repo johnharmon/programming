@@ -41,10 +41,8 @@ func getSubnetIPs(prefix ni.Prefix) (ips []*IPResult) {
 func pingIP(ipResult *IPResult, wg *sync.WaitGroup) {
 	defer wg.Done()
 	cmd := exec.Command("ping", "-c", "1", "-W", "1", ipResult.ip.String())
-	//cmd.Run()
-	output, _ := cmd.Output()
-	//fmt.Println(string(output))
-	if strings.Contains(string(output), "1 packets transmitted, 1 packets received") {
+	output, err := cmd.Output()
+	if strings.Contains(string(output), "1 packets transmitted, 1 packets received") && err != nil {
 		ipResult.responded = true
 	}
 }
