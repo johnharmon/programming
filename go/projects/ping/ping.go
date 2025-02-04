@@ -22,6 +22,12 @@ const (
 	MissingArgument
 )
 
+type ProcessingError int
+
+const (
+	GenericError ProcessingError = iota + 1
+)
+
 func (iu ImproperUsage) String(subnet string) string {
 	switch iu {
 	case InvalidSubnet:
@@ -41,7 +47,6 @@ func printUsage(subnet string, reason ImproperUsage) {
 	usage += "    <subnet> is a valid IPv4 CIDR notation subnet\n"
 	usage += "    No other positional arguments or flags are supported\n"
 	usage += "    " + reason.String(subnet)
-	//usage += fmt.Sprintf("The subnet %s is not valid\n", subnet)
 	fmt.Print(usage)
 }
 
@@ -86,33 +91,12 @@ func main() {
 	var subnet string
 	var count string
 	var wait string
-	var subnetSet = false
-	argLen := len(os.Args)
-	// Check if the subnet was given as the first parameter
-	// This is due to a limitation with the flag module that only accepts positional arguments after the flags
-	// Will pull out the second index from args if it is not a flag, merge either side of the os.Args slice and then pass it to flags.Parse()
-	if argLen >= 2 && os.Args[1][0] != '-' {
-		subnetSet = true
-		subnet = os.Args[1]
-		if argLen >= 3 {
-			os.Args = append([]string{os.Args[0]}, os.Args[2:]...)
-		}
-	}
-	flag.StringVar(&count, "c", "1", "Number of packets to send, equivalent to the same flag for the ping utility\n")
-	flag.StringVar(&wait, "w", "1", "How many seconds to wait for a response, equivalent to the -W flag for the ping utility\n")
-	flag.Parse()
-	if !subnetSet {
-		args := flag.Args()
-		if len(args) == 1 {
-			subnet = args[0]
-		} else {
-			if len(args) < 2 {
-				printUsage(subnet, MissingArgument)
-				os.Exit(1)
-			}
-			printUsage(subnet, TooManyArguments)
-			os.Exit(1)
-		}
+	fs := flag.NewFlagSet("default", flag.ExitOnError)
+	fs.StringVar(&count, "c", "1", "Number of packets to send, equivalent to the same flag for the ping utility\n")
+	fs.StringVar(&wait, "w", "1", "How many seconds to wait for a response, equivalent to the -W flag for the ping utility\n")
+	fs.Parse(os.Args[1:])
+	if fs.NArg() > 0 {
+		subnet = fs.Arg(0)
 	}
 	prefix, valid := isValidSubnet(subnet)
 	if !valid {
