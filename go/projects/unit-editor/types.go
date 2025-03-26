@@ -27,6 +27,29 @@ const (
 	FreeUpkeepUnit     = "free_upkeep_unit"     // Unit can be supported free in a city
 )
 
+func CleanLine(line string) []string {
+	re := regexp.MustCompile(`\s+`)
+	lineSections := strings.SplitN(re.ReplaceAllString(line, " "), " ", 2)
+	cleanSections := make([]string, len(lineSections))
+	for _, item := range lineSections {
+		cleanSections = append(cleanSections, strings.TrimSpace(item))
+	}
+	return cleanSections
+}
+
+func ParseModifier(modifier string) int {
+	// parses a string: '+/-'<int> into an actual integer
+	switch modifier[0] {
+	case '-':
+		result, _ := strconv.Atoi(modifier[1:])
+		return 0 - result
+	case '+':
+		result, _ := strconv.Atoi(modifier[1:])
+		return 0 + result
+	}
+
+}
+
 //	var UnitAttributes = map[string]string{
 //		"SeaFaring":          "sea_faring",           // can board ships;can_swim : can swim across rivers
 //		"HideForest":         "hide_forest",          // defines where the unit can hide
@@ -114,6 +137,7 @@ type Soldier struct {
 }
 
 type MountEffect struct {
+	Effects            map[string]int
 	Horse              int `unit:"horse"`
 	Camel              int `unit:"camel"`
 	Elephant           int `unit:"elephant"`
@@ -126,18 +150,61 @@ type MountEffect struct {
 	NorthernHeavyHorse int `unit:"northern heavy horse"`
 }
 
+func (me *MountEffect) Unmarshal(effectInfo string) error {
+	lineSections := CleanLine(effectInfo)
+	effectStats := strings.Split(lineSections[1], ",")
+	for _, effect := range effectStats {
+		effects := strings.SplitN(effect, " ", 2)
+		effectKey := effects[0]
+		effectValue := effects[2]
+		effectInt := ParseModifier(effectValue)
+		me.Effects[effectKey] = effectInt
+	}
+	return nil
+}
+
 // type Attributes struct{}
 type Formation struct {
 	SidetoSideSpacingTight  float64
 	FronttoBackSpacingTight float64
 	SidetoSideSpacingLoose  float64
 	FronttoBackSpacingLoose float64
+	DefaultRanks            int
 	PossibleFormations      []string
 }
+
+func (f *Formation) Unmarshal(formationInfo string) error {
+	lineSections := CleanLine(formationInfo)
+	formationStats := strings.Split(lineSections[1], ",")
+	numFields := len(formationStats)
+	if numFields < 6 {
+		return fmt.Errorf("error, insufficient number of fields for formation")
+	}
+	f.SidetoSideSpacingTight, _ = strconv.ParseFloat(formationStats[0], 64)
+	f.FronttoBackSpacingTight, _ = strconv.ParseFloat(formationStats[1], 64)
+	f.SidetoSideSpacingLoose, _ = strconv.ParseFloat(formationStats[2], 64)
+	f.FronttoBackSpacingLoose, _ = strconv.ParseFloat(formationStats[3], 64)
+	f.DefaultRanks, _ = strconv.Atoi(formationStats[4])
+	f.PossibleFormations = append(f.PossibleFormations, formationStats[5])
+	if numFields > 6 {
+		f.PossibleFormations = append(f.PossibleFormations, formationStats[6])
+	}
+	return nil
+}
+
 type Health struct {
 	HP      int
-	unknown string
+	MountHP int
 }
+
+func (h *Health) Unmarshal(healthInfo string) error {
+	lineSections := CleanLine(healthInfo)
+	healthStats := strings.Split(lineSections[1], ",")
+	h.HP, _ = strconv.Atoi(strings.TrimSpace(healthStats[0]))
+	h.MountHP, _ = strconv.Atoi(strings.TrimSpace(healthStats[1]))
+	return nil
+}
+
 type Weapon struct {
 	Attack             int
 	Charge             int
@@ -154,8 +221,7 @@ type Weapon struct {
 }
 
 func (w *Weapon) Unmarshal(weaponInfo string) error {
-	re := regexp.MustCompile(`\s+`)
-	lineSections := strings.SplitN(re.ReplaceAllString(weaponInfo, " "), " ", 2)
+	lineSections := CleanLine(weaponInfo)
 	weaponStats := strings.Split(lineSections[1], ",")
 	numFields := len(weaponStats)
 	if numFields < 11 {
