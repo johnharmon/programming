@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,6 +28,78 @@ const (
 	FreeUpkeepUnit     = "free_upkeep_unit"     // Unit can be supported free in a city
 )
 
+type LogLevel int 
+
+const (
+	LevelNone LogLevel = iota 
+	LevelError LogLevel  
+	LevelWarn LogLevel 
+	LevelInfo LogLevel 
+	LevelDebug LogLevel  
+)
+
+var LogLevel = 0
+
+type logger interface {
+	SDebugf(format string, fields ...any) string
+	SInfof(format string, fields ...any) string
+	SWarnf(format string, fields ...any) string
+	SErrorf(format string, fields ...any) string
+	FDebugf(format string, fields ...any)
+	FInfof(format string, fields ...any)
+	FWarnf(format string, fields ...any)
+	FErrorf(format string, fields ...any)
+}
+
+func DebugLogger() ( *UnitLogger) {
+	logBuffer := &bytes.Buffer{}
+	ul := &UnitLogger {
+	debugStream: logBuffer,
+	infoStream: logBuffer,
+	warnStream: logBuffer,
+	errorStream: logBuffer,
+	}
+	return ul
+}
+
+type UnitLogger struct {
+	logLevel  int
+	debugStream *bytes.Buffer
+	infoStream  *bytes.Buffer
+	warnStream  *bytes.Buffer
+	errorStream *bytes.Buffer
+	defaultDebugFormat string 
+	defaultInfoFormat string 
+	defaultWarnFormat string 
+	defaultErrorFormat string 
+}
+
+func (ul UnitLogger) SDebugf(format string, fields ...any) string {
+	return fmt.Sprintf(format, fields...)
+}
+func (ul UnitLogger) SInfof(format string, fields ...any) string {
+	return fmt.Sprintf(format, fields...)
+}
+func (ul UnitLogger) SWarnf(format string, fields ...any) string {
+	return fmt.Sprintf(format, fields...)
+}
+func (ul UnitLogger) SErrorf(format string, fields ...any) string {
+	return fmt.Sprintf(format, fields...)
+}
+
+func (ul *UnitLogger) FDebugf(format string, fields ...any) {
+	fmt.Fprintf(ul.debugStream, format, fields...)
+}
+func (ul *UnitLogger) FInfof(format string, fields ...any) {
+	fmt.Fprintf(ul.infoStream, format, fields...)
+}
+func (ul *UnitLogger) FWarnf(format string, fields ...any) {
+	fmt.Fprintf(ul.warnStream, format, fields...)
+}
+func (ul *UnitLogger) FErrorf(format string, fields ...any) {
+	fmt.Fprintf(ul.errorStream, format, fields...)
+}
+
 func CleanLine(line string) []string {
 	re := regexp.MustCompile(`\s+`)
 	lineSections := strings.SplitN(re.ReplaceAllString(line, " "), " ", 2)
@@ -37,15 +110,21 @@ func CleanLine(line string) []string {
 	return cleanSections
 }
 
-func ParseModifier(modifier string) int {
+func ParseModifier(modifier string) (int, error) {
 	// parses a string: '+/-'<int> into an actual integer
 	switch modifier[0] {
 	case '-':
-		result, _ := strconv.Atoi(modifier[1:])
-		return 0 - result
-	case '+':
-		result, _ := strconv.Atoi(modifier[1:])
-		return 0 + result
+		result, err := strconv.Atoi(modifier[1:])
+		if err != nil {
+			return 0, err
+		}
+		return 0 - result, nil
+	default:
+		result, err := strconv.Atoi(modifier[1:])
+		if err != nil {
+			return 0, err
+		}
+		return 0 + result, nil
 	}
 
 }
@@ -70,6 +149,57 @@ func ParseModifier(modifier string) int {
 //		"FreeUpkeepUnit":     "free_upkeep_unit",     // Unit can be supported free in a city
 //
 // }
+
+func ProcessUnit()
+
+type UnitField interface {
+	Marshal() string
+}
+
+type LineRecord struct {
+	LineNumber int
+	Raw        string
+	Unit       *Unit
+	FieldValue UnitField
+	FieldName  string
+	Comment    bool
+	Empty      bool
+}
+
+func ParseLineRecord(lr *LineRecord) (err error) {
+	return err
+}
+
+func UnmarshalLineRecord(line string, lineNumber int, unit *Unit) (lr *LineRecord) {
+	lr.LineNumber = lineNumber
+	lr.Raw = line
+	lr.Unit = unit
+	err := ParseLineRecord(lr)
+	if err != nil {
+
+	}
+	return lr
+
+}
+
+func (lr *LineRecord) Unmarshal(line string, lineNumber int) {
+	lr.LineNumber = lineNumber
+	lr.Raw = line
+
+}
+
+type UnitMetadata struct {
+	Type      string
+	LineStart int
+	LineEnd   int
+}
+
+type UnitLog struct {
+	Logs     []string
+	RawLogs  []byte
+	Metadata *UnitMetadata
+}
+
 type UnitAttributes struct {
 	SeaFaring          string `unit:"sea_faring"`           // can board ships;can_swim : can swim across rivers
 	HideForest         string `unit:"hide_forest"`          // defines where the unit can hide
@@ -97,6 +227,9 @@ type BoolAttribute struct {
 }
 
 type Unit struct {
+	Logger *UnitLogger
+	LineRecords            []*LineRecord
+	Lines                  []string
 	Type                   string            `unit:"type"`
 	Dictionary             string            `unit:"dictionary"`
 	Class                  string            `unit:"class"`
@@ -157,7 +290,7 @@ func (me *MountEffect) Unmarshal(effectInfo string) error {
 		effects := strings.SplitN(effect, " ", 2)
 		effectKey := effects[0]
 		effectValue := effects[2]
-		effectInt := ParseModifier(effectValue)
+		effectInt, err := ParseModifier(effectValue)
 		me.Effects[effectKey] = effectInt
 	}
 	return nil
@@ -220,35 +353,77 @@ type Weapon struct {
 	CompensationFactor int
 }
 
-func (w *Weapon) Unmarshal(weaponInfo string) error {
+func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
+	conversionErrorFormat := fmt.Sprintf("line: %d | error converting %%s value of %%s to %%s: %%s\n")
 	lineSections := CleanLine(weaponInfo)
 	weaponStats := strings.Split(lineSections[1], ",")
 	numFields := len(weaponStats)
 	if numFields < 11 {
-		return fmt.Errorf("error parsing attack stats, too few fields")
+		ul.FErrorf("error parsing attack stats, too few fields")
 	}
 	switch numFields {
 	case 11:
-		w.MinDelay, _ = strconv.Atoi(strings.TrimSpace(weaponStats[10]))
-		w.CompensationFactor, _ = strconv.Atoi(strings.TrimSpace(weaponStats[11]))
+		md := strings.TrimSpace(weaponStats[9])
+		cf := strings.TrimSpace(weaponStats[10])
+		w.MinDelay, delayErr = strconv.Atoi(md)
+		w.CompensationFactor, cfErr = strconv.Atoi(cf)
+		if delayErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
+		return delayErr
+		}
+		if cfErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
+		return cfErr
+		}
 	default:
 		w.FireEffect = weaponStats[9]
-		w.MinDelay, _ = strconv.Atoi(strings.TrimSpace(weaponStats[10]))
-		w.CompensationFactor, _ = strconv.Atoi(strings.TrimSpace(weaponStats[11]))
+		md := strings.TrimSpace(weaponStats[10])
+		cf := strings.TrimSpace(weaponStats[11])
+		w.MinDelay, delayErr = strconv.Atoi(md)
+		w.CompensationFactor, cfErr = strconv.Atoi(cf)
+		if delayErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
+		return delayErr
+		}
+		if cfErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
+		return cfErr
+		}
 	}
-	w.Attack, _ = strconv.Atoi(strings.TrimSpace(weaponStats[0]))
-	w.Charge, _ = strconv.Atoi(strings.TrimSpace(weaponStats[1]))
-	w.MissileType = weaponStats[2]
-	w.MissileRange, _ = strconv.Atoi(strings.TrimSpace(weaponStats[3]))
-	w.MissileAmmo, _ = strconv.Atoi(strings.TrimSpace(weaponStats[4]))
-	w.WeaponType = weaponStats[5]
-	w.TechType = weaponStats[6]
-	w.DamageType = weaponStats[7]
-	w.SoundType = weaponStats[8]
+	atk := strings.TrimSpace(weaponStats[0])
+	chg := strings.TrimSpace(weaponStats[1])
+	mr := strings.TrimSpace(weaponStats[3])
+	ma := strings.TrimSpace(weaponStats[4])
+	w.Attack, atkErr = strconv.Atoi(atk)
+	w.Charge, chgErr = strconv.Atoi(crg)
+	w.MissileRange, rangeErr = strconv.Atoi(mr)
+	w.MissileAmmo, ammoErr = strconv.Atoi(atk)
+	if atkErr != nil {
+		ul.FErrorf(conversionErrorFormat, "Attack", atk, atkErr)
+		return atkErr
+	}
+	if chgErr != nil {
+		ul.FErrorf(conversionErrorFormat, "Charge", chg, chgErr)
+		return chgErr
+	}
+	if rangeErr != nil {
+		ul.FErrorf(conversionErrorFormat, "MissileRange", mr, rangeErr)
+		return rangeErr
+	}
+	if ammoErr != nil {
+		ul.FErrorf(conversionErrorFormat, "MissileAmmo", ma, ammoErr)
+		return ammoErr
+	}
+	w.MissileType := strings.TrimSpace(weaponStats[2])
+	w.WeaponType := strings.TrimSpace(weaponStats[5])
+	w.TechType := strings.TrimSpace(weaponStats[6])
+	w.DamageType := strings.TrimSpace(weaponStats[7])
+	w.SoundType := strings.TrimSpace(weaponStats[8])
 	return nil
 }
 
 type WeaponAttributes struct {
+	Attributes map[string][bool]
 	AP         BoolAttribute `unit:"ap"`            // armour piercing. Only counts half of target's armour
 	BP         BoolAttribute `unit:"bp"`            // body piercing. Missile can pass through men and hit those behind
 	Spear      BoolAttribute `unit:"spear"`         // Used for long spears. Gives bonuses fighting cavalry, and penalties against infantry
