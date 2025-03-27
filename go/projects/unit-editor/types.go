@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -339,18 +340,18 @@ func (h *Health) Unmarshal(healthInfo string) error {
 }
 
 type Weapon struct {
-	Attack             int
-	Charge             int
-	MissileType        string
-	MissileRange       int
-	MissileAmmo        int
-	WeaponType         string
-	TechType           string
-	DamageType         string
-	SoundType          string
-	FireEffect         string
-	MinDelay           int
-	CompensationFactor int
+	Attack             int `json:"attack"`
+	Charge             int `json:"charge"`
+	MissileType        string `json:"missile_type"`
+	MissileRange       int `json:"missile_range"`
+	MissileAmmo        int `json:"missile_ammo"`
+	WeaponType         string `json:"weapon_type"`
+	TechType           string `json:"tech_type"`
+	DamageType         string `json:"damage_type"`
+	SoundType          string `json:"sound_type"`
+	FireEffect         string `json:"fire_effect"`
+	MinDelay           int `json:"min_delay"`
+	CompensationFactor int `json:"compensation_factor"`
 }
 
 func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
@@ -419,6 +420,11 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) er
 	w.TechType := strings.TrimSpace(weaponStats[6])
 	w.DamageType := strings.TrimSpace(weaponStats[7])
 	w.SoundType := strings.TrimSpace(weaponStats[8])
+	jsonBytes, _ := json.Marshal(w)
+	sb := strings.Builder{}
+	sb.WriteByte(jsonBytes)
+	jsonString := sb.String
+	ul.FDebugf("line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
 	return nil
 }
 
