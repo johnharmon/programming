@@ -29,7 +29,6 @@ type Claims struct {
 }
 
 func CreateWebToken(uuidString string) *jwt.Token {
-	//expirationTime := time.Now().Add(time.Hour * 1)
 	expirationTime := DefaultConfig.JWTConfig.Token.Expiration.GetExpirationTime()
 	claims := &Claims{
 		Username: "test-user",
@@ -65,28 +64,7 @@ func SignWebToken(token *jwt.Token) (signedToken string, jwtSecret []byte, signE
 	return signedToken, jwtSecret, signErr
 }
 
-func TokenValidationMiddleware(next http.Handler, jwtSecret []byte, cookieName string) func(http.ResponseWriter, *http.Request) {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tokenCookie, err := r.Cookie(cookieName)
-		if err != nil {
-			http.Error(w, "Missing req1uired cookie\n", http.StatusNotAcceptable)
-			fmt.Fprintf(w, "Error retreiving cookie: %+v\n", err)
-			return
-		}
-		token, _, err := validateJwt(tokenCookie.Value)
-		if err != nil {
-			http.Error(w, "Error - Cannot validate token\n", http.StatusBadRequest)
-			return
-		}
-		if !token.Valid {
-			http.Error(w, "Unauthorized - Token Invalid\n", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func CreateWebTokenHandler(jwtSecret []byte) func(http.ResponseWriter, *http.Request) {
+func CreateWebTokenHandler() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenUUID := uuid.NewString()
 		token := CreateWebToken(tokenUUID)
