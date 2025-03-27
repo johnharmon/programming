@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-func ServeStaticContent(fs embed.FS, fileName string) func(http.ResponseWriter, *http.Request) {
+func ServeEmbeddedStaticContent(fs embed.FS, fileName string) func(http.ResponseWriter, *http.Request) {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		file, err := fs.ReadFile(fileName)
 		if err != nil {
@@ -16,7 +16,27 @@ func ServeStaticContent(fs embed.FS, fileName string) func(http.ResponseWriter, 
 	}
 }
 
-func TokenValidationMiddlewareHandler(next http.Handler, jwtSecret []byte, cookieName string) http.Handler {
+func TokenValidationMiddleware(next http.Handler, cookieName string) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tokenCookie, err := r.Cookie(cookieName)
+		if err != nil {
+			http.Error(w, "Missing req1uired cookie\n", http.StatusNotAcceptable)
+			return
+		}
+		token, _, err := validateJwt(tokenCookie.Value)
+		if err != nil {
+			http.Error(w, "Error - Cannot validate token\n", http.StatusBadRequest)
+			return
+		}
+		if !token.Valid {
+			http.Error(w, "Unauthorized - Token Invalid\n", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+func TokenValidationMiddlewareHandler(next http.Handler, cookieName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenCookie, err := r.Cookie(cookieName)
 		if err != nil {
@@ -36,11 +56,11 @@ func TokenValidationMiddlewareHandler(next http.Handler, jwtSecret []byte, cooki
 	})
 }
 
-func ValidateWebTokenHandlerDebugger(jwtSecret []byte) func(http.ResponseWriter, *http.Request) {
+func ValidateWebTokenHandlerDebugger() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenString, err := r.Cookie("set_cookie")
 		if err != nil {
-			fmt.Fprintf(w, "Unable to fetch cookie:\n\t%+v", err)
+			http.Error(w, fmt.Sprintf("Error: Unable to access cookie \"set_cookie\":\n\t%s", err), http.StatusBadRequest)
 			return
 		}
 		token, claims, err := validateJwt(tokenString.Value)
