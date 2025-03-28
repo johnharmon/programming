@@ -12,6 +12,12 @@ import (
 	"github.com/dlclark/regexp2"
 )
 
+type Discard struct{}
+
+func (d Discard) Write(b []byte) (int, error) {
+	return len(b), nil
+}
+
 func logger(logs chan []byte, output io.Writer) {
 
 }
@@ -23,6 +29,7 @@ func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer) {
 		regex := regexp2.MustCompile(`^(\s*)({{)(hub)?(-)?(.*?)(-)?(hub)?(}})(\s*$)`, 0)
 		newLine, _ := regex.Replace(string(line), `${1}{{ "${2}${3}${4}" }}${5}{{ "${6}${7}${8}" }}${9}`, 0, -1)
 		output.Write([]byte(newLine))
+		fmt.Fprintf(output, "%s\n", newLine)
 		fmt.Fprintf(logs, "%s    ->     %s\n", line, newLine)
 		return
 	}
@@ -55,46 +62,85 @@ func WrapIndentedHubLine(line []byte, output *bytes.Buffer) {
 	output.Write(newLine)
 }
 
-func OpenFile(filePath string) (*os.File, error) {
+func OpenFile(filePath string, fOptions int) (ffile *os.File, exitCode int, ferr error) {
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		pathErr := err.(*os.PathError)
-		fmt.Printf("Error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
-		fmt.Printf("")
-		os.Exit(2)
+		if fOptions&os.O_CREATE == 0 {
+			pathErr := err.(*os.PathError)
+			returnErr := fmt.Errorf("Error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
+			return &os.File{}, 2, returnErr
+		} else {
+			ffile, err := os.OpenFile(filePath, fOptions, 0644)
+			if err != nil {
+				pathErr := err.(*os.PathError)
+				returnErr := fmt.Errorf("Error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
+				return &os.File{}, 2, returnErr
+			}
+			return ffile, 0, nil
+		}
 	}
 	if fileInfo.IsDir() {
-		fmt.Printf("Error, pathspec: \"%s\" is a directory\n", filePath)
-		os.Exit(3)
+		returnErr := fmt.Errorf("Error, pathspec: \"%s\" is a directory\n", filePath)
+		return &os.File{}, 3, returnErr
 	}
-	file, err := os.Open(filePath)
+	file, err := os.OpenFile(filePath, fOptions, 0644)
 	if err != nil {
 		pathErr := err.(*os.PathError)
+		returnErr := fmt.Errorf("error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
 		fmt.Printf("Error opening file: \"%s\"\n\"%s\"\n", pathErr.Path, pathErr.Err)
-		os.Exit(4)
+		return &os.File{}, 4, returnErr
+	}
+	return file, 0, nil
+}
+
+func OpenOutputFile(filePath string, fOptions int) (*os.File, error) {
+	file, _, err := OpenFile(filePath, fOptions)
+	if err != nil {
+		return nil, fmt.Errorf("error opening output file: %s\n", err)
 	}
 	return file, nil
+
 }
 
 func main() {
 	var (
-		fileName string
-		meta     bool
-		metaOn   = false
-		output   = &bytes.Buffer{}
+		inputFileName  string
+		outputFileName string
+		meta           bool
+		verbose        bool
+		metaOn         = false
+		output         = &bytes.Buffer{}
+		logOutput      io.Writer
 	)
-	flag.StringVar(&fileName, "file", "", "specify the relative path to the file to wrap")
-	flag.StringVar(&fileName, "f", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&inputFileName, "file", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&inputFileName, "f", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&outputFileName, "o", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&outputFileName, "output", "", "specify the relative path to the file to wrap")
 	flag.BoolVar(&meta, "meta", true, "Specify whether to use meta blocks to denote templating")
 	flag.BoolVar(&meta, "m", true, "Specify whether to use meta blocks to denote templating")
+	flag.BoolVar(&verbose, "verbose", true, "Specifies whether to use verbose output")
+	flag.BoolVar(&verbose, "v", true, "Specifies whether to use verbose output")
 	flag.Parse()
-	if fileName == "" {
+	if inputFileName == "" {
 		fmt.Printf("You must specify a file to target\n")
 		os.Exit(1)
 	}
-	logOutput := os.Stdout
-	file, _ := OpenFile(fileName)
-	scanner := bufio.NewScanner(file)
+	if verbose {
+		logOutput = os.Stdout
+	} else {
+		logOutput = Discard{}
+	}
+	inputFile, ec, err := OpenFile(inputFileName, os.O_RDONLY)
+	if err != nil {
+		fmt.Printf("ERROR: %s\n", err)
+		os.Exit(ec)
+	}
+	outputFile, ec, err := OpenFile(outputFileName, os.O_WRONLY|os.O_TRUNC|os.O_CREATE)
+	if err != nil {
+		fmt.Printf("ERROR: %s\n", err)
+		os.Exit(ec)
+	}
+	scanner := bufio.NewScanner(inputFile)
 	lineNumber := 0
 	if meta {
 		fmt.Printf("Meta block tagging enabled\n")
@@ -104,7 +150,9 @@ func main() {
 				continue
 			}
 			if metaOn {
-				WrapLine(lineNumber, scanner.Bytes(), output, logOutput)
+				WrapLine(lineNumber, scanner.Bytes(), outputFile, logOutput)
+			} else {
+				fmt.Fprintf(outputFile, "%s\n", scanner.Bytes())
 			}
 			lineNumber += 1
 		}
