@@ -354,6 +354,14 @@ type Weapon struct {
 	CompensationFactor int `json:"compensation_factor"`
 }
 
+
+func TrimValues(values []string) (tv []string) {
+	for _, value := range vlaues {
+		tv = append(tv, strings.TrimSpace(value))
+	}
+	return tv
+}
+
 func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
 	conversionErrorFormat := fmt.Sprintf("line: %d | error converting %%s value of %%s to %%s: %%s\n")
 	lineSections := CleanLine(weaponInfo)
@@ -362,39 +370,16 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) er
 	if numFields < 11 {
 		ul.FErrorf("error parsing attack stats, too few fields")
 	}
-	switch numFields {
-	case 11:
-		md := strings.TrimSpace(weaponStats[9])
-		cf := strings.TrimSpace(weaponStats[10])
-		w.MinDelay, delayErr = strconv.Atoi(md)
-		w.CompensationFactor, cfErr = strconv.Atoi(cf)
-		if delayErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-		return delayErr
-		}
-		if cfErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-		return cfErr
-		}
-	default:
-		w.FireEffect = weaponStats[9]
-		md := strings.TrimSpace(weaponStats[10])
-		cf := strings.TrimSpace(weaponStats[11])
-		w.MinDelay, delayErr = strconv.Atoi(md)
-		w.CompensationFactor, cfErr = strconv.Atoi(cf)
-		if delayErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-		return delayErr
-		}
-		if cfErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-		return cfErr
-		}
-	}
-	atk := strings.TrimSpace(weaponStats[0])
-	chg := strings.TrimSpace(weaponStats[1])
-	mr := strings.TrimSpace(weaponStats[3])
-	ma := strings.TrimSpace(weaponStats[4])
+	weaponsStats = TrimValues(weaponStats)
+	w.MissileType := weaponStats[2]
+	w.WeaponType := weaponStats[5]
+	w.TechType := weaponStats[6]
+	w.DamageType := weaponStats[7]
+	w.SoundType := weaponStats[8]
+	atk := weaponStats[0]
+	chg := weaponStats[1]
+	mr := weaponStats[3]
+	ma := weaponStats[4]
 	w.Attack, atkErr = strconv.Atoi(atk)
 	w.Charge, chgErr = strconv.Atoi(crg)
 	w.MissileRange, rangeErr = strconv.Atoi(mr)
@@ -415,11 +400,35 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) er
 		ul.FErrorf(conversionErrorFormat, "MissileAmmo", ma, ammoErr)
 		return ammoErr
 	}
-	w.MissileType := strings.TrimSpace(weaponStats[2])
-	w.WeaponType := strings.TrimSpace(weaponStats[5])
-	w.TechType := strings.TrimSpace(weaponStats[6])
-	w.DamageType := strings.TrimSpace(weaponStats[7])
-	w.SoundType := strings.TrimSpace(weaponStats[8])
+	switch numFields {
+	case 11:
+		md := weaponStats[9]
+		cf := weaponStats[10]
+		w.MinDelay, delayErr = strconv.Atoi(md)
+		w.CompensationFactor, cfErr = strconv.Atoi(cf)
+		if delayErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
+		return delayErr
+		}
+		if cfErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
+		return cfErr
+		}
+	default:
+		w.FireEffect = weaponStats[9]
+		md := weaponStats[10]
+		cf := weaponStats[11]
+		w.MinDelay, delayErr = strconv.Atoi(md)
+		w.CompensationFactor, cfErr = strconv.Atoi(cf)
+		if delayErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
+		return delayErr
+		}
+		if cfErr != nil {
+		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
+		return cfErr
+		}
+	}
 	jsonBytes, _ := json.Marshal(w)
 	sb := strings.Builder{}
 	sb.WriteByte(jsonBytes)
