@@ -8,19 +8,21 @@ import (
 	"io"
 	"os"
 	"regexp"
+
+	"github.com/dlclark/regexp2"
 )
 
 func logger(logs chan []byte, output io.Writer) {
 
 }
 
-func WrapLine(lineNumber int, line []byte, output *bytes.Buffer, logs io.Writer) {
+func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer) {
 	wrappingCheckRegex := regexp.MustCompile(`^.*{{\s*"{{(hub)?-?"\s*}}.*`)
 	fmt.Fprintf(logs, "##########		Line: %d		##########\n", lineNumber)
 	if !wrappingCheckRegex.Match(line) {
-		regex := regexp.MustCompile(`^(\s*)({{)(hub)?(-)?(.*)(-)?(hub)?(}})(\s*$)`)
-		newLine := regex.ReplaceAll(line, []byte(`${1}{{ "${2}${3}${4}" }}${5}{{ "${6}${7}${8}" }}${9}`))
-		output.Write(newLine)
+		regex := regexp2.MustCompile(`^(\s*)({{)(hub)?(-)?(.*?)(-)?(hub)?(}})(\s*$)`, 0)
+		newLine, _ := regex.Replace(string(line), `${1}{{ "${2}${3}${4}" }}${5}{{ "${6}${7}${8}" }}${9}`, 0, -1)
+		output.Write([]byte(newLine))
 		fmt.Fprintf(logs, "%s    ->     %s\n", line, newLine)
 		return
 	}
