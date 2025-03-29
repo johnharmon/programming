@@ -67,13 +67,13 @@ func OpenFile(filePath string, fOptions int) (ffile *os.File, exitCode int, ferr
 	if err != nil {
 		if fOptions&os.O_CREATE == 0 {
 			pathErr := err.(*os.PathError)
-			returnErr := fmt.Errorf("Error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
+			returnErr := fmt.Errorf("error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
 			return &os.File{}, 2, returnErr
 		} else {
 			ffile, err := os.OpenFile(filePath, fOptions, 0644)
 			if err != nil {
 				pathErr := err.(*os.PathError)
-				returnErr := fmt.Errorf("Error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
+				returnErr := fmt.Errorf("error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
 				return &os.File{}, 2, returnErr
 			}
 			return ffile, 0, nil
@@ -145,16 +145,18 @@ func main() {
 	if meta {
 		fmt.Printf("Meta block tagging enabled\n")
 		for scanner.Scan() {
-			if IsMeta(scanner.Bytes()) {
+			line := scanner.Bytes()
+			if IsMeta(line) {
 				metaOn = !metaOn
 				continue
 			}
 			if metaOn {
 				WrapLine(lineNumber, scanner.Bytes(), outputFile, logOutput)
 			} else {
-				fmt.Fprintf(outputFile, "%s\n", scanner.Bytes())
+				outputFile.Write(line)
+				outputFile.Write([]byte("\n"))
 			}
-			lineNumber += 1
+			lineNumber++
 		}
 	} else {
 		for scanner.Scan() {
