@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -29,17 +30,15 @@ const (
 	FreeUpkeepUnit     = "free_upkeep_unit"     // Unit can be supported free in a city
 )
 
-type LogLevel int 
+type LogLevel int
 
 const (
-	LevelNone LogLevel = iota 
-	LevelError LogLevel  
-	LevelWarn LogLevel 
-	LevelInfo LogLevel 
-	LevelDebug LogLevel  
+	LevelNone LogLevel = iota
+	LevelError
+	LevelWarn
+	LevelInfo
+	LevelDebug
 )
-
-var LogLevel = 0
 
 type logger interface {
 	SDebugf(format string, fields ...any) string
@@ -52,27 +51,43 @@ type logger interface {
 	FErrorf(format string, fields ...any)
 }
 
-func DebugLogger() ( *UnitLogger) {
-	logBuffer := &bytes.Buffer{}
-	ul := &UnitLogger {
-	debugStream: logBuffer,
-	infoStream: logBuffer,
-	warnStream: logBuffer,
-	errorStream: logBuffer,
+func DebugLogger(w io.Writer) *UnitLogger {
+	ul := &UnitLogger{
+		debugStream: w,
+		infoStream:  w,
+		warnStream:  w,
+		errorStream: w,
 	}
 	return ul
 }
 
 type UnitLogger struct {
-	logLevel  int
-	debugStream *bytes.Buffer
-	infoStream  *bytes.Buffer
-	warnStream  *bytes.Buffer
-	errorStream *bytes.Buffer
-	defaultDebugFormat string 
-	defaultInfoFormat string 
-	defaultWarnFormat string 
-	defaultErrorFormat string 
+	logLevel           LogLevel
+	debugStream        io.Writer
+	infoStream         io.Writer
+	warnStream         io.Writer
+	errorStream        io.Writer
+	defaultDebugFormat string
+	defaultInfoFormat  string
+	defaultWarnFormat  string
+	defaultErrorFormat string
+}
+
+func NewUnitLogger(logLevel LogLevel, output io.Writer, discard io.Writer) (ul *UnitLogger) {
+	ul = &UnitLogger{logLevel: logLevel}
+	for level := 0; level <= int(logLevel); level++ {
+		switch {
+		case level == 1 && level <= int(logLevel):
+			ul.errorStream = output
+		case level == 2 && level <= int(logLevel):
+			ul.warnStream = output
+		case level == 3 && level <= int(logLevel):
+			ul.infoStream = output
+		case level == 3 && level <= int(logLevel):
+			ul.debugStream = output
+		}
+	}
+	return ul
 }
 
 func (ul UnitLogger) SDebugf(format string, fields ...any) string {
@@ -228,7 +243,7 @@ type BoolAttribute struct {
 }
 
 type Unit struct {
-	Logger *UnitLogger
+	Logger                 *UnitLogger
 	LineRecords            []*LineRecord
 	Lines                  []string
 	Type                   string            `unit:"type"`
@@ -340,105 +355,161 @@ func (h *Health) Unmarshal(healthInfo string) error {
 }
 
 type Weapon struct {
-	Attack             int `json:"attack"`
-	Charge             int `json:"charge"`
+	Attack             int    `json:"attack"`
+	Charge             int    `json:"charge"`
 	MissileType        string `json:"missile_type"`
-	MissileRange       int `json:"missile_range"`
-	MissileAmmo        int `json:"missile_ammo"`
+	MissileRange       int    `json:"missile_range"`
+	MissileAmmo        int    `json:"missile_ammo"`
 	WeaponType         string `json:"weapon_type"`
 	TechType           string `json:"tech_type"`
 	DamageType         string `json:"damage_type"`
 	SoundType          string `json:"sound_type"`
 	FireEffect         string `json:"fire_effect"`
-	MinDelay           int `json:"min_delay"`
-	CompensationFactor int `json:"compensation_factor"`
+	MinDelay           int    `json:"min_delay"`
+	CompensationFactor int    `json:"compensation_factor"`
 }
 
-
 func TrimValues(values []string) (tv []string) {
-	for _, value := range vlaues {
+	for _, value := range values {
 		tv = append(tv, strings.TrimSpace(value))
 	}
 	return tv
 }
 
+func CheckSetIntAttribute(attribute *int, sAttr string, attrName string, index int, ul *UnitLogger, errorFormat string, infoFormat string) (errs error) {
+	iAttr, attrErr := strconv.Atoi(sAttr)
+	if attrErr != nil {
+		ul.FErrorf(errorFormat, attrName, sAttr, attrErr)
+	}
+	errors.Join(errs, attrErr)
+	attribute = &iAttr
+	ul.FDebugf(infoFormat, attrName, index, sAttr, string(iAttr))
+	return errs
+}
+
 func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
-	conversionErrorFormat := fmt.Sprintf("line: %d | error converting %%s value of %%s to %%s: %%s\n")
+	conversionErrorFormat := fmt.Sprintf("Line: %d | error converting %%s value of %%s to %%s: %%s\n", lr.LineNumber)
+	infoFormat := fmt.Sprintf("Line: %d | Attribute: \"%%s\" | Position: %%d | Converted \"%%s\" to %%s\n", lr.LineNumber)
 	lineSections := CleanLine(weaponInfo)
 	weaponStats := strings.Split(lineSections[1], ",")
 	numFields := len(weaponStats)
 	if numFields < 11 {
 		ul.FErrorf("error parsing attack stats, too few fields")
 	}
-	weaponsStats = TrimValues(weaponStats)
-	w.MissileType := weaponStats[2]
-	w.WeaponType := weaponStats[5]
-	w.TechType := weaponStats[6]
-	w.DamageType := weaponStats[7]
-	w.SoundType := weaponStats[8]
-	atk := weaponStats[0]
-	chg := weaponStats[1]
-	mr := weaponStats[3]
-	ma := weaponStats[4]
-	w.Attack, atkErr = strconv.Atoi(atk)
-	w.Charge, chgErr = strconv.Atoi(crg)
-	w.MissileRange, rangeErr = strconv.Atoi(mr)
-	w.MissileAmmo, ammoErr = strconv.Atoi(atk)
-	if atkErr != nil {
-		ul.FErrorf(conversionErrorFormat, "Attack", atk, atkErr)
-		return atkErr
-	}
-	if chgErr != nil {
-		ul.FErrorf(conversionErrorFormat, "Charge", chg, chgErr)
-		return chgErr
-	}
-	if rangeErr != nil {
-		ul.FErrorf(conversionErrorFormat, "MissileRange", mr, rangeErr)
-		return rangeErr
-	}
-	if ammoErr != nil {
-		ul.FErrorf(conversionErrorFormat, "MissileAmmo", ma, ammoErr)
-		return ammoErr
-	}
-	switch numFields {
-	case 11:
-		md := weaponStats[9]
-		cf := weaponStats[10]
-		w.MinDelay, delayErr = strconv.Atoi(md)
-		w.CompensationFactor, cfErr = strconv.Atoi(cf)
-		if delayErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-		return delayErr
+	weaponStats = TrimValues(weaponStats)
+	w.MissileType = weaponStats[2]
+	for index, value := range weaponStats {
+		switch index {
+		case 0:
+			CheckSetIntAttribute(&w.Attack, value, "attack", index, ul, conversionErrorFormat, infoFormat)
+			satk := value
+			atk, atkErr := strconv.Atoi(satk)
+			if atkErr != nil {
+				ul.FErrorf(conversionErrorFormat, "attack", satk, atkErr)
+			}
+			w.Attack = atk
+			ul.FDebugf(infoFormat, "attack", index, satk, string(atk))
+		case 1:
+			schg := value
+			chg, chgErr := strconv.Atoi(schg)
+			if chgErr != nil {
+				ul.FErrorf(conversionErrorFormat, "Charge", schg, chgErr)
+			}
+			w.Charge = chg
+			ul.FDebugf(infoFormat, "attack", index, schg, string(chg))
+		case 3:
+			smr := value
+			mr, mrErr := strconv.Atoi(smr)
+			if mrErr != nil {
+				ul.FErrorf(conversionErrorFormat, "MissileRange", smr, mrErr)
+			}
+			w.MissileRange = mr
+			ul.FDebugf(infoFormat, "attack", index, smr, string(mr))
+		case 4:
+			sma := value
+			ma, maErr := strconv.Atoi(sma)
+			if maErr != nil {
+				ul.FErrorf(conversionErrorFormat, "Attack", sma, maErr)
+			}
+			w.Charge = ma
+			ul.FDebugf(infoFormat, "attack", index, sma, string(ma))
+		case 5:
+			w.WeaponType = value
+		case 6:
+			w.TechType = value
+		case 7:
+			w.DamageType = value
+		case 8:
+			w.SoundType = value
 		}
-		if cfErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-		return cfErr
+		w.WeaponType = weaponStats[5]
+		w.TechType = weaponStats[6]
+		w.DamageType = weaponStats[7]
+		w.SoundType = weaponStats[8]
+		atk := weaponStats[0]
+		chg := weaponStats[1]
+		mr := weaponStats[3]
+		ma := weaponStats[4]
+		w.Attack, atkErr = strconv.Atoi(atk)
+		w.Charge, chgErr = strconv.Atoi(crg)
+		w.MissileRange, rangeErr = strconv.Atoi(mr)
+		w.MissileAmmo, ammoErr = strconv.Atoi(atk)
+		if atkErr != nil {
+			ul.FErrorf(conversionErrorFormat, "Attack", atk, atkErr)
+			return atkErr
 		}
-	default:
-		w.FireEffect = weaponStats[9]
-		md := weaponStats[10]
-		cf := weaponStats[11]
-		w.MinDelay, delayErr = strconv.Atoi(md)
-		w.CompensationFactor, cfErr = strconv.Atoi(cf)
-		if delayErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-		return delayErr
+		if chgErr != nil {
+			ul.FErrorf(conversionErrorFormat, "Charge", chg, chgErr)
+			return chgErr
 		}
-		if cfErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-		return cfErr
+		if rangeErr != nil {
+			ul.FErrorf(conversionErrorFormat, "MissileRange", mr, rangeErr)
+			return rangeErr
 		}
+		if ammoErr != nil {
+			ul.FErrorf(conversionErrorFormat, "MissileAmmo", ma, ammoErr)
+			return ammoErr
+		}
+		switch numFields {
+		case 11:
+			md := weaponStats[9]
+			cf := weaponStats[10]
+			w.MinDelay, delayErr = strconv.Atoi(md)
+			w.CompensationFactor, cfErr = strconv.Atoi(cf)
+			if delayErr != nil {
+				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
+				return delayErr
+			}
+			if cfErr != nil {
+				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
+				return cfErr
+			}
+		default:
+			w.FireEffect = weaponStats[9]
+			md := weaponStats[10]
+			cf := weaponStats[11]
+			w.MinDelay, delayErr = strconv.Atoi(md)
+			w.CompensationFactor, cfErr = strconv.Atoi(cf)
+			if delayErr != nil {
+				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
+				return delayErr
+			}
+			if cfErr != nil {
+				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
+				return cfErr
+			}
+		}
+		jsonBytes, _ := json.Marshal(w)
+		sb := strings.Builder{}
+		sb.WriteByte(jsonBytes)
+		jsonString := sb.String
+		ul.FDebugf("line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
+		return nil
 	}
-	jsonBytes, _ := json.Marshal(w)
-	sb := strings.Builder{}
-	sb.WriteByte(jsonBytes)
-	jsonString := sb.String
-	ul.FDebugf("line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
-	return nil
 }
 
 type WeaponAttributes struct {
-	Attributes map[string][bool]
+	Attributes map[string]bool
 	AP         BoolAttribute `unit:"ap"`            // armour piercing. Only counts half of target's armour
 	BP         BoolAttribute `unit:"bp"`            // body piercing. Missile can pass through men and hit those behind
 	Spear      BoolAttribute `unit:"spear"`         // Used for long spears. Gives bonuses fighting cavalry, and penalties against infantry
