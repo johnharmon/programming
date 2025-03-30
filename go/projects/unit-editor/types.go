@@ -306,7 +306,7 @@ func (me *MountEffect) Unmarshal(effectInfo string) error {
 		effects := strings.SplitN(effect, " ", 2)
 		effectKey := effects[0]
 		effectValue := effects[2]
-		effectInt, err := ParseModifier(effectValue)
+		effectInt, _ := ParseModifier(effectValue)
 		me.Effects[effectKey] = effectInt
 	}
 	return nil
@@ -387,6 +387,12 @@ func CheckSetIntAttribute(attribute *int, sAttr string, attrName string, index i
 	return errs
 }
 
+func SetStrAttribute(attribute *string, sAttr string, attrName string, ul *UnitLogger, lineNumber int) {
+	attribute = &sAttr
+	ul.FDebugf("Line: %d | Setting %s to %s\n", lineNumber, attrName, sAttr)
+
+}
+
 func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
 	conversionErrorFormat := fmt.Sprintf("Line: %d | error converting %%s value of %%s to %%s: %%s\n", lr.LineNumber)
 	infoFormat := fmt.Sprintf("Line: %d | Attribute: \"%%s\" | Position: %%d | Converted \"%%s\" to %%s\n", lr.LineNumber)
@@ -397,111 +403,47 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) er
 		ul.FErrorf("error parsing attack stats, too few fields")
 	}
 	weaponStats = TrimValues(weaponStats)
-	w.MissileType = weaponStats[2]
 	for index, value := range weaponStats {
 		switch index {
 		case 0:
-			CheckSetIntAttribute(&w.Attack, value, "attack", index, ul, conversionErrorFormat, infoFormat)
-			satk := value
-			atk, atkErr := strconv.Atoi(satk)
-			if atkErr != nil {
-				ul.FErrorf(conversionErrorFormat, "attack", satk, atkErr)
-			}
-			w.Attack = atk
-			ul.FDebugf(infoFormat, "attack", index, satk, string(atk))
+			_ = CheckSetIntAttribute(&w.Attack, value, "Attack", index, ul, conversionErrorFormat, infoFormat)
 		case 1:
-			schg := value
-			chg, chgErr := strconv.Atoi(schg)
-			if chgErr != nil {
-				ul.FErrorf(conversionErrorFormat, "Charge", schg, chgErr)
-			}
-			w.Charge = chg
-			ul.FDebugf(infoFormat, "attack", index, schg, string(chg))
+			_ = CheckSetIntAttribute(&w.Charge, value, "Charge", index, ul, conversionErrorFormat, infoFormat)
+		case 2:
+			SetStrAttribute(&w.MissileType, value, "MissileType", ul, lr.LineNumber)
 		case 3:
-			smr := value
-			mr, mrErr := strconv.Atoi(smr)
-			if mrErr != nil {
-				ul.FErrorf(conversionErrorFormat, "MissileRange", smr, mrErr)
-			}
-			w.MissileRange = mr
-			ul.FDebugf(infoFormat, "attack", index, smr, string(mr))
+			_ = CheckSetIntAttribute(&w.MissileRange, value, "MissileRange", index, ul, conversionErrorFormat, infoFormat)
 		case 4:
-			sma := value
-			ma, maErr := strconv.Atoi(sma)
-			if maErr != nil {
-				ul.FErrorf(conversionErrorFormat, "Attack", sma, maErr)
-			}
-			w.Charge = ma
-			ul.FDebugf(infoFormat, "attack", index, sma, string(ma))
+			_ = CheckSetIntAttribute(&w.MissileAmmo, value, "MissileAmmo", index, ul, conversionErrorFormat, infoFormat)
 		case 5:
-			w.WeaponType = value
+			SetStrAttribute(&w.WeaponType, value, "WeaponType", ul, lr.LineNumber)
 		case 6:
-			w.TechType = value
+			SetStrAttribute(&w.TechType, value, "TechType", ul, lr.LineNumber)
 		case 7:
-			w.DamageType = value
+			SetStrAttribute(&w.DamageType, value, "DamageType", ul, lr.LineNumber)
 		case 8:
-			w.SoundType = value
-		}
-		w.WeaponType = weaponStats[5]
-		w.TechType = weaponStats[6]
-		w.DamageType = weaponStats[7]
-		w.SoundType = weaponStats[8]
-		atk := weaponStats[0]
-		chg := weaponStats[1]
-		mr := weaponStats[3]
-		ma := weaponStats[4]
-		w.Attack, atkErr = strconv.Atoi(atk)
-		w.Charge, chgErr = strconv.Atoi(crg)
-		w.MissileRange, rangeErr = strconv.Atoi(mr)
-		w.MissileAmmo, ammoErr = strconv.Atoi(atk)
-		if atkErr != nil {
-			ul.FErrorf(conversionErrorFormat, "Attack", atk, atkErr)
-			return atkErr
-		}
-		if chgErr != nil {
-			ul.FErrorf(conversionErrorFormat, "Charge", chg, chgErr)
-			return chgErr
-		}
-		if rangeErr != nil {
-			ul.FErrorf(conversionErrorFormat, "MissileRange", mr, rangeErr)
-			return rangeErr
-		}
-		if ammoErr != nil {
-			ul.FErrorf(conversionErrorFormat, "MissileAmmo", ma, ammoErr)
-			return ammoErr
-		}
-		switch numFields {
+			SetStrAttribute(&w.SoundType, value, "SoundType", ul, lr.LineNumber)
+		case 9:
+			if numFields == 11 {
+				_ = CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, conversionErrorFormat, infoFormat)
+			} else {
+				w.FireEffect = value
+				SetStrAttribute(&w.FireEffect, value, "FireEffect", ul, lr.LineNumber)
+			}
+		case 10:
+			if numFields == 11 {
+				_ = CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, conversionErrorFormat, infoFormat)
+			} else {
+				_ = CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, conversionErrorFormat, infoFormat)
+			}
 		case 11:
-			md := weaponStats[9]
-			cf := weaponStats[10]
-			w.MinDelay, delayErr = strconv.Atoi(md)
-			w.CompensationFactor, cfErr = strconv.Atoi(cf)
-			if delayErr != nil {
-				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-				return delayErr
-			}
-			if cfErr != nil {
-				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-				return cfErr
-			}
+			_ = CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, conversionErrorFormat, infoFormat)
 		default:
-			w.FireEffect = weaponStats[9]
-			md := weaponStats[10]
-			cf := weaponStats[11]
-			w.MinDelay, delayErr = strconv.Atoi(md)
-			w.CompensationFactor, cfErr = strconv.Atoi(cf)
-			if delayErr != nil {
-				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-				return delayErr
-			}
-			if cfErr != nil {
-				ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-				return cfErr
-			}
+			break
 		}
 		jsonBytes, _ := json.Marshal(w)
 		sb := strings.Builder{}
-		sb.WriteByte(jsonBytes)
+		sb.Write(jsonBytes)
 		jsonString := sb.String
 		ul.FDebugf("line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
 		return nil
