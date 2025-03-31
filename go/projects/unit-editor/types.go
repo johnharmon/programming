@@ -393,6 +393,16 @@ func SetStrAttribute(attribute *string, sAttr string, attrName string, ul *UnitL
 
 }
 
+func CheckSetStrAttribute(attribute *string, sAttr string, attrName string, ul *UnitLogger, lineNumber int, errorFormat string, acceptedValues map[string]struct{}) {
+	if _, ok := acceptedValues[sAttr]; ok {
+		attribute = &sAttr
+		ul.FDebugf("[INFO] Line: %d | Setting %s to %s\n", lineNumber, attrName, sAttr)
+	} else {
+		ul.FErrorf("[ERROR] Line: %d | Error setting %s attribute, unaccepted value: %s\n", lineNumber, attrName, sAttr)
+	}
+
+}
+
 func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
 	conversionErrorFormat := fmt.Sprintf("Line: %d | error converting %%s value of %%s to %%s: %%s\n", lr.LineNumber)
 	infoFormat := fmt.Sprintf("Line: %d | Attribute: \"%%s\" | Position: %%d | Converted \"%%s\" to %%s\n", lr.LineNumber)
@@ -445,7 +455,7 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) er
 		sb := strings.Builder{}
 		sb.Write(jsonBytes)
 		jsonString := sb.String
-		ul.FDebugf("line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
+		ul.FDebugf("Line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
 		return nil
 	}
 }
