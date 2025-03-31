@@ -28,7 +28,8 @@ func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer) {
 	if !wrappingCheckRegex.Match(line) {
 		regex := regexp2.MustCompile(`^(\s*)({{)(hub)?(-)?(.*?)(-)?(hub)?(}})(\s*$)`, 0)
 		newLine, _ := regex.Replace(string(line), `${1}{{ "${2}${3}${4}" }}${5}{{ "${6}${7}${8}" }}${9}`, 0, -1)
-		output.Write([]byte(newLine))
+		hubRegex := regexp2.MustCompile(`(.*?)(\s+)(?<!{{\s*"\s*)({{hub-?)(?!\s*"\s*}})(\s+)(.*?)(\s+)(?<!{{\s*"\s*)(-?hub}})(?!\s*"\s*}})(\s+)(.*?)`, 0)
+		newLine, _ = hubRegex.Replace(newLine, `${1} {{ "${3}" }} ${5} {{ "${7}" }} ${9}`, 0, -1)
 		fmt.Fprintf(output, "%s\n", newLine)
 		fmt.Fprintf(logs, "%s    ->     %s\n", line, newLine)
 		return
