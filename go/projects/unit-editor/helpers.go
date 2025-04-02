@@ -43,7 +43,7 @@ func CheckSetIntAttribute(attribute *int, sAttr string, attrName string, index i
 		ul.FErrorf(errorFormat, attrName, sAttr, attrErr)
 	}
 	errors.Join(errs, attrErr)
-	attribute = &iAttr
+	*attribute = iAttr
 	ul.FDebugf(infoFormat, lineNumber, attrName, index, sAttr, sAttr)
 	return errs
 }
@@ -54,20 +54,20 @@ func CheckSetFloatAttribute(attribute *float64, sAttr string, attrName string, i
 		ul.FErrorf(errorFormat, attrName, sAttr, attrErr)
 	}
 	errors.Join(errs, attrErr)
-	attribute = &fAttr
+	*attribute = fAttr
 	ul.FDebugf(infoFormat, attrName, index, sAttr, sAttr)
 	return errs
 }
 
 func SetStrAttribute(attribute *string, sAttr string, attrName string, ul *UnitLogger, lineNumber int) {
-	attribute = &sAttr
+	*attribute = sAttr
 	ul.FDebugf("Line: %d | Setting %s to %s\n", lineNumber, attrName, sAttr)
 
 }
 
 func CheckSetStrAttribute(attribute *string, sAttr string, attrName string, ul *UnitLogger, lineNumber int, errorFormat string, acceptedValues map[string]struct{}) {
 	if _, ok := acceptedValues[sAttr]; ok {
-		attribute = &sAttr
+		*attribute = sAttr
 		ul.FDebugf("[INFO] Line: %d | Setting %s to %s\n", lineNumber, attrName, sAttr)
 	} else {
 		ul.FErrorf("[ERROR] Line: %d | Error setting %s attribute, unaccepted value: %s\n", lineNumber, attrName, sAttr)
