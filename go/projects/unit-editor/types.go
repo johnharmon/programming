@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -315,18 +314,16 @@ type Formation struct {
 	PossibleFormations      []string
 }
 
-func (f *Formation) Unmarshal(formationInfo string) error {
-	lineSections := CleanLine(formationInfo)
-	formationStats := strings.Split(lineSections[1], ",")
-	numFields := len(formationStats)
+func (f *Formation) Unmarshal(formationInfo string, ul *UnitLogger, lr *LineRecord) (fieldErrors error) {
+	formationStats, numFields, fieldErrors := GetFieldInfo(formationInfo, 6, ul, lr)
 	if numFields < 6 {
 		return fmt.Errorf("error, insufficient number of fields for formation")
 	}
-	f.SidetoSideSpacingTight, _ = strconv.ParseFloat(formationStats[0], 64)
-	f.FronttoBackSpacingTight, _ = strconv.ParseFloat(formationStats[1], 64)
-	f.SidetoSideSpacingLoose, _ = strconv.ParseFloat(formationStats[2], 64)
-	f.FronttoBackSpacingLoose, _ = strconv.ParseFloat(formationStats[3], 64)
-	f.DefaultRanks, _ = strconv.Atoi(formationStats[4])
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.SidetoSideSpacingTight, formationStats[0], "sideToSideTight", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.FronttoBackSpacingTight, formationStats[1], "frontToBackTight", 1, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.SidetoSideSpacingLoose, formationStats[2], "sideToSideLoose", 2, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.FronttoBackSpacingLoose, formationStats[3], "frontToBackLoose", 3, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetIntAttribute(&f.DefaultRanks, formationStats[3], "frontToBackLoose", 3, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
 	f.PossibleFormations = append(f.PossibleFormations, formationStats[5])
 	if numFields > 6 {
 		f.PossibleFormations = append(f.PossibleFormations, formationStats[6])
@@ -454,7 +451,6 @@ type WeaponAttributes struct {
 	Area       BoolAttribute `unit:"area"`          // attack affects an area, not just one man
 	LightSpear BoolAttribute `unit:"light_spear"`   // The unit when braced has various protecting mechanisms versus cavalry charges from the frontk
 	SpearBonus BoolAttribute `unit:"spear_bonus_x"` // attack bonus against cavalry. x = 2, 4, 6, 8, 10 or 12
-
 }
 
 type Armor struct {
@@ -469,20 +465,19 @@ func (a *Armor) Unmarshal(armorInfo string, ul *UnitLogger, lr *LineRecord) (fie
 	armorStats, numFields, err := GetFieldInfo(armorInfo, 4, ul, lr)
 	ul.FInfof("[INFO] Line: %d | %d fields detected", lr.LineNumber, numFields)
 	if err != nil {
-		os.Exit(100)
+		fieldErrors = errors.Join(fieldErrors, err)
 	}
 	armorErr := CheckSetIntAttribute(&a.Armor, armorStats[0], "armor", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
 	defErr := CheckSetIntAttribute(&a.Armor, armorStats[1], "defense skill", 1, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
 	shieldErr := CheckSetIntAttribute(&a.Armor, armorStats[2], "shield", 2, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
 	SetStrAttribute(&a.Sound, armorStats[3], "sound", ul, lr.LineNumber)
 	if armorErr != nil || defErr != nil || shieldErr != nil {
-		os.Exit(100)
+		fieldErrors = errors.Join(fieldErrors, armorErr, defErr, shieldErr)
 	}
-	return nil
+	return fieldErrors
 }
 
-type ArmorEx struct {
-}
+type ArmorEx struct{}
 type Heat struct{}
 type Ground struct{}
 type Mental struct{}
