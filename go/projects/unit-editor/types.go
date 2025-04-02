@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -28,6 +28,8 @@ const (
 	Druid              = "druid"                // Can do a special morale raising chant
 	PowerCharge        = "power_charge"         // unkown
 	FreeUpkeepUnit     = "free_upkeep_unit"     // Unit can be supported free in a city
+	DefaultErrorFormat = "Line: %d | error converting %s value of %s to %s: %s\n"
+	DefaultInfoFormat  = "Line: %d | Attribute: \"%s\" | Position: %d | Converted \"%s\" to %s\n"
 )
 
 type LogLevel int
@@ -62,6 +64,7 @@ func DebugLogger(w io.Writer) *UnitLogger {
 }
 
 type UnitLogger struct {
+	Unit               *Unit
 	logLevel           LogLevel
 	debugStream        io.Writer
 	infoStream         io.Writer
@@ -114,16 +117,6 @@ func (ul *UnitLogger) FWarnf(format string, fields ...any) {
 }
 func (ul *UnitLogger) FErrorf(format string, fields ...any) {
 	fmt.Fprintf(ul.errorStream, format, fields...)
-}
-
-func CleanLine(line string) []string {
-	re := regexp.MustCompile(`\s+`)
-	lineSections := strings.SplitN(re.ReplaceAllString(line, " "), " ", 2)
-	cleanSections := make([]string, len(lineSections))
-	for _, item := range lineSections {
-		cleanSections = append(cleanSections, strings.TrimSpace(item))
-	}
-	return cleanSections
 }
 
 func ParseModifier(modifier string) (int, error) {
@@ -346,11 +339,11 @@ type Health struct {
 	MountHP int
 }
 
-func (h *Health) Unmarshal(healthInfo string) error {
+func (h *Health) Unmarshal(healthInfo string, ul *UnitLogger, lr *LineRecord) error {
 	lineSections := CleanLine(healthInfo)
 	healthStats := strings.Split(lineSections[1], ",")
-	h.HP, _ = strconv.Atoi(strings.TrimSpace(healthStats[0]))
-	h.MountHP, _ = strconv.Atoi(strings.TrimSpace(healthStats[1]))
+	_ = CheckSetIntAttribute(&h.HP, healthStats[0], "Health", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	_ = CheckSetIntAttribute(&h.MountHP, healthStats[0], "Health", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
 	return nil
 }
 
@@ -369,43 +362,7 @@ type Weapon struct {
 	CompensationFactor int    `json:"compensation_factor"`
 }
 
-func TrimValues(values []string) (tv []string) {
-	for _, value := range values {
-		tv = append(tv, strings.TrimSpace(value))
-	}
-	return tv
-}
-
-func CheckSetIntAttribute(attribute *int, sAttr string, attrName string, index int, ul *UnitLogger, errorFormat string, infoFormat string) (errs error) {
-	iAttr, attrErr := strconv.Atoi(sAttr)
-	if attrErr != nil {
-		ul.FErrorf(errorFormat, attrName, sAttr, attrErr)
-	}
-	errors.Join(errs, attrErr)
-	attribute = &iAttr
-	ul.FDebugf(infoFormat, attrName, index, sAttr, string(iAttr))
-	return errs
-}
-
-func SetStrAttribute(attribute *string, sAttr string, attrName string, ul *UnitLogger, lineNumber int) {
-	attribute = &sAttr
-	ul.FDebugf("Line: %d | Setting %s to %s\n", lineNumber, attrName, sAttr)
-
-}
-
-func CheckSetStrAttribute(attribute *string, sAttr string, attrName string, ul *UnitLogger, lineNumber int, errorFormat string, acceptedValues map[string]struct{}) {
-	if _, ok := acceptedValues[sAttr]; ok {
-		attribute = &sAttr
-		ul.FDebugf("[INFO] Line: %d | Setting %s to %s\n", lineNumber, attrName, sAttr)
-	} else {
-		ul.FErrorf("[ERROR] Line: %d | Error setting %s attribute, unaccepted value: %s\n", lineNumber, attrName, sAttr)
-	}
-
-}
-
-func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
-	conversionErrorFormat := fmt.Sprintf("Line: %d | error converting %%s value of %%s to %%s: %%s\n", lr.LineNumber)
-	infoFormat := fmt.Sprintf("Line: %d | Attribute: \"%%s\" | Position: %%d | Converted \"%%s\" to %%s\n", lr.LineNumber)
+func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) (fieldErrors error) {
 	lineSections := CleanLine(weaponInfo)
 	weaponStats := strings.Split(lineSections[1], ",")
 	numFields := len(weaponStats)
@@ -416,15 +373,27 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) er
 	for index, value := range weaponStats {
 		switch index {
 		case 0:
-			_ = CheckSetIntAttribute(&w.Attack, value, "Attack", index, ul, conversionErrorFormat, infoFormat)
+			err := CheckSetIntAttribute(&w.Attack, value, "Attack", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
 		case 1:
-			_ = CheckSetIntAttribute(&w.Charge, value, "Charge", index, ul, conversionErrorFormat, infoFormat)
+			err := CheckSetIntAttribute(&w.Charge, value, "Charge", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
 		case 2:
 			SetStrAttribute(&w.MissileType, value, "MissileType", ul, lr.LineNumber)
 		case 3:
-			_ = CheckSetIntAttribute(&w.MissileRange, value, "MissileRange", index, ul, conversionErrorFormat, infoFormat)
+			err := CheckSetIntAttribute(&w.MissileRange, value, "MissileRange", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
 		case 4:
-			_ = CheckSetIntAttribute(&w.MissileAmmo, value, "MissileAmmo", index, ul, conversionErrorFormat, infoFormat)
+			err := CheckSetIntAttribute(&w.MissileAmmo, value, "MissileAmmo", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
 		case 5:
 			SetStrAttribute(&w.WeaponType, value, "WeaponType", ul, lr.LineNumber)
 		case 6:
@@ -435,29 +404,41 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) er
 			SetStrAttribute(&w.SoundType, value, "SoundType", ul, lr.LineNumber)
 		case 9:
 			if numFields == 11 {
-				_ = CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, conversionErrorFormat, infoFormat)
+				err := CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+				if err != nil {
+					fieldErrors = errors.Join(fieldErrors, err)
+				}
 			} else {
 				w.FireEffect = value
 				SetStrAttribute(&w.FireEffect, value, "FireEffect", ul, lr.LineNumber)
 			}
 		case 10:
 			if numFields == 11 {
-				_ = CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, conversionErrorFormat, infoFormat)
+				err := CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+				if err != nil {
+					fieldErrors = errors.Join(fieldErrors, err)
+				}
 			} else {
-				_ = CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, conversionErrorFormat, infoFormat)
+				err := CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+				if err != nil {
+					fieldErrors = errors.Join(fieldErrors, err)
+				}
 			}
 		case 11:
-			_ = CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, conversionErrorFormat, infoFormat)
+			err := CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
 		default:
 			break
 		}
-		jsonBytes, _ := json.Marshal(w)
-		sb := strings.Builder{}
-		sb.Write(jsonBytes)
-		jsonString := sb.String
-		ul.FDebugf("Line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
-		return nil
 	}
+	jsonBytes, _ := json.Marshal(w)
+	sb := strings.Builder{}
+	sb.Write(jsonBytes)
+	jsonString := sb.String()
+	ul.FDebugf("Line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
+	return fieldErrors
 }
 
 type WeaponAttributes struct {
@@ -481,6 +462,23 @@ type Armor struct {
 	DefenseSkill int
 	Shield       int
 	Sound        string
+	FieldName    string
+}
+
+func (a *Armor) Unmarshal(armorInfo string, ul *UnitLogger, lr *LineRecord) (fieldErrors error) {
+	armorStats, numFields, err := GetFieldInfo(armorInfo, 4, ul, lr)
+	ul.FInfof("[INFO] Line: %d | %d fields detected", lr.LineNumber, numFields)
+	if err != nil {
+		os.Exit(100)
+	}
+	armorErr := CheckSetIntAttribute(&a.Armor, armorStats[0], "armor", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	defErr := CheckSetIntAttribute(&a.Armor, armorStats[1], "defense skill", 1, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	shieldErr := CheckSetIntAttribute(&a.Armor, armorStats[2], "shield", 2, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	SetStrAttribute(&a.Sound, armorStats[3], "sound", ul, lr.LineNumber)
+	if armorErr != nil || defErr != nil || shieldErr != nil {
+		os.Exit(100)
+	}
+	return nil
 }
 
 type ArmorEx struct {
