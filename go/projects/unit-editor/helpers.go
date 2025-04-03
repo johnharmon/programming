@@ -25,15 +25,16 @@ func CleanLine(line string) []string {
 	return cleanSections
 }
 
-func GetFieldInfo(field string, neededFields int, ul *UnitLogger, lr *LineRecord) (fieldStats []string, numFields int, fieldErrors error) {
+func GetFieldInfo(field string, neededFields int, ul *UnitLogger, lr *LineRecord) (fieldName string, fieldStats []string, numFields int, fieldErrors error) {
 	lineSections := CleanLine(field)
 	fieldStats = strings.Split(lineSections[1], ",")
+	fieldName = lineSections[1]
 	numFields = len(fieldStats)
 	if numFields < neededFields {
 		fieldErrors = errors.Join(fieldErrors, fmt.Errorf("Line: "))
 		ul.FErrorf("Line: %d | Error, too few values in field: %s | Required: %d, provided: %d", lr.LineNumber, lineSections[0], neededFields, numFields)
 	}
-	return fieldStats, numFields, fieldErrors
+	return fieldName, fieldStats, numFields, fieldErrors
 
 }
 

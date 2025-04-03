@@ -279,7 +279,7 @@ type Soldier struct {
 
 type MountEffect struct {
 	Effects            map[string]int
-	Horse              int `unit:"horse json:"horse"`
+	Horse              int `unit:"horse" json:"horse"`
 	Camel              int `unit:"camel" json:"camel"`
 	Elephant           int `unit:"elephant" json:"elephant"`
 	ElephantCannon     int `unit:"elephant_cannon" json:"elephant_cannon"`
@@ -357,10 +357,12 @@ type Weapon struct {
 	FireEffect         string `json:"fire_effect"`
 	MinDelay           int    `json:"min_delay"`
 	CompensationFactor int    `json:"compensation_factor"`
+	FieldName          string
 }
 
 func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) (fieldErrors error) {
 	lineSections := CleanLine(weaponInfo)
+	w.FieldName = lineSections[0]
 	weaponStats := strings.Split(lineSections[1], ",")
 	numFields := len(weaponStats)
 	if numFields < 11 {
@@ -436,6 +438,10 @@ func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) (f
 	jsonString := sb.String()
 	ul.FDebugf("Line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
 	return fieldErrors
+}
+
+func (w Weapon) Marshal() (field string) {
+	return field
 }
 
 type WeaponAttributes struct {
