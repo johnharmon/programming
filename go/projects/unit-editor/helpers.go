@@ -15,7 +15,25 @@ func GetField(fieldLine string) (fieldName string, fieldValues []string) {
 	return fieldName, fieldValues
 }
 
-func HandleFieldLine(fieldLine string, unit *Unit, ul *UnitLogger, lr *LineRecord) (errorSet error) {
+func HandleFieldLine(fieldLine string, unit *Unit, ul *UnitLogger, lr *LineRecord) (errorSet []error) {
+	fieldName, fieldValues := GetField(fieldLine)
+	switch {
+	case fieldName == "type":
+		errorSet := unit.Type.Unmarshal(fieldName, fieldValues)
+	case fieldName == "dictionary":
+		errorSet := unit.Dictionary.Unmarshal(fieldName, fieldValues)
+	case fieldName == "soldier":
+		errorSet := unit.Soldier.Unmarshal(fieldName, fieldValues)
+	case fieldName == MountEffect:
+		errorSet := unit.MountEffect.Unmarshal(fieldName, fieldValues)
+	case fieldName == "attributes":
+		errorSet := unit.Attributes.Unmarshal(fieldName, fieldValues)
+	case fieldName == "formation":
+		errorSet := unit.Formation.Unmarshal(fieldName, fieldValues)
+	case fieldName == "stat_health":
+		errorSet := unit.StatHealth.Unmarshal(fieldName, fieldValues)
+
+	}
 	return nil
 }
 
