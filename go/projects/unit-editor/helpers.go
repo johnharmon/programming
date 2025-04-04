@@ -8,6 +8,17 @@ import (
 	"strings"
 )
 
+func GetField(fieldLine string) (fieldName string, fieldValues []string) {
+	fields := CleanLine(fieldLine)
+	fieldName = fields[0]
+	fieldValues = fields[1:]
+	return fieldName, fieldValues
+}
+
+func HandleFieldLine(fieldLine string, unit *Unit, ul *UnitLogger, lr *LineRecord) (errorSet error) {
+	return nil
+}
+
 func TrimValues(values []string) (tv []string) {
 	for _, value := range values {
 		tv = append(tv, strings.TrimSpace(value))
