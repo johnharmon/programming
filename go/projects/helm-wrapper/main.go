@@ -74,7 +74,7 @@ func OpenFile(filePath string, fOptions int) (ffile *os.File, exitCode int, ferr
 			ffile, err := os.OpenFile(filePath, fOptions, 0644)
 			if err != nil {
 				pathErr := err.(*os.PathError)
-				returnErr := fmt.Errorf("error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
+				returnErr := fmt.Errorf("error opening file:\nPath: %s\nError: \"%s\"\n", pathErr.Path, pathErr.Err)
 				return &os.File{}, 2, returnErr
 			}
 			return ffile, 0, nil
@@ -88,7 +88,7 @@ func OpenFile(filePath string, fOptions int) (ffile *os.File, exitCode int, ferr
 	if err != nil {
 		pathErr := err.(*os.PathError)
 		returnErr := fmt.Errorf("error opening file: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
-		fmt.Printf("Error opening file: \"%s\"\n\"%s\"\n", pathErr.Path, pathErr.Err)
+		fmt.Printf("Error opening file: Path: \"%s\"\n Error: \"%s\"\n", pathErr.Path, pathErr.Err)
 		return &os.File{}, 4, returnErr
 	}
 	return file, 0, nil
@@ -126,6 +126,7 @@ func main() {
 		fmt.Printf("You must specify a file to target\n")
 		os.Exit(1)
 	}
+	fmt.Printf("Input file: %s\n", inputFileName)
 	if verbose {
 		logOutput = os.Stdout
 	} else {
