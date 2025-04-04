@@ -119,8 +119,8 @@ func main() {
 	flag.StringVar(&outputFileName, "output", "", "specify the relative path to the file to wrap")
 	flag.BoolVar(&meta, "meta", true, "Specify whether to use meta blocks to denote templating")
 	flag.BoolVar(&meta, "m", true, "Specify whether to use meta blocks to denote templating")
-	flag.BoolVar(&verbose, "verbose", true, "Specifies whether to use verbose output")
-	flag.BoolVar(&verbose, "v", true, "Specifies whether to use verbose output")
+	flag.BoolVar(&verbose, "verbose", false, "Specifies whether to use verbose output")
+	flag.BoolVar(&verbose, "v", false, "Specifies whether to use verbose output")
 	flag.Parse()
 	if inputFileName == "" {
 		fmt.Printf("You must specify a file to target\n")
@@ -137,10 +137,16 @@ func main() {
 		fmt.Printf("ERROR: %s\n", err)
 		os.Exit(ec)
 	}
-	outputFile, ec, err := OpenFile(outputFileName, os.O_WRONLY|os.O_TRUNC|os.O_CREATE)
-	if err != nil {
-		fmt.Printf("ERROR: %s\n", err)
-		os.Exit(ec)
+
+	var outputFile io.Writer
+	if outputFileName != "" {
+		outputFile, ec, err = OpenFile(outputFileName, os.O_WRONLY|os.O_TRUNC|os.O_CREATE)
+		if err != nil {
+			fmt.Printf("ERROR: %s\n", err)
+			os.Exit(ec)
+		}
+	} else {
+		outputFile = &Discard{}
 	}
 	scanner := bufio.NewScanner(inputFile)
 	lineNumber := 0
