@@ -57,10 +57,11 @@ func IsMeta(line []byte) (meta bool, nIndent int) {
 	nIndent = 0
 	matches := regex.FindSubmatch(line)
 	var err error
-	if len(matches) > 0 {
+	matchCount := len(matches)
+	if matchCount > 0 {
 		meta = true
 		if len(matches) > 1 {
-			if len(matches[1]) > 0 {
+			if matchCount > 0 {
 				nIndent, err = strconv.Atoi(string(matches[1]))
 				if err != nil {
 					nIndent = 0
