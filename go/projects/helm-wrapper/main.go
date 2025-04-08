@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/dlclark/regexp2"
 )
@@ -22,12 +24,18 @@ func logger(logs chan []byte, output io.Writer) {
 
 }
 
-func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer) {
+func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer, nIndent int, indent int) {
 	wrappingCheckRegex := regexp.MustCompile(`^.*{{\s*"{{(hub)?-?"\s*}}.*`)
 	fmt.Fprintf(logs, "##########		Line: %d		##########\n", lineNumber)
 	if !wrappingCheckRegex.Match(line) {
 		regex := regexp2.MustCompile(`^(\s*)({{)(hub)?(-)?(.*?)(-)?(hub)?(}})(\s*$)`, 0)
-		newLine, _ := regex.Replace(string(line), `${1}{{ "${2}${3}${4}" }}${5}{{ "${6}${7}${8}" }}${9}`, 0, -1)
+		indentation := strings.Repeat(" ", (nIndent * indent))
+		var newLine string
+		if ok, _ := regex.MatchString(string(line)); ok {
+			newLine, _ = regex.Replace(string(line), fmt.Sprintf(`%s${1}{{ "${2}${3}${4}" }}${5}{{ "${6}${7}${8}" }}${9}`, indentation), 0, -1)
+		} else {
+			newLine = fmt.Sprintf("%s%s", indentation, line)
+		}
 		hubRegex := regexp2.MustCompile(`(.*?)(\s+)(?<!{{\s*"\s*)({{hub-?)(?!\s*"\s*}})(\s+)(.*?)(\s+)(?<!{{\s*"\s*)(-?hub}})(?!\s*"\s*}})(\s+)(.*?)`, 0)
 		newLine, _ = hubRegex.Replace(newLine, `${1} {{ "${3}" }} ${5} {{ "${7}" }} ${9}`, 0, -1)
 		fmt.Fprintf(output, "%s\n", newLine)
@@ -43,9 +51,26 @@ func WrapHubLine(line []byte, output *bytes.Buffer) {
 	output.Write(newLine)
 }
 
-func IsMeta(line []byte) bool {
-	regex := regexp.MustCompile(`^\s*#\s*meta\s*$`)
-	return regex.Match(line)
+func IsMeta(line []byte) (meta bool, nIndent int) {
+	regex := regexp.MustCompile(`^\s*#\s*meta\s*([0-9]*)\s*$`)
+	meta = false
+	nIndent = 0
+	matches := regex.FindSubmatch(line)
+	var err error
+	fmt.Printf("%s\n", line)
+	fmt.Printf("%+v\n", matches)
+	if len(matches) > 0 {
+		meta = true
+		if len(matches) > 1 {
+			if len(matches[1]) > 0 {
+				nIndent, err = strconv.Atoi(string(matches[1]))
+				if err != nil {
+					nIndent = 0
+				}
+			}
+		}
+	}
+	return meta, nIndent
 }
 
 func WrapIndentedLine(line []byte, output *bytes.Buffer) {
@@ -112,11 +137,14 @@ func main() {
 		metaOn         = false
 		output         = &bytes.Buffer{}
 		logOutput      io.Writer
+		indent         int
 	)
 	flag.StringVar(&inputFileName, "file", "", "specify the relative path to the file to wrap")
 	flag.StringVar(&inputFileName, "f", "", "specify the relative path to the file to wrap")
 	flag.StringVar(&outputFileName, "o", "", "specify the relative path to the file to wrap")
 	flag.StringVar(&outputFileName, "output", "", "specify the relative path to the file to wrap")
+	flag.IntVar(&indent, "indent", 2, "Number of spaces for an indent")
+	flag.IntVar(&indent, "i", 2, "Number of spaces for an indent")
 	flag.BoolVar(&meta, "meta", true, "Specify whether to use meta blocks to denote templating")
 	flag.BoolVar(&meta, "m", true, "Specify whether to use meta blocks to denote templating")
 	flag.BoolVar(&verbose, "verbose", false, "Specifies whether to use verbose output")
@@ -134,6 +162,7 @@ func main() {
 	}
 	inputFile, ec, err := OpenFile(inputFileName, os.O_RDONLY)
 	if err != nil {
+		fmt.Printf("Error opening input file:\n")
 		fmt.Printf("ERROR: %s\n", err)
 		os.Exit(ec)
 	}
@@ -142,6 +171,7 @@ func main() {
 	if outputFileName != "" {
 		outputFile, ec, err = OpenFile(outputFileName, os.O_WRONLY|os.O_TRUNC|os.O_CREATE)
 		if err != nil {
+			fmt.Printf("Error opening output file:\n")
 			fmt.Printf("ERROR: %s\n", err)
 			os.Exit(ec)
 		}
@@ -150,16 +180,19 @@ func main() {
 	}
 	scanner := bufio.NewScanner(inputFile)
 	lineNumber := 0
+	var nIndent = 0
+	var tIndent = 0
 	if meta {
 		fmt.Printf("Meta block tagging enabled\n")
 		for scanner.Scan() {
 			line := scanner.Bytes()
-			if IsMeta(line) {
+			if meta, tIndent = IsMeta(line); meta {
+				nIndent = tIndent
 				metaOn = !metaOn
 				continue
 			}
 			if metaOn {
-				WrapLine(lineNumber, scanner.Bytes(), outputFile, logOutput)
+				WrapLine(lineNumber, scanner.Bytes(), outputFile, logOutput, nIndent, indent)
 			} else {
 				outputFile.Write(line)
 				outputFile.Write([]byte("\n"))
