@@ -57,8 +57,6 @@ func IsMeta(line []byte) (meta bool, nIndent int) {
 	nIndent = 0
 	matches := regex.FindSubmatch(line)
 	var err error
-	fmt.Printf("%s\n", line)
-	fmt.Printf("%+v\n", matches)
 	if len(matches) > 0 {
 		meta = true
 		if len(matches) > 1 {
@@ -176,7 +174,7 @@ func main() {
 			os.Exit(ec)
 		}
 	} else {
-		outputFile = &Discard{}
+		outputFile = os.Stdout
 	}
 	scanner := bufio.NewScanner(inputFile)
 	lineNumber := 0
