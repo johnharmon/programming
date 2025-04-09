@@ -182,11 +182,11 @@ func IsTemplate(parent os.DirEntry, file os.DirEntry) bool {
 func ProcessFile(fsys WrapDirFS, fileName string, dirPath string) (errs []error) {
 	file, err := fsys.Open(fileName)
 	if err != nil {
-		fmt.Printf("%s\n", err)
+		errs = append(errs, fmt.Errorf("%s\n", err))
 		os.Exit(1003)
 	}
 	scanner := bufio.NewScanner(file)
-	return
+	return errs
 }
 
 func TraverseDirectory(dirPath string, errW io.Writer) (files []*os.File, directories []*os.File) {
@@ -224,7 +224,6 @@ func TraverseDirectory(dirPath string, errW io.Writer) (files []*os.File, direct
 					fmt.Fprintf(errW, "%s\n", err)
 				}
 			}
-
 			//more processing logic later
 		}
 	}
