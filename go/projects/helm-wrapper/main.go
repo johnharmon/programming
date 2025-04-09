@@ -6,13 +6,22 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/dlclark/regexp2"
 )
+
+type WrapDirFS interface {
+	fs.FS
+	fs.StatFS
+	fs.ReadFileFS
+	fs.ReadDirFS
+}
 
 type Discard struct{}
 
@@ -27,9 +36,9 @@ func logger(logs chan []byte, output io.Writer) {
 func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer, nIndent int, indent int) {
 	wrappingCheckRegex := regexp.MustCompile(`^.*{{\s*"{{(hub)?-?"\s*}}.*`)
 	fmt.Fprintf(logs, "##########		Line: %d		##########\n", lineNumber)
+	indentation := strings.Repeat(" ", (nIndent * indent))
 	if !wrappingCheckRegex.Match(line) {
 		regex := regexp2.MustCompile(`^(\s*)({{)(hub)?(-)?(.*?)(-)?(hub)?(}})(\s*$)`, 0)
-		indentation := strings.Repeat(" ", (nIndent * indent))
 		var newLine string
 		if ok, _ := regex.MatchString(string(line)); ok {
 			newLine, _ = regex.Replace(string(line), fmt.Sprintf(`%s${1}{{ "${2}${3}${4}" }}${5}{{ "${6}${7}${8}" }}${9}`, indentation), 0, -1)
@@ -41,6 +50,8 @@ func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer, nIn
 		fmt.Fprintf(output, "%s\n", newLine)
 		fmt.Fprintf(logs, "%s    ->     %s\n", line, newLine)
 		return
+	} else {
+		fmt.Fprintf(output, "%s%s\n", indentation, line)
 	}
 	fmt.Fprintf(logs, "##########		UNCHANGED		##########\n")
 }
@@ -127,6 +138,90 @@ func OpenOutputFile(filePath string, fOptions int) (*os.File, error) {
 
 }
 
+func OpenDirectory(dirPath string) ([]*os.File, error) {
+
+	dirInfo, err := os.Stat(dirPath)
+	if err != nil {
+		if fOptions&os.O_CREATE == 0 {
+			pathErr := err.(*os.PathError)
+			returnErr := fmt.Errorf("error opening dir: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
+			return &os.dir{}, 2, returnErr
+		} else {
+			fdir, err := os.Opendir(dirPath, fOptions, 0644)
+			if err != nil {
+				pathErr := err.(*os.PathError)
+				returnErr := fmt.Errorf("error opening dir:\nPath: %s\nError: \"%s\"\n", pathErr.Path, pathErr.Err)
+				return &os.File{}, 2, returnErr
+			}
+			return fdir, 0, nil
+		}
+	}
+	if dirInfo.IsDir() {
+		returnErr := fmt.Errorf("Error, pathspec: \"%s\" is a directory\n", dirPath)
+		return &os.File{}, 3, returnErr
+	}
+	dir, err := os.Opendir(dirPath, fOptions, 0644)
+	if err != nil {
+		pathErr := err.(*os.PathError)
+		returnErr := fmt.Errorf("error opening dir: %s\n\"%s\"\n", pathErr.Path, pathErr.Err)
+		fmt.Printf("Error opening dir: Path: \"%s\"\n Error: \"%s\"\n", pathErr.Path, pathErr.Err)
+		return &os.File{}, 4, returnErr
+	}
+	return dir, 0, nil
+	return []*os.File{}, nil
+}
+
+func ProcessDirEntry(path string, d fs.DirEntry, err error) error {
+	return nil
+}
+
+func IsTemplate(parent os.DirEntry, file os.DirEntry) bool {
+	return false
+}
+
+func ProcessFile(fsys WrapDirFS, fileName string) {
+	file, err := fsys.Open(fileName)
+	if err != nil {
+		fmt.Printf("%s\n", err)
+		os.Exit(1002)
+	}
+	scanner := bufio.NewScanner(file)
+	return
+}
+
+func TraverseDirectory(dirPath string) (files []*os.File, directories []*os.File) {
+	root := os.DirFS(dirPath).(WrapDirFS)
+	stat, err := root.Stat(".")
+	if err != nil {
+		fmt.Printf("%s\n", err)
+		os.Exit(1000)
+	}
+	isDir := stat.IsDir()
+	if isDir {
+		TraverseDirectory(filepath.Join(dirPath, stat.Name()))
+	}
+	if dirPath == "templates" {
+		dirEntries, err := root.ReadDir(".")
+		if err != nil {
+			fmt.Printf("%s\n", err)
+			os.Exit(1001)
+		}
+		nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
+		for _, entry := range dirEntries {
+			name := entry.Name()
+			if entry.IsDir() {
+				TraverseDirectory(filepath.Join(dirPath, name))
+			} else if nameRegex.MatchString(name) {
+				ProcessFile(root, name)
+			}
+
+			//more processing logic later
+		}
+	}
+
+	return files, directories
+}
+
 func main() {
 	var (
 		inputFileName  string
@@ -137,9 +232,12 @@ func main() {
 		output         = &bytes.Buffer{}
 		logOutput      io.Writer
 		indent         int
+		directory      string
 	)
 	flag.StringVar(&inputFileName, "file", "", "specify the relative path to the file to wrap")
 	flag.StringVar(&inputFileName, "f", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&directory, "directory", "", "speficy the directory to template")
+	flag.StringVar(&directory, "d", "", "speficy the directory to template")
 	flag.StringVar(&outputFileName, "o", "", "specify the relative path to the file to wrap")
 	flag.StringVar(&outputFileName, "output", "", "specify the relative path to the file to wrap")
 	flag.IntVar(&indent, "indent", 2, "Number of spaces for an indent")
