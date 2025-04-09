@@ -179,40 +179,50 @@ func IsTemplate(parent os.DirEntry, file os.DirEntry) bool {
 	return false
 }
 
-func ProcessFile(fsys WrapDirFS, fileName string) {
+func ProcessFile(fsys WrapDirFS, fileName string, dirPath string) (errs []error) {
 	file, err := fsys.Open(fileName)
 	if err != nil {
 		fmt.Printf("%s\n", err)
-		os.Exit(1002)
+		os.Exit(1003)
 	}
 	scanner := bufio.NewScanner(file)
 	return
 }
 
-func TraverseDirectory(dirPath string) (files []*os.File, directories []*os.File) {
+func TraverseDirectory(dirPath string, errW io.Writer) (files []*os.File, directories []*os.File) {
+	absPath, _ := filepath.Abs(dirPath)
 	root := os.DirFS(dirPath).(WrapDirFS)
 	stat, err := root.Stat(".")
 	if err != nil {
-		fmt.Printf("%s\n", err)
+		fmt.Fprintf(errW, "%s\n", absPath)
+		fmt.Fprintf(errW, "%s\n", err)
 		os.Exit(1000)
 	}
 	isDir := stat.IsDir()
 	if isDir {
-		TraverseDirectory(filepath.Join(dirPath, stat.Name()))
+		TraverseDirectory(filepath.Join(dirPath, stat.Name()), errW)
+	} else {
+		fmt.Fprintf(errW, "%s: not a directory\n", absPath)
+		os.Exit(1001)
+
 	}
-	if dirPath == "templates" {
+	if filepath.Base(dirPath) == "templates" {
 		dirEntries, err := root.ReadDir(".")
 		if err != nil {
-			fmt.Printf("%s\n", err)
-			os.Exit(1001)
+			fmt.Fprintf(errW, "%s\n", absPath)
+			fmt.Fprintf(errW, "%s\n", err)
+			os.Exit(1002)
 		}
 		nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
 		for _, entry := range dirEntries {
 			name := entry.Name()
 			if entry.IsDir() {
-				TraverseDirectory(filepath.Join(dirPath, name))
+				TraverseDirectory(filepath.Join(dirPath, name), errW)
 			} else if nameRegex.MatchString(name) {
-				ProcessFile(root, name)
+				errs := ProcessFile(root, name, dirPath)
+				for _, err := range errs {
+					fmt.Fprintf(errW, "%s\n", err)
+				}
 			}
 
 			//more processing logic later
