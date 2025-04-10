@@ -220,6 +220,7 @@ func ProcessFile(fsys WrapDirFS, fileName string, dirPath string, config *FlagCo
 		return append(errs, err)
 	}
 	defer inputFile.Close()
+
 	var (
 		meta       = false
 		metaOn     = false
@@ -272,35 +273,39 @@ func TraverseDirectory(dirPath string, config *FlagConfig, errW io.Writer) (file
 	}
 	isDir := stat.IsDir()
 	if isDir {
-		TraverseDirectory(filepath.Join(dirPath, stat.Name()), config, errW)
-	} else {
-		fmt.Fprintf(errW, "%s: not a directory\n", absPath)
-		os.Exit(1001)
-
-	}
-	if filepath.Base(dirPath) == "templates" {
 		dirEntries, err := root.ReadDir(".")
 		if err != nil {
 			fmt.Fprintf(errW, "%s\n", absPath)
 			fmt.Fprintf(errW, "%s\n", err)
-			os.Exit(1002)
-		}
-		nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
-		for _, entry := range dirEntries {
-			name := entry.Name()
-			if entry.IsDir() {
-				TraverseDirectory(filepath.Join(dirPath, name), config, errW)
-			} else if nameRegex.MatchString(name) {
-				errs := ProcessFile(root, name, dirPath, config)
-				if len(errs) != 0 {
-					fmt.Fprintf(errW, "Error(s) encountered during Foile processing:")
-					for _, err := range errs {
-						fmt.Fprintf(errW, "\t%s\n", err)
+			fmt.Fprintf(errW, "Error opening directory: %s\n", err)
+		} else {
+			if filepath.Base(dirPath) == "templates" {
+				nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
+				for _, entry := range dirEntries {
+					name := entry.Name()
+					if entry.IsDir() {
+						TraverseDirectory(filepath.Join(dirPath, name), config, errW)
+					} else if nameRegex.MatchString(name) {
+						errs := ProcessFile(root, name, dirPath, config)
+						if len(errs) != 0 {
+							fmt.Fprintf(errW, "Error(s) encountered during File processing:")
+							for _, err := range errs {
+								fmt.Fprintf(errW, "\t%s\n", err)
+							}
+						}
+					}
+				}
+			} else {
+				for _, entry := range dirEntries {
+					if entry.IsDir() {
+						TraverseDirectory(filepath.Join(dirPath, entry.Name()), config, errW)
 					}
 				}
 			}
-			//more processing logic later
 		}
+	} else {
+		fmt.Fprintf(errW, "%s: not a directory\n", absPath)
+		os.Exit(1001)
 	}
 
 	return files, directories
@@ -316,7 +321,6 @@ func main() {
 		output         = &bytes.Buffer{}
 		logOutput      io.Writer
 		indent         int
-		directory      string
 	)
 
 	flags := FlagConfig{}
@@ -366,6 +370,16 @@ func main() {
 	lineNumber := 0
 	var nIndent = 0
 	var tIndent = 0
+	if flags.directory == "" || flags.inputFile == "" {
+		fmt.Fprintf(os.Stderr, "Error: you must provide a file or directory to operate on")
+		os.Exit(1005)
+
+	}
+	if flags.verbose {
+		logOutput = os.Stdout
+	} else {
+		logOutput = io.Discard
+	}
 	if meta {
 		fmt.Printf("Meta block tagging enabled\n")
 		for scanner.Scan() {
