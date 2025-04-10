@@ -23,6 +23,17 @@ type WrapDirFS interface {
 	fs.ReadDirFS
 }
 
+type FlagConfig struct {
+	inputFile  string
+	outputFile string
+	meta       bool
+	verbose    bool
+	output     io.Writer
+	logOutput  io.Writer
+	indent     int
+	directory  string
+}
+
 type Discard struct{}
 
 func (d Discard) Write(b []byte) (int, error) {
@@ -179,19 +190,80 @@ func IsTemplate(parent os.DirEntry, file os.DirEntry) bool {
 	return false
 }
 
-func ProcessFile(fsys WrapDirFS, fileName string, dirPath string) (errs []error) {
-	file, err := fsys.Open(fileName)
+func ValidateInputName(inputFileName string) (matches [][]string, validationRegex *regexp.Regexp) {
+	validationRegex = regexp.MustCompile(`^\.([A-Za-z0-9\-]+)\.template$`)
+	matches = validationRegex.FindAllStringSubmatch(inputFileName, -1)
+	return matches, validationRegex
+}
+
+func GetOutputName(inputFileName string) (outputFileName string, err error) {
+	matches, regex := ValidateInputName(inputFileName)
+	if matches == nil {
+		return "", fmt.Errorf("Error: not a valid file name for templating")
+	}
+	outputFileName = regex.ReplaceAllString(inputFileName, "{$1}.yaml")
+	return outputFileName, nil
+}
+
+func ProcessFile(fsys WrapDirFS, fileName string, dirPath string, config *FlagConfig) (errs []error) {
+	outputFileName, err := GetOutputName(fileName)
+	if err != nil {
+		return append(errs, err)
+	}
+	outputFile, err := OpenOutputFile(filepath.Join(dirPath, outputFileName), os.O_APPEND|os.O_TRUNC|os.O_CREATE)
+	if err != nil {
+		return append(errs, err)
+	}
+	defer outputFile.Close()
+	inputFile, err := fsys.Open(fileName)
+	if err != nil {
+		return append(errs, err)
+	}
+	defer inputFile.Close()
+	var (
+		meta       = false
+		metaOn     = false
+		lineNumber = 0
+		nIndent    = 0
+		tIndent    = 0
+		indent     = config.indent
+		logOutput  io.Writer
+	)
+
 	if err != nil {
 		errs = append(errs, fmt.Errorf("%s\n", err))
 		os.Exit(1003)
 	}
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(inputFile)
+	fmt.Fprintf(logOutput, "Meta block tagging enabled\n")
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if meta, tIndent = IsMeta(line); meta {
+			metaOn = !metaOn
+			if metaOn {
+				nIndent = tIndent
+			}
+			continue
+		}
+		if metaOn {
+			WrapLine(lineNumber, scanner.Bytes(), outputFile, logOutput, nIndent, indent)
+		} else {
+			outputFile.Write(line)
+			outputFile.Write([]byte("\n"))
+		}
+		lineNumber++
+	}
+
 	return errs
 }
 
-func TraverseDirectory(dirPath string, errW io.Writer) (files []*os.File, directories []*os.File) {
+func TraverseDirectory(dirPath string, config *FlagConfig, errW io.Writer) (files []*os.File, directories []*os.File) {
 	absPath, _ := filepath.Abs(dirPath)
-	root := os.DirFS(dirPath).(WrapDirFS)
+	root, ok := os.DirFS(dirPath).(WrapDirFS)
+	if !ok {
+		fmt.Fprintf(errW, "Error , could not type assert %T to WrapDirFS\n", root)
+
+	}
 	stat, err := root.Stat(".")
 	if err != nil {
 		fmt.Fprintf(errW, "%s\n", absPath)
@@ -200,7 +272,7 @@ func TraverseDirectory(dirPath string, errW io.Writer) (files []*os.File, direct
 	}
 	isDir := stat.IsDir()
 	if isDir {
-		TraverseDirectory(filepath.Join(dirPath, stat.Name()), errW)
+		TraverseDirectory(filepath.Join(dirPath, stat.Name()), config, errW)
 	} else {
 		fmt.Fprintf(errW, "%s: not a directory\n", absPath)
 		os.Exit(1001)
@@ -217,11 +289,14 @@ func TraverseDirectory(dirPath string, errW io.Writer) (files []*os.File, direct
 		for _, entry := range dirEntries {
 			name := entry.Name()
 			if entry.IsDir() {
-				TraverseDirectory(filepath.Join(dirPath, name), errW)
+				TraverseDirectory(filepath.Join(dirPath, name), config, errW)
 			} else if nameRegex.MatchString(name) {
-				errs := ProcessFile(root, name, dirPath)
-				for _, err := range errs {
-					fmt.Fprintf(errW, "%s\n", err)
+				errs := ProcessFile(root, name, dirPath, config)
+				if len(errs) != 0 {
+					fmt.Fprintf(errW, "Error(s) encountered during Foile processing:")
+					for _, err := range errs {
+						fmt.Fprintf(errW, "\t%s\n", err)
+					}
 				}
 			}
 			//more processing logic later
@@ -243,18 +318,21 @@ func main() {
 		indent         int
 		directory      string
 	)
-	flag.StringVar(&inputFileName, "file", "", "specify the relative path to the file to wrap")
-	flag.StringVar(&inputFileName, "f", "", "specify the relative path to the file to wrap")
-	flag.StringVar(&directory, "directory", "", "speficy the directory to template")
-	flag.StringVar(&directory, "d", "", "speficy the directory to template")
-	flag.StringVar(&outputFileName, "o", "", "specify the relative path to the file to wrap")
-	flag.StringVar(&outputFileName, "output", "", "specify the relative path to the file to wrap")
-	flag.IntVar(&indent, "indent", 2, "Number of spaces for an indent")
-	flag.IntVar(&indent, "i", 2, "Number of spaces for an indent")
-	flag.BoolVar(&meta, "meta", true, "Specify whether to use meta blocks to denote templating")
-	flag.BoolVar(&meta, "m", true, "Specify whether to use meta blocks to denote templating")
-	flag.BoolVar(&verbose, "verbose", false, "Specifies whether to use verbose output")
-	flag.BoolVar(&verbose, "v", false, "Specifies whether to use verbose output")
+
+	flags := FlagConfig{}
+
+	flag.StringVar(&flags.inputFile, "file", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&flags.inputFile, "f", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&flags.directory, "directory", "", "speficy the directory to template")
+	flag.StringVar(&flags.directory, "d", "", "speficy the directory to template")
+	flag.StringVar(&flags.outputFile, "o", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&flags.outputFile, "output", "", "specify the relative path to the file to wrap")
+	flag.IntVar(&flags.indent, "indent", 2, "Number of spaces for an indent")
+	flag.IntVar(&flags.indent, "i", 2, "Number of spaces for an indent")
+	flag.BoolVar(&flags.meta, "meta", true, "Specify whether to use meta blocks to denote templating")
+	flag.BoolVar(&flags.meta, "m", true, "Specify whether to use meta blocks to denote templating")
+	flag.BoolVar(&flags.verbose, "verbose", false, "Specifies whether to use verbose output")
+	flag.BoolVar(&flags.verbose, "v", false, "Specifies whether to use verbose output")
 	flag.Parse()
 	if inputFileName == "" {
 		fmt.Printf("You must specify a file to target\n")
@@ -295,6 +373,9 @@ func main() {
 			if meta, tIndent = IsMeta(line); meta {
 				nIndent = tIndent
 				metaOn = !metaOn
+				if metaOn {
+					nIndent = tIndent
+				}
 				continue
 			}
 			if metaOn {
