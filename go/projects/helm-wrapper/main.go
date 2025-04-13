@@ -258,7 +258,7 @@ func ProcessFile(fsys WrapDirFS, fileName string, dirPath string, config *FlagCo
 	return errs
 }
 
-func TraverseDirectory(dirPath string, config *FlagConfig, errW io.Writer) (files []*os.File, directories []*os.File) {
+func TraverseDirectory(dirPath string, config *FlagConfig, errW io.Writer) error {
 	absPath, _ := filepath.Abs(dirPath)
 	root, ok := os.DirFS(dirPath).(WrapDirFS)
 	if !ok {
@@ -273,82 +273,97 @@ func TraverseDirectory(dirPath string, config *FlagConfig, errW io.Writer) (file
 	}
 	isDir := stat.IsDir()
 	if isDir {
-		dirEntries, err := root.ReadDir(".")
-		if err != nil {
-			fmt.Fprintf(errW, "%s\n", absPath)
-			fmt.Fprintf(errW, "%s\n", err)
-			fmt.Fprintf(errW, "Error opening directory: %s\n", err)
+		if filepath.Base(dirPath) == "templates" {
+			ProcessTemplateDir(dirPath, root, config, errW)
 		} else {
-			if filepath.Base(dirPath) == "templates" {
-				nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
-				for _, entry := range dirEntries {
-					name := entry.Name()
-					if entry.IsDir() {
-						TraverseDirectory(filepath.Join(dirPath, name), config, errW)
-					} else if nameRegex.MatchString(name) {
-						errs := ProcessFile(root, name, dirPath, config)
-						if len(errs) != 0 {
-							fmt.Fprintf(errW, "Error(s) encountered during File processing:")
-							for _, err := range errs {
-								fmt.Fprintf(errW, "\t%s\n", err)
-							}
-						}
-					}
-				}
-			} else {
-				for _, entry := range dirEntries {
-					if entry.IsDir() {
-						TraverseDirectory(filepath.Join(dirPath, entry.Name()), config, errW)
-					}
-				}
-			}
+			ProcessDir(dirPath, root, config, errW)
 		}
 	} else {
 		fmt.Fprintf(errW, "%s: not a directory\n", absPath)
 		os.Exit(1001)
 	}
 
-	return files, directories
+	return nil
+}
+
+func ProcessDir(dirPath string, root WrapDirFS, config *FlagConfig, errW io.Writer) {
+	dirEntries, err := root.ReadDir(".")
+	absPath, err := filepath.Abs(dirPath)
+	if err != nil {
+		fmt.Fprintf(errW, "Error opening directory: \"%s\"\n%s\n", absPath, err)
+		return
+	}
+	for _, entry := range dirEntries {
+		if entry.IsDir() {
+			TraverseDirectory(filepath.Join(dirPath, entry.Name()), config, errW)
+		}
+	}
+	return
+}
+
+func ProcessTemplateDir(dirPath string, root WrapDirFS, config *FlagConfig, errW io.Writer) {
+	dirEntries, err := root.ReadDir(".")
+	absPath, err := filepath.Abs(dirPath)
+	if err != nil {
+		fmt.Fprintf(errW, "%s\n", dirPath)
+		fmt.Fprintf(errW, "Error opening directory: \"%s\"\n%s\n", absPath, err)
+		return
+	}
+	nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
+	for _, entry := range dirEntries {
+		if entry.IsDir() {
+			TraverseDirectory(dirPath, config, errW)
+		} else if nameRegex.MatchString(entry.Name()) {
+			errs := ProcessFile(root, dirPath, entry.Name(), config)
+			if errs != nil {
+				fmt.Fprintf(errW, "Error(s) processing files:\n")
+				for _, err := range errs {
+					fmt.Fprintf(errW, "\t%s\n", err)
+				}
+				return
+			}
+		} else {
+			continue
+		}
+	}
+
+}
+
+func SetFlags() (config *FlagConfig) {
+	config = &FlagConfig{}
+	flag.StringVar(&config.inputFile, "file", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&config.inputFile, "f", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&config.directory, "directory", "", "speficy the directory to template")
+	flag.StringVar(&config.directory, "d", "", "speficy the directory to template")
+	flag.StringVar(&config.outputFile, "o", "", "specify the relative path to the file to wrap")
+	flag.StringVar(&config.outputFile, "output", "", "specify the relative path to the file to wrap")
+	flag.IntVar(&config.indent, "indent", 2, "Number of spaces for an indent")
+	flag.IntVar(&config.indent, "i", 2, "Number of spaces for an indent")
+	flag.BoolVar(&config.meta, "meta", true, "Specify whether to use meta blocks to denote templating")
+	flag.BoolVar(&config.meta, "m", true, "Specify whether to use meta blocks to denote templating")
+	flag.BoolVar(&config.verbose, "verbose", false, "Specifies whether to use verbose output")
+	flag.BoolVar(&config.verbose, "v", false, "Specifies whether to use verbose output")
+	flag.Parse()
+	return config
+
 }
 
 func main() {
 	var (
-		inputFileName  string
-		outputFileName string
-		meta           bool
-		verbose        bool
-		metaOn         = false
-		output         = &bytes.Buffer{}
-		logOutput      io.Writer
-		indent         int
+		logOutput io.Writer
 	)
-
-	flags := FlagConfig{}
-
-	flag.StringVar(&flags.inputFile, "file", "", "specify the relative path to the file to wrap")
-	flag.StringVar(&flags.inputFile, "f", "", "specify the relative path to the file to wrap")
-	flag.StringVar(&flags.directory, "directory", "", "speficy the directory to template")
-	flag.StringVar(&flags.directory, "d", "", "speficy the directory to template")
-	flag.StringVar(&flags.outputFile, "o", "", "specify the relative path to the file to wrap")
-	flag.StringVar(&flags.outputFile, "output", "", "specify the relative path to the file to wrap")
-	flag.IntVar(&flags.indent, "indent", 2, "Number of spaces for an indent")
-	flag.IntVar(&flags.indent, "i", 2, "Number of spaces for an indent")
-	flag.BoolVar(&flags.meta, "meta", true, "Specify whether to use meta blocks to denote templating")
-	flag.BoolVar(&flags.meta, "m", true, "Specify whether to use meta blocks to denote templating")
-	flag.BoolVar(&flags.verbose, "verbose", false, "Specifies whether to use verbose output")
-	flag.BoolVar(&flags.verbose, "v", false, "Specifies whether to use verbose output")
-	flag.Parse()
-	if inputFileName == "" {
+	config := SetFlags()
+	if config.inputFile == "" {
 		fmt.Printf("You must specify a file to target\n")
 		os.Exit(1)
 	}
-	fmt.Printf("Input file: %s\n", inputFileName)
-	if verbose {
+	fmt.Printf("Input file: %s\n", config.inputFile)
+	if config.verbose {
 		logOutput = os.Stdout
 	} else {
 		logOutput = Discard{}
 	}
-	inputFile, ec, err := OpenFile(inputFileName, os.O_RDONLY)
+	inputFile, ec, err := OpenFile(config.inputFile, os.O_RDONLY)
 	if err != nil {
 		fmt.Printf("Error opening input file:\n")
 		fmt.Printf("ERROR: %s\n", err)
@@ -356,8 +371,8 @@ func main() {
 	}
 
 	var outputFile io.Writer
-	if outputFileName != "" {
-		outputFile, ec, err = OpenFile(outputFileName, os.O_WRONLY|os.O_TRUNC|os.O_CREATE)
+	if config.outputFile != "" {
+		outputFile, ec, err = OpenFile(config.outputFile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE)
 		if err != nil {
 			fmt.Printf("Error opening output file:\n")
 			fmt.Printf("ERROR: %s\n", err)
@@ -370,12 +385,12 @@ func main() {
 	lineNumber := 0
 	var nIndent = 0
 	var tIndent = 0
-	if flags.directory == "" || flags.inputFile == "" {
+	if config.directory == "" || config.inputFile == "" {
 		fmt.Fprintf(os.Stderr, "Error: you must provide a file or directory to operate on")
 		os.Exit(1005)
 
 	}
-	if flags.verbose {
+	if config.verbose {
 		logOutput = os.Stdout
 	} else {
 		logOutput = io.Discard
