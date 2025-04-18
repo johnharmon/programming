@@ -3,7 +3,7 @@
   vars:
     git_url: "https://web.git.mil/some/project/path/project_name.git"
   ansible.builtin.set_fact:
-    # For whatever reason lets say we want the name of the project, and that the name is not statically provided
+    # For whatever reason lets say we want the name of the git project, and that the name is not statically provided
     # How would we go about exracting that?
     # Lets use a combination of ansible filters and python string methods
     git_project_name: "{{ (git_url | ansible.builtin.split('/') | last).strip('.git') }}"
@@ -18,7 +18,7 @@
   ansible.builtin.debug:
     var: git_project_name
 
-- name: "Use the map filter to apply another filter to each element of a list"
+- name: "Use the select/map filters to apply another test/filter (respectively) to each element of a list"
   vars:
     dns_names:
       - server1.mydomain.com
@@ -37,8 +37,11 @@
     # matching_dns_names: "{{ dns_names | select('ansible.builtin.regex', {'pattern': 'mydomain\\.com$', 'match_type': 'search', 'ignorecase': true}) | list }}"
     modified_dns_names: "{{ dns_names | map('ansible.builtin.regex_replace', '\\.com$', '.mil') | list }}"
     # Map takes another filter and a list, and applies this filter to all items in that list, returning a list or generator as a result
+    # When any filter outputs a generator, you need to pass it through the list filter in order to exhaust the generator and get the full list of results
+    # Otherwise your output will be a string looking something like 'generator object at <HEX_MEMORY_ADDRESS>'
+    # python generator documentation: <PLACEHOLDER (I'm on an airplane lol)>
     # Filter docs https://jinja.palletsprojects.com/en/stable/templates/#jinja-filters.map
-    # This filter is built into jinja directly and that is why you don't use the ansible namespacing to call it
+    # The map and list filters are built into jinja directly and that is why you don't use the ansible namespacing to call them
     # This usage will replace all .com endings with .mil
     uppercase_dns_names: "{{ dns_names | map('upper') | list }}"
     # The jinja2 builtin upper filter simply takes a word and makes it uppercase
@@ -64,7 +67,8 @@
   loop: "{{ list1 | ansible.builtin.product(list2) }}"
   loop_control:
     loop_var: product_result
-  # The product filter creates a cartesian product of 2 lists
+  # The product filter creates a cartesian product of 2 or more lists
+  # It essentially replicates nested looping by providing a single list of tuples that represent every possible combination of elements from each list
   # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/product_filter.html
   # Cartesian product: https://en.wikipedia.org/wiki/Cartesian_product
   ansible.builtin.debug:
@@ -92,9 +96,11 @@
   # Module Docs: https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_shell_module.html
   ansible.builtin.debug:
     msg: |
-      New-Aduser -Name {{ item.0 }} - SamAccountName {{ item.0 }}
+      New-Aduser -Name {{ item.0 }} -SamAccountName {{ item.0 }}
       Set-Aduser -Identity {{ item.0 }} -ServicePrincipalNames @{Add={{ item.1 }}}
       ktpass /princ {{ item.1 }}@EXAMPLE.COM /mapuser {{ item.0 }}@EXAMPLE.COM /crypto ALL /ptype KRB5_NT_PRINCIPAL /pass <password> /out </path/to/some/share>
+  # This will create a new AD account and attach a Kerberos Service Principle Name to that account to be used with kerberos authentication
+  # Kerberos Documentation: <PLACEHOLDER (I'm still on a plane lol)>
 
 - name: "Use ternary filter to determine outcome"
   when: run_firewall is defined and run_firewall | bool is true
@@ -116,16 +122,16 @@
     - name: "Set all json data blocks"
       ansible.builtin.set_fact:
         nested_data:
-          - name: "vm1"
-            subnet_reference:
-              uuid: "asdfasdfasdfasdfasdfasdfasdf"
-              kind: "subnet"
-              name: "subnet4"
-          - name: "vm2"
-            subnet_reference:
-              uuid: "asdfasdfasdfasdfasdfasdfasdf"
-              kind: "subnet"
-              name: "subnet2"
+          #          - name: "vm1"
+          #            subnet_reference:
+          #              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+          #              kind: "subnet"
+          #              name: "subnet4"
+          #          - name: "vm2"
+          #            subnet_reference:
+          #              uuid: "asdfasdfasdfasdfasdfasdfasdf"
+          #              kind: "subnet"
+          #              name: "subnet2"
           - - '0'
             - 'a'
             - 'b'
@@ -196,10 +202,11 @@
       ansible.builtin.debug:
         msg: "{{ json_data | to_json | from_json | community.general.json_query('[] | sort_by(@, &subnet_reference.name)') }}"
         # This uses json_query sort the list called json_data by a sub property of the main list item
+        # In some versions of json_query, passing it through to_json | from_json is necessary for the more complex functions like sort_by to recognize the data type of certain feilds
 
     - name: "Filter people by age"
       ansible.builtin.debug:
-        msg: "{{ people | json_query('[?@.age > `25`]') }}"
+        msg: "{{ people | json_query('[?@.age > `29`]') }}"
       # Filters out all people whose age is <= 25
 
     - name: "Query people using contains filter"
@@ -209,12 +216,15 @@
         # finds all people who are (older than 30 and their name contains 'Smith' or 'Doe') or (name is equal to 'Jane' and their age is 29)
         # Note: jmespath does not support parenthesis for logical expressions including select/filter expressions.
         # Instead it relies on an unusual set of operator precedence (in this case || is of lower precedence than &&)
+        # Jmespath operator precedence docs: <PLACEHOLDER (This is a long plane ride lol)>
 
     - name: "Query people using contains filter and project out new structure"
       ansible.builtin.debug:
         msg: >-
-          {{ people | json_query("[?age > `30` && contains(['Smith', 'Doe'], name) || name == 'Jane' && age == `29`].{age: name, name: age}") }}
-      # This does the same filtering as before, but then does a 'projection', where it creates a new data structure, this time switching the name and age values
+          {{ people | 
+             json_query("[?age > `30` && contains(['Smith', 'Doe'], name) || 
+             name == 'Jane' && age == `29`].{age: name, name: age}") }}
+      # This does the same filtering as before, but then does a 'projection', where it creates a new data structure, this time switching the name and age values (name key now holds the age value and vice versa)
 
     - name: "Sort resource profiles by name"
       ansible.builtin.debug:
@@ -233,23 +243,13 @@
         msg: "{{ nested_data | json_query('[*]') }}"
       # running json_query this way (with the * in the brackets) will not flatten the list and leave it intact
   # Filter Docs: https://docs.ansible.com/ansible/latest/collections/community/general/json_query_filter.html
-# jmespath docs: https://jmespath.org/tutorial.html
+  # jmespath docs: https://jmespath.org/tutorial.html
 
 
-- name: "Demonstrat jinja templating in debug"
+- name: "Demonstrate jinja templating in debug"
   ansible.builtin.debug:
     msg: |
       {% for num in range(1,10) %}
        {{- num }}
       {% endfor %}
 
-- name: "Set fact from lines lookup"
-  ansible.builtin.set_fact:
-    lookup_lines: "{{ lookup('ansible.builtin.lines', 'ls -l ~/') }}"
-
-- name: "Demonstrate lines lookup"
-  ansible.builtin.debug:
-    msg: |
-      {% for line in (lookup('ansible.builtin.lines', 'ls -l ~/') | ansible.builtin.split(',')) %}
-        {{- line}}
-      {% endfor %}
