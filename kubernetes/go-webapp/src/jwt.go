@@ -11,6 +11,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type PythonString string
+
+type StringLike interface {
+	~string
+}
+
 var jwtKeyMap = make(map[string]*JwtKey)
 
 func generateJWTSecret() (key []byte, keyErr error) {
