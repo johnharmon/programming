@@ -89,6 +89,7 @@ function Nnoremap()
 	vim.keymap.set("n", "<leader>s", ":%s/\\<<C-r><C-w>\\>/<C-r><C-w>/gI<Left><Left><Left>")
 end
 Nnoremap()
+vim.api.nvim_set_keymap("n", "K", "<cmd>lua vim.lsp.buf.hover()<CR>", { noremap = true, silent = true })
 
 function Xnoremap()
 	vim.keymap.set("x", "<leader>p", '"_dP') -- Deletes/pastes over word and delets it into the void register so you keep current default regisgter contents
