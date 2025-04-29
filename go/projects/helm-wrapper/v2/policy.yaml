@@ -1,0 +1,6 @@
+{{ this line wont be touched }} 
+  {{ "{{" }} these lines {{ "}}" }} 
+  {{ "{{" }} will be {{ "}}" }}
+    {{ "{{" }} wrrapped and {{ "}}" }}
+      {{ "{{" }} appropriately indented {{ "}}" }}
+{{ and these lines will also be normal }}
