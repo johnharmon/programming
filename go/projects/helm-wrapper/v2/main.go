@@ -61,9 +61,7 @@ func logger(logs chan []byte, output io.Writer) {
 }
 
 func WrapLine(lineNumber int, line []byte, output io.Writer, logs io.Writer, nIndent int, indent int, env *Env) {
-	if env.Config.Verbose {
-		fmt.Fprintf(env.LogO, "Executing function: \"WrapLine\"\n")
-	}
+	fmt.Fprintf(env.LogO, "Executing function: \"WrapLine\"\n")
 	wrappingCheckRegex := regexp.MustCompile(`^.*{{\s*"{{(hub)?-?"\s*}}.*`)
 	fmt.Fprintf(env.LogO, "##########		Line: %d		##########\n", lineNumber)
 	indentation := strings.Repeat(" ", (nIndent * indent))
@@ -131,9 +129,7 @@ func WrapIndentedHubLine(line []byte, output *bytes.Buffer) {
 }
 
 func OpenFile(filePath string, fOptions int, env *Env) (ffile *os.File, exitCode int, ferr error) {
-	if env.Config.Verbose {
-		fmt.Fprintf(env.LogO, "Filepath: %s\n", filePath)
-	}
+	fmt.Fprintf(env.LogO, "Filepath: %s\n", filePath)
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if fOptions&os.O_CREATE == 0 {
@@ -197,9 +193,7 @@ func GetOutputName(inputFileName string) (outputFileName string, err error) {
 
 func ProcessTemplate(input io.Reader, output io.Writer, env *Env) error {
 	templateOutput := &bytes.Buffer{}
-	if env.Config.Verbose {
-		fmt.Fprintf(env.LogO, "Executing function \"ProcessTemplate\"\n")
-	}
+	fmt.Fprintf(env.LogO, "Executing function \"ProcessTemplate\"\n")
 
 	var (
 		meta       = false
@@ -211,15 +205,11 @@ func ProcessTemplate(input io.Reader, output io.Writer, env *Env) error {
 	)
 	scanner := bufio.NewScanner(input)
 	for scanner.Scan() {
-		if env.Config.Verbose {
-			fmt.Fprintf(env.LogO, "Scanning line number: %d\n", lineNumber)
-		}
+		fmt.Fprintf(env.LogO, "Scanning line number: %d\n", lineNumber)
 		line := scanner.Bytes()
 		if meta, tIndent = IsMeta(line); meta {
 			metaOn = !metaOn
-			if env.Config.Verbose {
-				fmt.Fprintf(env.LogO, "Meta tag block found, meta set to %t\n", metaOn)
-			}
+			fmt.Fprintf(env.LogO, "Meta tag block found, meta set to %t\n", metaOn)
 			if metaOn {
 				nIndent = tIndent
 			}
@@ -228,17 +218,13 @@ func ProcessTemplate(input io.Reader, output io.Writer, env *Env) error {
 		}
 		if metaOn {
 			line := scanner.Bytes()
-			if env.Config.Verbose {
-				fmt.Fprintf(env.LogO, "Wrapping line: %s\n", line)
-			}
+			fmt.Fprintf(env.LogO, "Wrapping line: %s\n", line)
 			WrapLine(lineNumber, line, output, templateOutput, nIndent, indent, env)
 		} else {
 			output.Write(line)
 			output.Write([]byte("\n"))
-			if env.Config.Verbose {
-				fmt.Fprint(templateOutput, string(line))
-				fmt.Fprint(templateOutput, "\n")
-			}
+			fmt.Fprint(templateOutput, string(line))
+			fmt.Fprint(templateOutput, "\n")
 		}
 		lineNumber++
 	}
@@ -255,7 +241,7 @@ func ProcessTemplate(input io.Reader, output io.Writer, env *Env) error {
 
 func TraverseDirectory(dirPath string, env *Env) error {
 	absPath, _ := filepath.Abs(dirPath)
-	fmt.Fprintf(env.ErrO, "Scanning directory: %s\n", absPath)
+	fmt.Fprintf(env.LogO, "Scanning directory: %s\n", absPath)
 	root, ok := os.DirFS(dirPath).(WrapDirFS)
 	if !ok {
 		fmt.Fprintf(env.ErrO, "Error, could not type assert %T to WrapDirFS\n", root)
@@ -282,43 +268,6 @@ func TraverseDirectory(dirPath string, env *Env) error {
 	return nil
 }
 
-func ProcessTemplateFile(fp string, env *Env) (errs []error) {
-	if env.Config.Verbose {
-		fmt.Fprintf(env.LogO, "Executing function: \"ProcessTemplateFile\"\n")
-	}
-	inputFileName := filepath.Base(fp)
-	dirpath := filepath.Dir(fp)
-	inputFile, _, err := OpenFile(fp, os.O_RDONLY, env)
-	if err != nil {
-		fmt.Fprintf(env.ErrO, "Error opening template file: %s\n", fp)
-		errs := append(errs, err)
-		return errs
-	}
-	defer inputFile.Close()
-	outputFileName, err := GetOutputName(inputFileName)
-	if err != nil {
-		fmt.Fprintf(env.LogO, "Non-template file: \"%s\" encountered, skipping...\n", fp)
-		return errs
-	}
-	outputFilePath := filepath.Join(dirpath, outputFileName)
-	if env.Config.Verbose {
-		fmt.Fprintf(env.LogO, "Using %s as output file\n", outputFilePath)
-	}
-	outputFile, _, err := OpenFile(outputFilePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, env)
-	if env.Config.Verbose {
-		fmt.Fprintf(env.LogO, "Output file is: %s\n", outputFile.Name())
-	}
-	err = ProcessTemplate(inputFile, outputFile, env)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	defer outputFile.Close()
-	if env.Config.Verbose {
-		fmt.Fprintf(env.ErrO, "Closing output file: %s\n", outputFilePath)
-	}
-	return errs
-}
-
 func ProcessDir(dirPath string, dirEntries []fs.DirEntry, env *Env, errW io.Writer) {
 	absPath, err := filepath.Abs(dirPath)
 	if err != nil {
@@ -339,7 +288,7 @@ func ProcessTemplateDir(dirPath string, root WrapDirFS, dirEntries []fs.DirEntry
 		fmt.Fprintf(env.ErrO, "Error opening directory: \"%s\"\n%s\n", absPath, err)
 		return
 	}
-	fmt.Fprintf(env.LogO, "Template director %s identified\n", absPath)
+	fmt.Fprintf(env.LogO, "Template directory identified: %s\n", absPath)
 	nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
 	for _, entry := range dirEntries {
 		entryName := entry.Name()
@@ -358,6 +307,35 @@ func ProcessTemplateDir(dirPath string, root WrapDirFS, dirEntries []fs.DirEntry
 			continue
 		}
 	}
+}
+
+func ProcessTemplateFile(fp string, env *Env) (errs []error) {
+	fmt.Fprintf(env.LogO, "Executing function: \"ProcessTemplateFile\"\n")
+	inputFileName := filepath.Base(fp)
+	dirpath := filepath.Dir(fp)
+	inputFile, _, err := OpenFile(fp, os.O_RDONLY, env)
+	if err != nil {
+		fmt.Fprintf(env.ErrO, "Error opening template file: %s\n", fp)
+		errs := append(errs, err)
+		return errs
+	}
+	defer inputFile.Close()
+	outputFileName, err := GetOutputName(inputFileName)
+	if err != nil {
+		fmt.Fprintf(env.LogO, "Non-template file: \"%s\" encountered, skipping...\n", fp)
+		return errs
+	}
+	outputFilePath := filepath.Join(dirpath, outputFileName)
+	fmt.Fprintf(env.LogO, "Using %s as output file\n", outputFilePath)
+	outputFile, _, err := OpenFile(outputFilePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, env)
+	fmt.Fprintf(env.LogO, "Output file is: %s\n", outputFile.Name())
+	err = ProcessTemplate(inputFile, outputFile, env)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	defer outputFile.Close()
+	fmt.Fprintf(env.ErrO, "Closing output file: %s\n", outputFilePath)
+	return errs
 }
 
 func SetFlags() (config *FlagConfig) {
@@ -475,8 +453,6 @@ func SetEnvAndFlags() (env *Env) {
 func DumpFlags(config *FlagConfig) {
 	values := reflect.ValueOf(config).Elem()
 	types := reflect.TypeOf(config).Elem()
-	//	fmt.Fprintf(os.Stdout, "Value: %+v\n", values)
-	//	fmt.Fprintf(os.Stdout, "Type: %+v\n", types)
 	fmt.Fprintf(os.Stdout, "\n/////////// FLAGS ///////////\n")
 	for i := 0; i < values.NumField(); i++ {
 		fmt.Fprintf(os.Stdout, "%v: %v\n", types.Field(i).Name, values.Field(i).Interface())
@@ -486,74 +462,9 @@ func DumpFlags(config *FlagConfig) {
 
 func main() {
 	env := SetEnvAndFlags()
-	//	if config.InputFile == "" {
-	//		fmt.Printf("You must specify a file to target\n")
-	//		os.Exit(1)
-	//	}
-	//	if env.Config.InputFile != "" {
-	//		fmt.Printf("Input file: %s\n", config.InputFile)
-	//		ProcessTemplateFile(env.Config.InputFile, env)
-	//	}
-	//	inputFile, ec, err := OpenFile(config.InputFile, os.O_RDONLY)
-	//	if err != nil {
-	//		fmt.Printf("Error opening input file:\n")
-	//		fmt.Printf("ERROR: %s\n", err)
-	//		os.Exit(ec)
-	//	}
-	//
-	//	var outputFile io.Writer
-	//	if config.OutputFile != "" {
-	//		outputFile, ec, err = OpenFile(config.OutputFile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE)
-	//		if err != nil {
-	//			fmt.Printf("Error opening output file:\n")
-	//			fmt.Printf("ERROR: %s\n", err)
-	//			os.Exit(ec)
-	//		}
-	//	} else {
-	//		outputFile = os.Stdout
-	//	}
 	if env.Config.Recurse {
 		TraverseDirectory(env.Config.Directory, env)
 	} else {
 		ProcessTemplateFile(env.Config.InputFile, env)
 	}
-	// scanner := bufio.NewScanner(inputFile)
-	// lineNumber := 0
-	// nIndent := 0
-	// tIndent := 0
-	//
-	//	if config.Directory == "" || config.InputFile == "" {
-	//		fmt.Fprintf(os.Stderr, "Error: you must provide a file or directory to operate on")
-	//		os.Exit(1005)
-	//
-	// }
-	// meta := config.Meta
-	// metaOn := false
-	//
-	//	if meta {
-	//		fmt.Printf("Meta block tagging enabled\n")
-	//		for scanner.Scan() {
-	//			line := scanner.Bytes()
-	//			if meta, tIndent = IsMeta(line); meta {
-	//				nIndent = tIndent
-	//				metaOn = !metaOn
-	//				if metaOn {
-	//					nIndent = tIndent
-	//				}
-	//				continue
-	//			}
-	//			if metaOn {
-	//				WrapLine(lineNumber, scanner.Bytes(), outputFile, logOutput, nIndent, config.Indent)
-	//			} else {
-	//				outputFile.Write(line)
-	//				outputFile.Write([]byte("\n"))
-	//			}
-	//			lineNumber++
-	//		}
-	//	} else {
-	//
-	//		for scanner.Scan() {
-	//			WrapIndentedLine(scanner.Bytes(), outputFile)
-	//		}
-	//	}
 }
