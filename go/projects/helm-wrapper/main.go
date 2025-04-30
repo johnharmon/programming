@@ -275,7 +275,7 @@ func ProcessDir(dirPath string, dirEntries []fs.DirEntry, env *Env, errW io.Writ
 		return
 	}
 	for _, entry := range dirEntries {
-		if entry.IsDir() {
+		if entry.IsDir() && env.Config.Recurse {
 			TraverseDirectory(filepath.Join(dirPath, entry.Name()), env)
 		}
 	}
@@ -292,7 +292,7 @@ func ProcessTemplateDir(dirPath string, root WrapDirFS, dirEntries []fs.DirEntry
 	nameRegex := regexp.MustCompile(`^\.[A-Za-z0-9\-]+\.template$`)
 	for _, entry := range dirEntries {
 		entryName := entry.Name()
-		if entry.IsDir() {
+		if entry.IsDir() && env.Config.Recurse {
 			TraverseDirectory(filepath.Join(dirPath, entryName), env)
 		} else if nameRegex.MatchString(entry.Name()) {
 			errs := ProcessTemplateFile(filepath.Join(dirPath, entryName), env)
@@ -352,8 +352,8 @@ func SetFlags() (config *FlagConfig) {
 	flag.BoolVar(&config.Meta, "m", true, "Specify whether to use meta blocks to denote templating")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Specifies whether to use verbose output")
 	flag.BoolVar(&config.Verbose, "v", false, "Specifies whether to use verbose output")
-	flag.BoolVar(&config.Recurse, "recurse", false, "Specifies whether to use verbose output")
-	flag.BoolVar(&config.Recurse, "r", false, "Specifies whether to use verbose output")
+	flag.BoolVar(&config.Recurse, "recurse", false, "Specify whether or not the provided directory should be searched recursively for templates")
+	flag.BoolVar(&config.Recurse, "r", false, "Specify whether or not the provided directory should be searched recursively for templates")
 	flag.StringVar(&config.LogFile, "l", "", "Sepcifies the destination output file for logs")
 	flag.StringVar(&config.LogFile, "log", "", "Sepcifies the destination output file for logs")
 	flag.StringVar(&config.LogFile, "logs", "", "Sepcifies the destination output file for logs")
@@ -362,22 +362,11 @@ func SetFlags() (config *FlagConfig) {
 }
 
 func ValidateFlags(config *FlagConfig) (errs []error) {
-	if config.Recurse {
-		if config.Directory == "" {
-			errs = append(errs, fmt.Errorf("Error: You must specify a directory when using the recurse option"))
-		} else {
-			if config.InputFile != "" {
-				errs = append(errs, fmt.Errorf("Warning: specifying an input file with the recurse option will cause the flag value to be ignored"))
-			}
-			if config.OutputFile != "" {
-				errs = append(errs, fmt.Errorf("Warning: specifying an output file with the recurse option will cause the flag value to be ignored"))
-			}
-		}
-	} else {
-		if config.InputFile == "" {
-			errorf := "Error: you must specify an input file when the recurse option is not specified\n"
-			SHandleErrors(os.Stderr, errorf, nil, 1)
-		}
+	// This will check some values for flags as well as set certain flags logically based on others (if directory is set, recurse will also be true)
+	if config.Recurse && config.Directory == "" {
+		SHandleErrors(os.Stderr, "Error: You must specify a directory when using the recurse option\n", nil, 5)
+	} else if config.Directory == "" && config.InputFile == "" {
+		SHandleErrors(os.Stderr, "Error: You must specify either a file (-f|-file) or directory (-d|-directory) to operate on\n", nil, 1)
 	}
 	return errs
 }
@@ -462,7 +451,7 @@ func DumpFlags(config *FlagConfig) {
 
 func main() {
 	env := SetEnvAndFlags()
-	if env.Config.Recurse {
+	if env.Config.Recurse || env.Config.Directory != "" {
 		TraverseDirectory(env.Config.Directory, env)
 	} else {
 		ProcessTemplateFile(env.Config.InputFile, env)
