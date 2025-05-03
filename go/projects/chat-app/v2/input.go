@@ -54,6 +54,25 @@ func (fc FlagConfig) IsVerbose() bool {
 	return false
 }
 
+type WrapOutputInfo struct {
+	OutputRaw      []byte
+	OutputLines    [][]byte // raw bytes representing the output
+	WrappingLength int      // how long the output prefix and suffix combined is
+	TermWidth      int      // how many characters wide the terminal output is
+	TermLength     int      // how many lines long including headers and footers the ouput is
+}
+
+func (w *WrapOutputInfo) Debug(env *Env) {
+	env.DWriteS("Entered function \"WrapOutput\"\n")
+	env.DWriteS(fmt.Sprintf("OutputRaw: %s\n", string(w.OutputRaw)))
+	env.DWriteS(fmt.Sprintf("termLength: %d\n", w.TermLength))
+	env.DWriteS(fmt.Sprintf("termWidth: %d\n", w.TermWidth))
+	env.DWriteS(fmt.Sprintf("wrappingLength: %d\n", w.WrappingLength))
+	for idx, ln := range w.OutputLines {
+		env.DWriteS(fmt.Sprintf("%d: %s\n", idx, ln))
+	}
+}
+
 type PrintFunc func(*Env, []byte, io.Writer)
 
 // func FillTermDisplay(termWidth int, termLines int) (termDisplay []string)
@@ -72,52 +91,11 @@ func (i *InputScanner) MakeInputBox() (termDisplay []string) {
 	return termDisplay
 }
 
-func GetOutputDimensions(env *Env, output []byte) (wrapInfo *WrapOutputInfo) {
-	wrapInfo = &WrapOutputInfo{}
-	wrapInfo.OutputRaw = output
-	wrapInfo.OutputLines = ExpandBytesLinewise(env, output)
-	wrapInfo.WrappingLength = (len(env.OutputPrefix) + len(env.OutputSuffix))
-	wrapInfo.TermWidth = LongestByteSlice(wrapInfo.OutputLines) + wrapInfo.WrappingLength
-	wrapInfo.TermLength = len(wrapInfo.OutputLines) + 2
-	return wrapInfo
-}
-
-type WrapOutputInfo struct {
-	OutputRaw      []byte
-	OutputLines    [][]byte // raw bytes representing the output
-	WrappingLength int      // how long the output prefix and suffix combined is
-	TermWidth      int      // how many characters wide the terminal output is
-	TermLength     int      // how many lines long including headers and footers the ouput is
-}
-
-func (w *WrapOutputInfo) Debug(env *Env) {
-	env.DWriteS("Entered function \"WrapOutput\"\n")
-	env.DWriteS(fmt.Sprintf("OutputRaw: %s\n", string(w.OutputRaw)))
-	env.DWriteS(fmt.Sprintf("termLength: %d\n", w.TermLength))
-	env.DWriteS(fmt.Sprintf("termWidth: %d\n", w.TermWidth))
-	env.DWriteS(fmt.Sprintf("wrappingLength: %d\n", w.WrappingLength))
-}
-
-func wrapOutputDebugHelper(env *Env, wrapInfo *WrapOutputInfo) {
-	env.DWriteS("Entered function \"WrapOutput\"\n")
-	env.DWriteS(fmt.Sprintf("OutputRaw: %s\n", string(wrapInfo.OutputRaw)))
-	env.DWriteS(fmt.Sprintf("termLength: %d\n", wrapInfo.TermLength))
-	env.DWriteS(fmt.Sprintf("termWidth: %d\n", wrapInfo.TermWidth))
-	env.DWriteS(fmt.Sprintf("wrappingLength: %d\n", wrapInfo.WrappingLength))
-}
-
 func WrapOutput(env *Env, output []byte) (wrappedOutput string) {
 	wrapInfo := GetOutputDimensions(env, output)
-	var (
-		termLength  = wrapInfo.TermLength
-		outputLines = wrapInfo.OutputLines
-	)
-	for idx, ln := range outputLines {
-		env.DWriteS(fmt.Sprintf("%d: %s\n", idx, ln))
-	}
 	wrappedOutputLines := []string{}
 	wrapInfo.Debug(env)
-	for i := 0; i < termLength; i++ {
+	for i := 0; i < wrapInfo.TermLength; i++ {
 		wrappedOutputLines = append(wrappedOutputLines, wrapOutputLine(env, wrapInfo, i))
 	}
 	return strings.Join(wrappedOutputLines, "\n") + "\n"
@@ -136,6 +114,27 @@ func wrapOutputLine(env *Env, wrapInfo *WrapOutputInfo, lineNumber int) (newLine
 	}
 	env.DWriteS(fmt.Sprintf("Processed line #%d: %s\n", lineNumber, newLine))
 	return newLine
+}
+
+func GetOutputDimensions(env *Env, output []byte) (wrapInfo *WrapOutputInfo) {
+	wrapInfo = &WrapOutputInfo{}
+	wrapInfo.OutputRaw = output
+	wrapInfo.OutputLines = ExpandBytesLinewise(env, output)
+	wrapInfo.WrappingLength = (len(env.OutputPrefix) + len(env.OutputSuffix))
+	wrapInfo.TermWidth = LongestByteSlice(wrapInfo.OutputLines) + wrapInfo.WrappingLength
+	wrapInfo.TermLength = len(wrapInfo.OutputLines) + 2
+	return wrapInfo
+}
+
+func wrapOutputDebugHelper(env *Env, wrapInfo *WrapOutputInfo) {
+	env.DWriteS("Entered function \"WrapOutput\"\n")
+	env.DWriteS(fmt.Sprintf("OutputRaw: %s\n", string(wrapInfo.OutputRaw)))
+	env.DWriteS(fmt.Sprintf("termLength: %d\n", wrapInfo.TermLength))
+	env.DWriteS(fmt.Sprintf("termWidth: %d\n", wrapInfo.TermWidth))
+	env.DWriteS(fmt.Sprintf("wrappingLength: %d\n", wrapInfo.WrappingLength))
+	for idx, ln := range wrapInfo.OutputLines {
+		env.DWriteS(fmt.Sprintf("%d: %s\n", idx, ln))
+	}
 }
 
 func ExpandBytesLinewise(env *Env, iBytes []byte) (byteLines [][]byte) {
