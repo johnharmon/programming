@@ -362,9 +362,13 @@ func SetFlags() (config *FlagConfig) {
 }
 
 func ValidateFlags(config *FlagConfig) (errs []error) {
+	// This will check some values for flags as well as set certain flags logically based on others (if directory is set, recurse will also be true)
+	if config.Directory != "" {
+		config.Recurse = true
+	}
 	if config.Recurse {
 		if config.Directory == "" {
-			errs = append(errs, fmt.Errorf("Error: You must specify a directory when using the recurse option"))
+			SHandleErrors(os.Stdout, "Error: You must specify a directory when using the recurse option", nil, 5)
 		} else {
 			if config.InputFile != "" {
 				errs = append(errs, fmt.Errorf("Warning: specifying an input file with the recurse option will cause the flag value to be ignored"))
