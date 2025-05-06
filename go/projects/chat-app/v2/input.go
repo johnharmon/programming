@@ -54,7 +54,7 @@ func (fc FlagConfig) IsVerbose() bool {
 	return false
 }
 
-type WrapOutputInfo struct {
+type FormatInfo struct {
 	OutputRaw      []byte
 	OutputLines    [][]byte // raw bytes representing the output
 	WrappingLength int      // how long the output prefix and suffix combined is
@@ -62,7 +62,23 @@ type WrapOutputInfo struct {
 	TermLength     int      // how many lines long including headers and footers the ouput is
 }
 
-func (w *WrapOutputInfo) Debug(env *Env) {
+type Cell struct {
+	formatInfo *FormatInfo
+	RawContent *bytes.Buffer
+	RawInput *bytes.Buffer
+	ContentReader *bytes.Reader
+}
+
+func (oc *Cell) Display(o io.Writer, env *Env) {
+	formattedContent := WrapOutput(env, oc.RawContent.Bytes())
+	fmt.Fprint(o, formattedContent)
+}
+
+func (oc *Cell) OverWrite([]byte newContent) {
+
+}
+
+func (w *FormatInfo) Debug(env *Env) {
 	env.DWriteS("Entered function \"WrapOutput\"\n")
 	env.DWriteS(fmt.Sprintf("OutputRaw: %s\n", string(w.OutputRaw)))
 	env.DWriteS(fmt.Sprintf("termLength: %d\n", w.TermLength))
@@ -101,7 +117,7 @@ func WrapOutput(env *Env, output []byte) (wrappedOutput string) {
 	return strings.Join(wrappedOutputLines, "\n") + "\n"
 }
 
-func wrapOutputLine(env *Env, wrapInfo *WrapOutputInfo, lineNumber int) (newLine string) {
+func wrapOutputLine(env *Env, wrapInfo *FormatInfo, lineNumber int) (newLine string) {
 	env.DWriteS(fmt.Sprintf("Processing line %d for terminal output...\n", lineNumber))
 	switch lineNumber {
 	case 0:
@@ -116,8 +132,8 @@ func wrapOutputLine(env *Env, wrapInfo *WrapOutputInfo, lineNumber int) (newLine
 	return newLine
 }
 
-func GetOutputDimensions(env *Env, output []byte) (wrapInfo *WrapOutputInfo) {
-	wrapInfo = &WrapOutputInfo{}
+func GetOutputDimensions(env *Env, output []byte) (wrapInfo *FormatInfo) {
+	wrapInfo = &FormatInfo{}
 	wrapInfo.OutputRaw = output
 	wrapInfo.OutputLines = ExpandBytesLinewise(env, output)
 	wrapInfo.WrappingLength = (len(env.OutputPrefix) + len(env.OutputSuffix))
@@ -126,7 +142,7 @@ func GetOutputDimensions(env *Env, output []byte) (wrapInfo *WrapOutputInfo) {
 	return wrapInfo
 }
 
-func wrapOutputDebugHelper(env *Env, wrapInfo *WrapOutputInfo) {
+func wrapOutputDebugHelper(env *Env, wrapInfo *FormatInfo) {
 	env.DWriteS("Entered function \"WrapOutput\"\n")
 	env.DWriteS(fmt.Sprintf("OutputRaw: %s\n", string(wrapInfo.OutputRaw)))
 	env.DWriteS(fmt.Sprintf("termLength: %d\n", wrapInfo.TermLength))

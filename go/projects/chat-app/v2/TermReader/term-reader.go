@@ -74,13 +74,25 @@ type FormatInfo struct {
 }
 
 type Cell struct {
-	formatInfo     *FormatInfo
-	RawContent     *bytes.Buffer
-	RawInput       *bytes.Buffer
-	ContentReader  *bytes.Reader
-	DisplayContent []byte
-	CursorPosition int
-	CellHistory    []*Cell
+	formatInfo            *FormatInfo
+	RawContent            *bytes.Buffer
+	RawInput              *bytes.Buffer
+	ContentReader         *bytes.Reader
+	Out                   io.Writer
+	In                    io.Reader
+	DisplayContent        *bytes.Buffer
+	CursorPosition        int
+	LogicalCursorPosition int
+	DisplayCursorPosition int
+	CellHistory           []*Cell
+}
+
+func (oc *Cell) Display(o io.Writer, env *Env) {
+	formattedContent := WrapOutput(env, oc.RawContent.Bytes())
+	fmt.Fprint(o, formattedContent)
+}
+
+func (oc *Cell) OverWrite(newContent []byte) {
 }
 
 type CellHistory struct {
@@ -138,10 +150,10 @@ func makeModificationSequenceDispatcher() (dispatcher map[string]*ModificationSe
 
 var ModificationSequenceMap = map[string]*ModificationSequence{
 	"\x1b":    {Bytes: []byte("\x1b"), Name: "Escape", Raw: "\x1b", IsMultiByte: true},
-	"\x1b[A":  {Bytes: []byte("\x1b[A"), Name: "UpArrow", Raw: "\x1b[A", IsMultiByte: true},
-	"\x1b[B":  {Bytes: []byte("\x1b[B"), Name: "DownArrow", Raw: "\x1b[B", IsMultiByte: true},
-	"\x1b[C":  {Bytes: []byte("\x1b[C"), Name: "RightArrow", Raw: "\x1b[C", IsMultiByte: true},
-	"\x1b[D":  {Bytes: []byte("\x1b[D"), Name: "LeftArrow", Raw: "\x1b[D", IsMultiByte: true},
+	"\x1b[A":  {Bytes: []byte("\x1b[A"), Name: "UpArrow", Raw: "\x1b[A", IsMultiByte: true, ForceRedraw: false},
+	"\x1b[B":  {Bytes: []byte("\x1b[B"), Name: "DownArrow", Raw: "\x1b[B", IsMultiByte: true, ForceRedraw: false},
+	"\x1b[C":  {Bytes: []byte("\x1b[C"), Name: "RightArrow", Raw: "\x1b[C", IsMultiByte: true, ForceRedraw: false},
+	"\x1b[D":  {Bytes: []byte("\x1b[D"), Name: "LeftArrow", Raw: "\x1b[D", IsMultiByte: true, ForceRedraw: false},
 	"\x1b[3~": {Bytes: []byte("\x1b[3~"), Name: "Delete", Raw: "\x1b[3~", IsMultiByte: false, ForceRedraw: true},
 	"\x7F":    {Bytes: []byte("\x7F"), Name: "Backspace", Raw: "\x7F", IsMultiByte: false, ForceRedraw: true},
 }
@@ -194,14 +206,20 @@ func HandleEscabeByte(b byte, out io.Writer) {
 }
 
 func RawTermInterface() {
+	cell := &Cell{}
+	cell.Out = os.Stdout
+	cell.In = os.Stdin
+	cell.DisplayContent = &bytes.Buffer{}
+	cell.DisplayCursorPosition = 0
+	cell.RawInput = &bytes.Buffer{}
 	var (
 		isMod  bool
 		modSeq *ModificationSequence
 	)
-	typedBytes := &bytes.Buffer{}
+	// typedBytes := cell.RawInput
 	buf := make([]byte, 1)
 	for {
-		nb, err := os.Stdin.Read(buf)
+		nb, err := cell.In.Read(buf)
 		if err != nil {
 			panic(err)
 		}
@@ -209,51 +227,104 @@ func RawTermInterface() {
 			b := buf[0]
 			isMod, modSeq = isModificationByte(b)
 			if isMod {
-				esc, _ := ReadModificationSequence(os.Stdin, (time.Millisecond * 25), modSeq)
+				esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
 				if esc != nil {
+					// HandleModSequence(cell, esc)
 					if esc.ForceRedraw {
-						newLine, _ := RedrawLine(typedBytes.Bytes(), esc)
-						fmt.Fprintf(os.Stdout, "\r\x1b[2K%s", newLine)
-						typedBytes.Reset()
-						typedBytes.Write(newLine)
+						newLine, _ := RedrawLine(esc, cell)
+						fmt.Fprintf(cell.Out, "\r\x1b[2K%s", newLine)
+						DisplayDebugInfo(cell)
+						cell.RawInput.Write(esc.Bytes)
 					} else {
-						fmt.Fprintf(os.Stdout, "%s", esc.Name)
-						typedBytes.Write([]byte(esc.Name))
+						cell.RawInput.Write(esc.Bytes)
+						fmt.Fprintf(cell.Out, "%s", esc.Bytes)
+						switch esc.Name {
+						case "LeftArrow":
+							if cell.DisplayCursorPosition > 0 {
+								cell.DisplayCursorPosition--
+							}
+							cell.LogicalCursorPosition += len(esc.Bytes)
+							fmt.Fprintf(cell.Out, "%s", esc.Bytes)
+						case "RightArrow":
+							cell.DisplayCursorPosition++
+							cell.LogicalCursorPosition += len(esc.Bytes)
+							fmt.Fprintf(cell.Out, "%s", esc.Bytes)
+						}
+						DisplayDebugInfo(cell)
+						cell.RawInput.Write(esc.Bytes)
 					}
 				}
 			} else {
 				bslice := buf[0:1]
-				typedBytes.WriteByte(b)
-				if b != 13 {
+				cell.RawInput.WriteByte(b)
+				if b == 13 {
+					fmt.Fprintf(cell.Out, "\n\rYou typed: %s\r\n", cell.RawInput.Bytes())
+					cell.RawInput.Reset()
+				} else {
 					if b == 3 {
 						break
 					} else {
-						fmt.Fprintf(os.Stdout, "%s", bslice)
+						cell.WriteDisplayBytes(bslice)
+						cell.DisplayCursorPosition++
+						cell.LogicalCursorPosition++
+						DisplayDebugInfo(cell)
 					}
-				} else {
-					fmt.Fprintf(os.Stdout, "\n\rYou typed: %s\r\n", typedBytes.Bytes())
-					typedBytes.Reset()
 				}
 			}
 		}
 	}
 }
 
-func RedrawLine(line []byte, mod *ModificationSequence) (newLine []byte, err error) {
-	if mod.Name == "Backspace" || mod.Name == "Delete" {
-		newLine = line[0 : len(line)-1]
+func (cell *Cell) Redraw() {
+	fmt.Fprintf(cell.Out, "\r\x1b[2K%s", cell.DisplayContent.Bytes())
+}
+
+func (cell *Cell) WriteDisplayBytes(b []byte) {
+	if cell.DisplayCursorPosition == 0 {
+		content := cell.DisplayContent.Bytes()
+		cell.DisplayContent.Reset()
+		cell.DisplayContent.Write(b)
+		cell.DisplayContent.Write(content)
+		cell.Redraw()
+	} else if cell.DisplayCursorPosition == len(cell.DisplayContent.Bytes()) {
+		cell.DisplayContent.Write(b)
+		fmt.Fprintf(cell.Out, "%s", b)
 	} else {
-		newLine = line
+		temp := cell.DisplayContent.Bytes()
+		cell.DisplayContent.Reset()
+		before := temp[0:cell.DisplayCursorPosition]
+		after := temp[cell.DisplayCursorPosition:]
+		cell.DisplayContent.Write(before)
+		cell.DisplayContent.Write(b)
+		cell.DisplayContent.Write(after)
+		cell.Redraw()
 	}
+}
+
+func DisplayDebugInfo(cell *Cell) {
+	fmt.Fprintf(cell.Out, "\x1b[B\r\x1b[2K")
+	fmt.Fprintf(cell.Out, "DisplayCursorPosition: %d | LogicalCursorPosition: %d", cell.DisplayCursorPosition, cell.LogicalCursorPosition)
+	cursorUp := "\x1b[A\r"
+	cursorRight := fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
+	fmt.Fprintf(cell.Out, "%s%s", cursorUp, cursorRight)
+}
+
+func HandleModSequence(cell *Cell, esc *ModificationSequence) {
+}
+
+func RedrawLine(mod *ModificationSequence, cell *Cell) (newLine []byte, err error) {
+	if mod.Name == "Backspace" || mod.Name == "Delete" {
+		if cell.DisplayCursorPosition > 0 {
+			cell.DisplayCursorPosition--
+			cell.LogicalCursorPosition--
+			newLine = append(cell.DisplayContent.Bytes()[:cell.DisplayCursorPosition], cell.DisplayContent.Bytes()[cell.DisplayCursorPosition+1:]...)
+		}
+	} else {
+		newLine = cell.DisplayContent.Bytes()
+	}
+	cell.DisplayContent.Reset()
+	cell.DisplayContent.Write(newLine)
 	return newLine, nil
-}
-
-func (oc *Cell) Display(o io.Writer, env *Env) {
-	formattedContent := WrapOutput(env, oc.RawContent.Bytes())
-	fmt.Fprint(o, formattedContent)
-}
-
-func (oc *Cell) OverWrite(newContent []byte) {
 }
 
 func (w *FormatInfo) Debug(env *Env) {
