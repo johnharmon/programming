@@ -233,7 +233,7 @@ func RawTermInterface() {
 					if esc.ForceRedraw {
 						newLine, _ := RedrawLine(esc, cell)
 						fmt.Fprintf(cell.Out, "\r\x1b[2K%s", newLine)
-						DisplayDebugInfo(cell)
+						DisplayDebugInfo(cell, "EscapeSequenceConditional, ForceRedraw", []string{})
 						cell.RawInput.Write(esc.Bytes)
 					} else {
 						cell.RawInput.Write(esc.Bytes)
@@ -246,11 +246,13 @@ func RawTermInterface() {
 							cell.LogicalCursorPosition += len(esc.Bytes)
 							fmt.Fprintf(cell.Out, "%s", esc.Bytes)
 						case "RightArrow":
-							cell.DisplayCursorPosition++
+							if cell.DisplayCursorPosition < len(cell.DisplayContent.Bytes()) {
+								cell.DisplayCursorPosition++
+							}
 							cell.LogicalCursorPosition += len(esc.Bytes)
 							fmt.Fprintf(cell.Out, "%s", esc.Bytes)
 						}
-						DisplayDebugInfo(cell)
+						DisplayDebugInfo(cell, "EscapeSequenceConditional, NoRedraw", []string{})
 						cell.RawInput.Write(esc.Bytes)
 					}
 				}
@@ -265,9 +267,8 @@ func RawTermInterface() {
 						break
 					} else {
 						cell.WriteDisplayBytes(bslice)
-						cell.DisplayCursorPosition++
-						cell.LogicalCursorPosition++
-						DisplayDebugInfo(cell)
+						// cell.DisplayCursorPosition++
+						// cell.LogicalCursorPosition++
 					}
 				}
 			}
@@ -276,36 +277,65 @@ func RawTermInterface() {
 }
 
 func (cell *Cell) Redraw() {
-	fmt.Fprintf(cell.Out, "\r\x1b[2K%s", cell.DisplayContent.Bytes())
+	fmt.Fprintf(cell.Out, "\r\x1b[2K\r%s", cell.DisplayContent.Bytes())
 }
 
 func (cell *Cell) WriteDisplayBytes(b []byte) {
+	extra := []string{}
+	blen := len(b)
 	if cell.DisplayCursorPosition == 0 {
-		content := cell.DisplayContent.Bytes()
+		content := append([]byte{}, cell.DisplayContent.Bytes()...)
 		cell.DisplayContent.Reset()
 		cell.DisplayContent.Write(b)
+		extra = append(extra, string(b))
 		cell.DisplayContent.Write(content)
+		extra = append(extra, string(content))
+		cell.DisplayCursorPosition += blen
+		cell.LogicalCursorPosition += blen
 		cell.Redraw()
+		DisplayDebugInfo(cell, "DisplayCursorPosition = 0", extra)
 	} else if cell.DisplayCursorPosition == len(cell.DisplayContent.Bytes()) {
 		cell.DisplayContent.Write(b)
+		cell.DisplayCursorPosition += blen
+		cell.LogicalCursorPosition += blen
 		fmt.Fprintf(cell.Out, "%s", b)
+		DisplayDebugInfo(cell, "DisplayCursorPosition = end of display content", extra)
 	} else {
-		temp := cell.DisplayContent.Bytes()
+		temp := append([]byte{}, cell.DisplayContent.Bytes()...)
 		cell.DisplayContent.Reset()
 		before := temp[0:cell.DisplayCursorPosition]
 		after := temp[cell.DisplayCursorPosition:]
 		cell.DisplayContent.Write(before)
+		extra = append(extra, string(before))
 		cell.DisplayContent.Write(b)
+		extra = append(extra, string(b))
 		cell.DisplayContent.Write(after)
+		extra = append(extra, string(after))
+		cell.DisplayCursorPosition += blen
+		cell.LogicalCursorPosition += blen
 		cell.Redraw()
+		DisplayDebugInfo(cell, "DisplayCursorPostition = inside display content", extra)
 	}
 }
 
-func DisplayDebugInfo(cell *Cell) {
+func DisplayDebugInfo(cell *Cell, callingInfo string, extras []string) {
+	var cursorRight string
 	fmt.Fprintf(cell.Out, "\x1b[B\r\x1b[2K")
-	fmt.Fprintf(cell.Out, "DisplayCursorPosition: %d | LogicalCursorPosition: %d", cell.DisplayCursorPosition, cell.LogicalCursorPosition)
+	fmt.Fprintf(cell.Out, "DisplayCursorPosition: %d | LogicalCursorPosition: %d | CalledBy: %s", cell.DisplayCursorPosition, cell.LogicalCursorPosition, callingInfo)
 	cursorUp := "\x1b[A\r"
-	cursorRight := fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
+	cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
+	if cell.DisplayCursorPosition > 0 {
+		cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
+	}
+	cursorUp = fmt.Sprintf("\x1b[%dA\r", len(extras)+1)
+	//	if cell.DisplayCursorPosition > 0 {
+	//		cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
+	//	}
+	if len(extras) > 0 {
+		for _, extra := range extras {
+			fmt.Fprintf(cell.Out, "\r\n%s\r", extra)
+		}
+	}
 	fmt.Fprintf(cell.Out, "%s%s", cursorUp, cursorRight)
 }
 
