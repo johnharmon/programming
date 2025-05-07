@@ -1,0 +1,17 @@
+
+light:Homebrew,dark:Homebrew
+theme = Flat
+#theme = HaX0R_BLUE
+#theme = "Nocturnal Winter"
+#theme = Flat
+#theme = Flat
+#theme = Flat
+#theme = Flat
+#theme = Flat
+#theme = Flat
+#theme = Flat
+#theme = Flat
+
+background = 000000
+macos-titlebar-style = tabs
+keybind = crtl+d = new_split:right
