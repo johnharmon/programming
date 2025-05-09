@@ -37,6 +37,32 @@ func (e Env) DWriteS(s string) {
 	fmt.Fprintf(e.DebugWriter, "%s", s)
 }
 
+type DisplayBuffer struct {
+	Buffer []byte
+	Lines  [][]byte
+	Size   int
+}
+
+func (db *DisplayBuffer) AllocateLines(size int) {
+	for i := range db.Lines {
+		db.Lines[i] = make([]byte, size)
+	}
+}
+
+func (db *DisplayBuffer) Write(p []byte) (int, error) {
+	db.Buffer = append(db.Buffer, p...)
+	return len(p), nil
+}
+
+func (db *DisplayBuffer) Reset() {
+	if cap(db.Buffer) > 4096 {
+		db.Buffer = make([]byte, 4096)
+	} else {
+		clear(db.Buffer)
+		db.Buffer = db.Buffer[:0]
+	}
+}
+
 type InputScanner struct {
 	Remaining   []byte
 	LastMessage []byte
@@ -84,7 +110,14 @@ type Cell struct {
 	CursorPosition        int
 	LogicalCursorPosition int
 	DisplayCursorPosition int
+	CursorLine            int
+	CursorColumn          int
+	DisplayBuffer         *DisplayBuffer
+	DebugInfo             []string
 	CellHistory           []*Cell
+	ActiveLineIdx         int
+	LogicalRowIdx         int
+	EffecitveRowIdx       int
 }
 
 func (oc *Cell) Display(o io.Writer, env *Env) {
@@ -93,6 +126,94 @@ func (oc *Cell) Display(o io.Writer, env *Env) {
 }
 
 func (oc *Cell) OverWrite(newContent []byte) {
+}
+
+func (cell *Cell) ScrollUp(newLine []byte) {
+	numLines := len(cell.DisplayBuffer.Lines)
+	tmpLine := cell.DisplayBuffer.Lines[numLines-1][:0]
+	copy(cell.DisplayBuffer.Lines[1:], cell.DisplayBuffer.Lines[:numLines-1])
+	tmpLine = append(tmpLine, newLine...)
+	cell.DisplayBuffer.Lines[0] = tmpLine
+	cell.Out.Write([]byte("\x1b[A"))
+}
+
+func (cell *Cell) ScrollDown(newLine []byte) {
+	numLines := len(cell.DisplayBuffer.Lines)
+	tmpLine := cell.DisplayBuffer.Lines[0][:0]
+	copy(cell.DisplayBuffer.Lines[:numLines-1], cell.DisplayBuffer.Lines[1:])
+	tmpLine = append(tmpLine, newLine...)
+	cell.DisplayBuffer.Lines[numLines-1] = tmpLine
+	cell.Out.Write([]byte("\x1b[B"))
+}
+
+//func (cell *Cell) IncrementActiveLine(incr int) {
+//	newLine := cell.ActiveLineIdx + incr
+//	if newLine > cell.DisplayBuffer.Size -1
+//	cell.IncrementActiveLine(1)
+//}
+
+func (cell *Cell) EnterDisplayLoop() {
+	var (
+		isMod  bool
+		modSeq *ModificationSequence
+		out    io.Writer
+		buf    = make([]byte, 1)
+	)
+	for {
+		nb, err := cell.In.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		if nb > 0 {
+			b := buf[0]
+			isMod, modSeq = isModificationByte(b)
+			if isMod {
+				esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
+				if esc != nil {
+					// HandleModSequence(cell, esc)
+					if esc.ForceRedraw {
+						newLine, _ := RedrawLine(esc, cell)
+						fmt.Fprintf(out, "\r\x1b[2K%s", newLine)
+						DisplayDebugInfo(cell, "EscapeSequenceConditional, ForceRedraw", []string{})
+						cell.RawInput.Write(esc.Bytes)
+					} else {
+						cell.RawInput.Write(esc.Bytes)
+						fmt.Fprintf(out, "%s", esc.Bytes)
+						switch esc.Name {
+						case "LeftArrow":
+							if cell.DisplayCursorPosition > 0 {
+								cell.DisplayCursorPosition--
+							}
+							cell.LogicalCursorPosition += len(esc.Bytes)
+							fmt.Fprintf(out, "%s", esc.Bytes)
+						case "RightArrow":
+							if cell.DisplayCursorPosition < len(cell.DisplayContent.Bytes()) {
+								cell.DisplayCursorPosition++
+							}
+							cell.LogicalCursorPosition += len(esc.Bytes)
+							fmt.Fprintf(out, "%s", esc.Bytes)
+						}
+						DisplayDebugInfo(cell, "EscapeSequenceConditional, NoRedraw", []string{})
+						cell.RawInput.Write(esc.Bytes)
+					}
+				}
+			} else {
+				bslice := buf[0:1]
+				cell.RawInput.WriteByte(b)
+				if b == 13 {
+					cell.Out.Write([]byte("\n\r"))
+				} else {
+					if b == 3 {
+						break
+					} else {
+						cell.WriteDisplayBytes(bslice)
+						// cell.DisplayCursorPosition++
+						// cell.LogicalCursorPosition++
+					}
+				}
+			}
+		}
+	}
 }
 
 type CellHistory struct {
@@ -109,18 +230,29 @@ type ModificationSequence struct {
 	IsMultiByte bool
 }
 
+type DisplayWrapper struct {
+	TopPattern    string
+	BottomPattern string
+	LinePrefix    string
+	LineSuffix    string
+}
+
 func (es ModificationSequence) String() string {
 	return es.Name
 }
 
-func MakeRawTerm() {
+func MakeRawTerm(config *FlagConfig) {
 	fd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
 		panic(err)
 	}
 	defer term.Restore(fd, oldState)
-	RawTermInterface()
+	if config.Raw {
+		RawTermInterface(true)
+	} else {
+		RawTermInterface(false)
+	}
 }
 
 func HandleNormalByte(b byte, out io.Writer) {
@@ -200,22 +332,72 @@ func ClearReadDeadline(input io.Reader) {
 	}
 }
 
+func CloneBuffer(b *bytes.Buffer) []byte {
+	temp := b.Bytes()
+	clone := make([]byte, len(temp))
+	copy(clone, temp)
+	return clone
+}
+
 func matchModificationSequence(sequence []byte) {}
 
 func HandleEscabeByte(b byte, out io.Writer) {
 }
 
-func RawTermInterface() {
-	cell := &Cell{}
+func Display(cell *Cell) {
+	// dw := &DisplayWrapper{TopPattern: "-", BottomPattern: "-", LinePrefix: "| ", LineSuffix: " |"}
+	// lines := bytes.Split(cell.DisplayBuffer.Buffer, []byte("\n"))
+	// numLines := len(lines)
+}
+
+func (cell Cell) FindCursorCoordFromPos() (row int, col int) {
+	lines := bytes.Split(cell.DisplayBuffer.Buffer, []byte("\n"))
+	var cumulativeBytes int = 0
+	for idx, line := range lines {
+		ll := len(line)
+		if ll+cumulativeBytes > cell.CursorPosition {
+			row = idx
+			col = cell.CursorPosition - cumulativeBytes
+			return row, col
+		} else {
+			cumulativeBytes += ll + 1 // + 1 on the end for the \n we lost during the split, it still exists in the original display buffer
+		}
+	}
+	return row, col
+}
+
+func WrapOutput2(dw *DisplayWrapper, cell *Cell) {
+	displayLines := bytes.Split(cell.DisplayBuffer.Buffer, []byte("\n"))
+	numLines := 2 + len(cell.DebugInfo) + len(displayLines)
+	jumpUp := numLines - 1 - len(displayLines) // For now, this *should* be the number of lines we need to move the cursor up after we finish printing everything, assuming we are at the end of the interactive buffer
+	row, col := cell.FindCursorCoordFromPos()
+}
+
+func NewDefaultCell() (cell *Cell) {
+	cell = &Cell{}
 	cell.Out = os.Stdout
 	cell.In = os.Stdin
 	cell.DisplayContent = &bytes.Buffer{}
 	cell.DisplayCursorPosition = 0
 	cell.RawInput = &bytes.Buffer{}
+	cell.DisplayBuffer = &DisplayBuffer{Buffer: make([]byte, 4096), Lines: make([][]byte, 100)}
+	cell.DisplayBuffer.AllocateLines(4096)
+	return cell
+}
+
+func RawTermInterface(toStdout bool) {
 	var (
 		isMod  bool
 		modSeq *ModificationSequence
+		out    io.Writer
 	)
+	cell := NewDefaultCell()
+
+	if toStdout {
+		out = cell.Out
+	} else {
+		out = cell.DisplayBuffer
+	}
 	// typedBytes := cell.RawInput
 	buf := make([]byte, 1)
 	for {
@@ -232,25 +414,25 @@ func RawTermInterface() {
 					// HandleModSequence(cell, esc)
 					if esc.ForceRedraw {
 						newLine, _ := RedrawLine(esc, cell)
-						fmt.Fprintf(cell.Out, "\r\x1b[2K%s", newLine)
+						fmt.Fprintf(out, "\r\x1b[2K%s", newLine)
 						DisplayDebugInfo(cell, "EscapeSequenceConditional, ForceRedraw", []string{})
 						cell.RawInput.Write(esc.Bytes)
 					} else {
 						cell.RawInput.Write(esc.Bytes)
-						fmt.Fprintf(cell.Out, "%s", esc.Bytes)
+						fmt.Fprintf(out, "%s", esc.Bytes)
 						switch esc.Name {
 						case "LeftArrow":
 							if cell.DisplayCursorPosition > 0 {
 								cell.DisplayCursorPosition--
 							}
 							cell.LogicalCursorPosition += len(esc.Bytes)
-							fmt.Fprintf(cell.Out, "%s", esc.Bytes)
+							fmt.Fprintf(out, "%s", esc.Bytes)
 						case "RightArrow":
 							if cell.DisplayCursorPosition < len(cell.DisplayContent.Bytes()) {
 								cell.DisplayCursorPosition++
 							}
 							cell.LogicalCursorPosition += len(esc.Bytes)
-							fmt.Fprintf(cell.Out, "%s", esc.Bytes)
+							fmt.Fprintf(out, "%s", esc.Bytes)
 						}
 						DisplayDebugInfo(cell, "EscapeSequenceConditional, NoRedraw", []string{})
 						cell.RawInput.Write(esc.Bytes)
@@ -260,7 +442,7 @@ func RawTermInterface() {
 				bslice := buf[0:1]
 				cell.RawInput.WriteByte(b)
 				if b == 13 {
-					fmt.Fprintf(cell.Out, "\n\rYou typed: %s\r\n", cell.RawInput.Bytes())
+					fmt.Fprintf(out, "\n\rYou typed: %s\r\n", cell.RawInput.Bytes())
 					cell.RawInput.Reset()
 				} else {
 					if b == 3 {
@@ -278,13 +460,16 @@ func RawTermInterface() {
 
 func (cell *Cell) Redraw() {
 	fmt.Fprintf(cell.Out, "\r\x1b[2K\r%s", cell.DisplayContent.Bytes())
+	// fmt.Fprintf(cell.Out, "\r\x1b[2K\r%s", cell.DisplayContent.Bytes())
 }
 
 func (cell *Cell) WriteDisplayBytes(b []byte) {
 	extra := []string{}
 	blen := len(b)
 	if cell.DisplayCursorPosition == 0 {
-		content := append([]byte{}, cell.DisplayContent.Bytes()...)
+		temp := cell.DisplayContent.Bytes()
+		content := make([]byte, len(temp))
+		copy(content, temp)
 		cell.DisplayContent.Reset()
 		cell.DisplayContent.Write(b)
 		extra = append(extra, string(b))
@@ -301,10 +486,13 @@ func (cell *Cell) WriteDisplayBytes(b []byte) {
 		fmt.Fprintf(cell.Out, "%s", b)
 		DisplayDebugInfo(cell, "DisplayCursorPosition = end of display content", extra)
 	} else {
-		temp := append([]byte{}, cell.DisplayContent.Bytes()...)
+		// temp := append([]byte{}, cell.DisplayContent.Bytes()...)
+		temp := cell.DisplayContent.Bytes()
+		clone := make([]byte, len(temp))
+		copy(clone, temp)
 		cell.DisplayContent.Reset()
-		before := temp[0:cell.DisplayCursorPosition]
-		after := temp[cell.DisplayCursorPosition:]
+		before := clone[0:cell.DisplayCursorPosition]
+		after := clone[cell.DisplayCursorPosition:]
 		cell.DisplayContent.Write(before)
 		extra = append(extra, string(before))
 		cell.DisplayContent.Write(b)
@@ -611,7 +799,7 @@ func main() {
 	config := ParseFlags()
 	env := NewDefaultEnv(config)
 	if config.Terminal {
-		MakeRawTerm()
+		MakeRawTerm(config)
 	} else if config.Debug {
 		RunScanner(env)
 	}
