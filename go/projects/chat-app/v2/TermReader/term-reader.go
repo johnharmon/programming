@@ -589,6 +589,14 @@ func InsertAt(a []byte, b []byte, startIdx int) []byte {
 	return tmp
 }
 
+func DeleteAt(a []byte, startIdx int, count int) []byte {
+	al := len(a)
+	for i := startIdx; i < al-count; i++ {
+		a[i] = a[i+count]
+	}
+	return a[:al-count]
+}
+
 func DisplayDebugInfo(cell *Cell, callingInfo string, extras []string) {
 	var cursorRight string
 	fmt.Fprintf(cell.Out, "\x1b[B\r\x1b[2K")
