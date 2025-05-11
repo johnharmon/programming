@@ -128,13 +128,29 @@ func (oc *Cell) Display(o io.Writer, env *Env) {
 func (oc *Cell) OverWrite(newContent []byte) {
 }
 
+func (cell *Cell) IncrementActiveLine(incr int) {
+	nextLine := cell.ActiveLineIdx + incr
+	if nextLine > 0 || nextLine < cell.DisplayBuffer.Size-1 {
+		cell.ActiveLineIdx = nextLine
+		return
+	} else {
+		if nextLine < 0 {
+			cell.ActiveLineIdx = cell.DisplayBuffer.Size - 1
+			return
+		} else if nextLine >= cell.DisplayBuffer.Size {
+			cell.ActiveLineIdx = 0
+			return
+		}
+	}
+}
+
 func (cell *Cell) ScrollUp(newLine []byte) {
 	numLines := len(cell.DisplayBuffer.Lines)
 	tmpLine := cell.DisplayBuffer.Lines[numLines-1][:0]
 	copy(cell.DisplayBuffer.Lines[1:], cell.DisplayBuffer.Lines[:numLines-1])
 	tmpLine = append(tmpLine, newLine...)
 	cell.DisplayBuffer.Lines[0] = tmpLine
-	cell.Out.Write([]byte("\x1b[A"))
+	cell.IncrementActiveLine(1)
 }
 
 func (cell *Cell) ScrollDown(newLine []byte) {
@@ -143,7 +159,7 @@ func (cell *Cell) ScrollDown(newLine []byte) {
 	copy(cell.DisplayBuffer.Lines[:numLines-1], cell.DisplayBuffer.Lines[1:])
 	tmpLine = append(tmpLine, newLine...)
 	cell.DisplayBuffer.Lines[numLines-1] = tmpLine
-	cell.Out.Write([]byte("\x1b[B"))
+	cell.IncrementActiveLine(-1)
 }
 
 //func (cell *Cell) IncrementActiveLine(incr int) {
@@ -504,6 +520,73 @@ func (cell *Cell) WriteDisplayBytes(b []byte) {
 		cell.Redraw()
 		DisplayDebugInfo(cell, "DisplayCursorPostition = inside display content", extra)
 	}
+}
+
+func (cell *Cell) WriteDisplayBytesByBuffer(b []byte) {
+	extra := []string{}
+	blen := len(b)
+	if cell.DisplayCursorPosition == 0 {
+		activeLine := cell.DisplayBuffer.Lines[cell.ActiveLineIdx]
+		activeLine = activeLine[0 : len(activeLine)+blen]
+		copy(activeLine[len(b):], activeLine[0:len(activeLine)-len(b)])
+		copy(activeLine[:len(b)], b)
+		extra = append(extra, string(b))
+		extra = append(extra, string(activeLine))
+		cell.DisplayCursorPosition += blen
+		cell.Redraw()
+		DisplayDebugInfo(cell, "DisplayCursorPosition = 0", extra)
+	} else if cell.DisplayCursorPosition == len(cell.DisplayContent.Bytes()) {
+		cell.DisplayContent.Write(b)
+		cell.DisplayCursorPosition += blen
+		cell.LogicalCursorPosition += blen
+		fmt.Fprintf(cell.Out, "%s", b)
+		DisplayDebugInfo(cell, "DisplayCursorPosition = end of display content", extra)
+	} else {
+		// temp := append([]byte{}, cell.DisplayContent.Bytes()...)
+		activeLine := cell.DisplayBuffer.Lines[cell.ActiveLineIdx]
+		clone := make([]byte, len(activeLine))
+		copy(clone, activeLine)
+		before := clone[0:cell.DisplayCursorPosition]
+		after := clone[cell.DisplayCursorPosition:]
+		activeLine = append(activeLine[:0], before, b, after)
+		cell.DisplayContent.Write(before)
+		extra = append(extra, string(before))
+		cell.DisplayContent.Write(b)
+		extra = append(extra, string(b))
+		cell.DisplayContent.Write(after)
+		extra = append(extra, string(after))
+		cell.DisplayCursorPosition += blen
+		cell.Redraw()
+		DisplayDebugInfo(cell, "DisplayCursorPostition = inside display content", extra)
+	}
+}
+
+func InsertAt(a []byte, b []byte, startIdx int) []byte {
+	al := len(a)
+	bl := len(b)
+	if cap(a) >= len(a)+len(b) {
+		if bl == 1 {
+			a = a[0 : al+1]
+			for i := al - 2; i >= startIdx; i-- {
+				a[i+1] = a[i]
+				if i == startIdx {
+					a[i] = b[0]
+				}
+			}
+		} else {
+			a = a[0 : al+bl]
+			for i := al - 1 - bl; i >= startIdx; i-- {
+				a[i+bl] = a[i]
+			}
+		}
+		copy(a[startIdx:startIdx+bl], b)
+		return a
+	}
+	tmp := make([]byte, 0, (al+bl)*2)
+	tmp = append(tmp, a[0:startIdx]...)
+	tmp = append(tmp, b...)
+	tmp = append(tmp, a[startIdx:]...)
+	return tmp
 }
 
 func DisplayDebugInfo(cell *Cell, callingInfo string, extras []string) {
