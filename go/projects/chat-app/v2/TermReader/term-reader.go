@@ -526,14 +526,10 @@ func (cell *Cell) WriteDisplayBytesByBuffer(b []byte) {
 	extra := []string{}
 	blen := len(b)
 	if cell.DisplayCursorPosition == 0 {
-		activeLine := cell.DisplayBuffer.Lines[cell.ActiveLineIdx]
-		activeLine = activeLine[0 : len(activeLine)+blen]
-		copy(activeLine[len(b):], activeLine[0:len(activeLine)-len(b)])
-		copy(activeLine[:len(b)], b)
-		extra = append(extra, string(b))
-		extra = append(extra, string(activeLine))
-		cell.DisplayCursorPosition += blen
-		cell.Redraw()
+		activeLine := InsertAt(cell.DisplayBuffer.Lines[cell.ActiveLineIdx], b, cell.DisplayCursorPosition)
+		cell.DisplayBuffer.Lines[cell.ActiveLineIdx] = activeLine
+		cell.IncrCursor(blen)
+		// cell.Redraw()
 		DisplayDebugInfo(cell, "DisplayCursorPosition = 0", extra)
 	} else if cell.DisplayCursorPosition == len(cell.DisplayContent.Bytes()) {
 		cell.DisplayContent.Write(b)
@@ -548,23 +544,34 @@ func (cell *Cell) WriteDisplayBytesByBuffer(b []byte) {
 		copy(clone, activeLine)
 		before := clone[0:cell.DisplayCursorPosition]
 		after := clone[cell.DisplayCursorPosition:]
-		activeLine = append(activeLine[:0], before, b, after)
+		activeLine = InsertAt(activeLine, b, cell.DisplayCursorPosition)
 		cell.DisplayContent.Write(before)
 		extra = append(extra, string(before))
 		cell.DisplayContent.Write(b)
 		extra = append(extra, string(b))
 		cell.DisplayContent.Write(after)
 		extra = append(extra, string(after))
-		cell.DisplayCursorPosition += blen
+		cell.IncrCursor(blen)
 		cell.Redraw()
 		DisplayDebugInfo(cell, "DisplayCursorPostition = inside display content", extra)
+	}
+}
+
+func (cell *Cell) IncrCursor(incr int) {
+	newPos := cell.DisplayCursorPosition + incr
+	if newPos < 0 {
+		cell.DisplayCursorPosition = 0
+	} else if newPos > len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]) {
+		cell.DisplayCursorPosition = len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx])
+	} else {
+		cell.DisplayCursorPosition = newPos
 	}
 }
 
 func InsertAt(a []byte, b []byte, startIdx int) []byte {
 	al := len(a)
 	bl := len(b)
-	if startIdx == len(a) {
+	if startIdx >= len(a) {
 		return append(a, b...)
 	} else if cap(a) >= len(a)+len(b)+1 {
 		a = a[0 : al+bl]
