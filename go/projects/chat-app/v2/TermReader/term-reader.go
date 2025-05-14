@@ -564,17 +564,19 @@ func (cell *Cell) WriteDisplayBytesByBuffer(b []byte) {
 func InsertAt(a []byte, b []byte, startIdx int) []byte {
 	al := len(a)
 	bl := len(b)
-	if cap(a) >= len(a)+len(b) {
+	if startIdx == len(a) {
+		return append(a, b...)
+	} else if cap(a) >= len(a)+len(b)+1 {
+		a = a[0 : al+bl]
 		if bl == 1 {
-			a = a[0 : al+1]
-			for i := al - 2; i >= startIdx; i-- {
-				a[i+1] = a[i]
+			for i := al - 1; i >= startIdx; i-- {
 				if i == startIdx {
 					a[i] = b[0]
+				} else {
+					a[i+1] = a[i]
 				}
 			}
 		} else {
-			a = a[0 : al+bl]
 			for i := al - 1 - bl; i >= startIdx; i-- {
 				a[i+bl] = a[i]
 			}
