@@ -45,7 +45,7 @@ type DisplayBuffer struct {
 
 func (db *DisplayBuffer) AllocateLines(size int) {
 	for i := range db.Lines {
-		db.Lines[i] = make([]byte, size)
+		db.Lines[i] = make([]byte, 0, size)
 	}
 }
 
@@ -168,13 +168,18 @@ func (cell *Cell) ScrollDown(newLine []byte) {
 //	cell.IncrementActiveLine(1)
 //}
 
-func (cell *Cell) DisplayLoop() {
-	var (
-		isMod  bool
-		modSeq *ModificationSequence
-		out    io.Writer
-		buf    = make([]byte, 1)
-	)
+func (cell *Cell) DisplayLoop(env *Env) {
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		panic(err)
+	}
+	defer term.Restore(fd, oldState)
+
+	//		isMod  bool
+	//		modSeq *ModificationSequence
+	//		out    io.Writer
+	buf := make([]byte, 1)
 	for {
 		nb, err := cell.In.Read(buf)
 		if err != nil {
@@ -182,136 +187,120 @@ func (cell *Cell) DisplayLoop() {
 		}
 		if nb > 0 {
 			b := buf[0]
-			isMod, modSeq = isModificationByte(b)
-			if isMod {
-				esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
-				if esc != nil {
-					// HandleModSequence(cell, esc)
-					if esc.ForceRedraw {
-						newLine, _ := RedrawLine(esc, cell)
-						fmt.Fprintf(out, "\r\x1b[2K%s", newLine)
-						DisplayDebugInfo(cell, "EscapeSequenceConditional, ForceRedraw", []string{})
-						cell.RawInput.Write(esc.Bytes)
-					} else {
-						cell.RawInput.Write(esc.Bytes)
-						fmt.Fprintf(out, "%s", esc.Bytes)
-						switch esc.Name {
-						case "LeftArrow":
-							if cell.DisplayCursorPosition > 0 {
-								cell.DisplayCursorPosition--
-							}
-							cell.LogicalCursorPosition += len(esc.Bytes)
-							fmt.Fprintf(out, "%s", esc.Bytes)
-						case "RightArrow":
-							if cell.DisplayCursorPosition < len(cell.DisplayContent.Bytes()) {
-								cell.DisplayCursorPosition++
-							}
-							cell.LogicalCursorPosition += len(esc.Bytes)
-							fmt.Fprintf(out, "%s", esc.Bytes)
-						}
-						DisplayDebugInfo(cell, "EscapeSequenceConditional, NoRedraw", []string{})
-						cell.RawInput.Write(esc.Bytes)
-					}
-				}
-			} else {
-				bslice := buf[0:1]
-				cell.RawInput.WriteByte(b)
-				if b == 13 {
-					cell.Out.Write([]byte("\n\r"))
-				} else {
-					if b == 3 {
-						break
-					} else {
-						cell.WriteDisplayBytesByBuffer(bslice)
-						// cell.DisplayCursorPosition++
-						// cell.LogicalCursorPosition++
-					}
-				}
-			}
+			debug := cell.HandleByte(b)
+			cell.DisplayActiveLine()
+			DisplayDebugInfo(cell, "Main Loop", debug)
+			//			isMod, modSeq = isModificationByte(b)
+			//			if isMod {
+			//				esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
+			//				if esc != nil {
+			//					// HandleModSequence(cell, esc)
+			//					if esc.ForceRedraw {
+			//						newLine, _ := RedrawLine(esc, cell)
+			//						fmt.Fprintf(out, "\r\x1b[2K%s", newLine)
+			//						DisplayDebugInfo(cell, "EscapeSequenceConditional, ForceRedraw", []string{})
+			//						cell.RawInput.Write(esc.Bytes)
+			//					} else {
+			//						cell.RawInput.Write(esc.Bytes)
+			//						fmt.Fprintf(out, "%s", esc.Bytes)
+			//						switch esc.Name {
+			//						case "LeftArrow":
+			//							if cell.DisplayCursorPosition > 0 {
+			//								cell.DisplayCursorPosition--
+			//							}
+			//							cell.LogicalCursorPosition += len(esc.Bytes)
+			//							fmt.Fprintf(out, "%s", esc.Bytes)
+			//						case "RightArrow":
+			//							if cell.DisplayCursorPosition < len(cell.DisplayContent.Bytes()) {
+			//								cell.DisplayCursorPosition++
+			//							}
+			//							cell.LogicalCursorPosition += len(esc.Bytes)
+			//							fmt.Fprintf(out, "%s", esc.Bytes)
+			//						}
+			//						DisplayDebugInfo(cell, "EscapeSequenceConditional, NoRedraw", []string{})
+			//						cell.RawInput.Write(esc.Bytes)
+			//					}
+			//				}
+			//			} else {
+			//				bslice := buf[0:1]
+			//				cell.RawInput.WriteByte(b)
+			//				if b == 13 {
+			//					cell.Out.Write([]byte("\n\r"))
+			//				} else {
+			//					if b == 3 {
+			//						break
+			//					} else {
+			//						cell.WriteDisplayBytesByBuffer(bslice)
+			//						cell.DisplayActiveLine()
+			//						DisplayDebugInfo(cell, "WriteDisplayBytesByBuffer", []string{})
+			//					}
+			//				}
+			//			}
 		}
 	}
 }
 
-func (cell *Cell) RedrawActiveLine() {
-	cell.RedrawLine(cell.ActiveLineIdx)
+func (cell *Cell) HandleByte(b byte) (debug []string) {
+	if b == 3 {
+		os.Exit(0)
+	} else {
+		isMod, modSeq := isModificationByte(b)
+		if isMod {
+			esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
+			if esc.Name == "Backspace" || esc.Name == "Delete" {
+				cell.DeleteDisplayByteByBuffer()
+			}
+		} else {
+			debug = cell.WriteDisplayByteByBuffer(b)
+		}
+	}
+	return debug
+}
+
+func (cell *Cell) DeleteDisplayByteByBuffer() {
+	activeLine := DeleteAt(cell.DisplayBuffer.Lines[cell.ActiveLineIdx], cell.DisplayCursorPosition, 1)
+	cell.IncrCursor(-1)
+	cell.DisplayBuffer.Lines[cell.ActiveLineIdx] = activeLine
+}
+
+func (cell *Cell) DisplayActiveLine() {
+	fmt.Fprintf(cell.Out, "%s%s", "\x1b[2k\r", string(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
+}
+
+func (cell *Cell) WriteDisplayByteByBuffer(b byte) (extra []string) {
+	extra = []string{}
+	activeLine := InsertByteAt(cell.DisplayBuffer.Lines[cell.ActiveLineIdx], b, cell.DisplayCursorPosition)
+	extra = append(extra, fmt.Sprintf("ActiveLineResult: %s", activeLine))
+	// cell.RedrawActiveLine()
+	cell.DisplayBuffer.Lines[cell.ActiveLineIdx] = activeLine
+	cell.IncrCursor(1)
+	extra = append(extra, fmt.Sprintf("ActiveLine from buffer: %s", cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
+	return extra
 }
 
 func (cell *Cell) WriteDisplayBytesByBuffer(b []byte) {
 	extra := []string{}
 	blen := len(b)
-	if cell.DisplayCursorPosition == 0 {
-		activeLine := cell.DisplayBuffer.Lines[cell.ActiveLineIdx]
-		// activeLine = activeLine[0 : len(activeLine)+blen]
-		activeLine = InsertAt(activeLine, b, 0)
-		// copy(activeLine[len(b):], activeLine[0:len(activeLine)-len(b)])
-		// copy(activeLine[:len(b)], b)
-		// extra = append(extra, string(b))
-		// extra = append(extra, string(activeLine))
-		cell.DisplayCursorPosition += blen
-		cell.RedrawActiveLine()
-		DisplayDebugInfo(cell, "DisplayCursorPosition = 0", extra)
-	} else if cell.DisplayCursorPosition == len(cell.DisplayContent.Bytes()) {
-		cell.DisplayContent.Write(b)
-		cell.DisplayCursorPosition += blen
-		cell.LogicalCursorPosition += blen
-		fmt.Fprintf(cell.Out, "%s", b)
-		DisplayDebugInfo(cell, "DisplayCursorPosition = end of display content", extra)
-	} else {
-		// temp := append([]byte{}, cell.DisplayContent.Bytes()...)
-		activeLine := cell.DisplayBuffer.Lines[cell.ActiveLineIdx]
-		// clone := make([]byte, len(activeLine))
-		// before := clone[0:cell.DisplayCursorPosition]
-		// copy(clone, activeLine)
-		// after := clone[cell.DisplayCursorPosition:]
-		// activeLine = append(activeLine[:0], before, b, after)
-		activeLine = InsertAt(activeLine, b, cell.DisplayCursorPosition)
-		// cell.DisplayContent.Write(before)
-		// extra = append(extra, string(before))
-		// cell.DisplayContent.Write(b)
-		// extra = append(extra, string(b))
-		// cell.DisplayContent.Write(after)
-		// extra = append(extra, string(after))
-		cell.DisplayCursorPosition += blen
-		cell.RedrawActiveLine()
-		DisplayDebugInfo(cell, "DisplayCursorPostition = inside display content", extra)
-	}
+	activeLine := InsertAt(cell.DisplayBuffer.Lines[cell.ActiveLineIdx], b, cell.DisplayCursorPosition)
+	extra = append(extra, fmt.Sprintf("ActiveLineResult: %s", activeLine))
+	// cell.RedrawActiveLine()
+	cell.DisplayBuffer.Lines[cell.ActiveLineIdx] = activeLine
+	cell.IncrCursor(blen)
+	extra = append(extra, fmt.Sprintf("ActiveLine from buffer: %s", cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 }
 
-func InsertAt(a []byte, b []byte, startIdx int) []byte {
-	al := len(a)
-	bl := len(b)
-	if cap(a) >= al+bl {
-		if bl == 1 {
-			a = a[0 : al+1]
-			for i := al - 2; i >= startIdx; i-- {
-				if i == startIdx {
-					a[i] = b[0]
-				} else {
-					a[i+1] = a[i]
-				}
-			}
-		} else {
-			a = a[0 : al+bl]
-			for i := al - 1 - bl; i >= startIdx; i-- {
-				a[i+bl] = a[i]
-			}
-		}
-		copy(a[startIdx:startIdx+bl], b)
-		return a
+func (cell *Cell) IncrCursor(incr int) {
+	newPos := cell.DisplayCursorPosition + incr
+	if newPos < 0 {
+		newPos = 0
+	} else if newPos > len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]) {
+		newPos = len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx])
 	}
-	tmp := make([]byte, 0, (al+bl)*2)
-	tmp = append(tmp, a[0:startIdx]...)
-	tmp = append(tmp, b...)
-	tmp = append(tmp, a[startIdx:]...)
-	return tmp
+	cell.DisplayCursorPosition = newPos
 }
 
-func DeleteAt(a []byte, startIdx int, count int) []byte {
-	al := len(a)
-	for i := startIdx; i < al-count; i++ {
-		a[i] = a[i+count]
-	}
-	return a[:al-count]
+func (cell *Cell) RedrawActiveLine() {
+	cell.RedrawLine(cell.ActiveLineIdx)
 }
 
 type CellHistory struct {
@@ -464,12 +453,12 @@ func (cell Cell) FindCursorCoordFromPos() (row int, col int) {
 	return row, col
 }
 
-func WrapOutput2(dw *DisplayWrapper, cell *Cell) {
-	displayLines := bytes.Split(cell.DisplayBuffer.Buffer, []byte("\n"))
-	numLines := 2 + len(cell.DebugInfo) + len(displayLines)
-	jumpUp := numLines - 1 - len(displayLines) // For now, this *should* be the number of lines we need to move the cursor up after we finish printing everything, assuming we are at the end of the interactive buffer
-	row, col := cell.FindCursorCoordFromPos()
-}
+//func WrapOutput2(dw *DisplayWrapper, cell *Cell) {
+//	displayLines := bytes.Split(cell.DisplayBuffer.Buffer, []byte("\n"))
+//	numLines := 2 + len(cell.DebugInfo) + len(displayLines)
+//	jumpUp := numLines - 1 - len(displayLines) // For now, this *should* be the number of lines we need to move the cursor up after we finish printing everything, assuming we are at the end of the interactive buffer
+//	row, col := cell.FindCursorCoordFromPos()
+//}
 
 func NewDefaultCell() (cell *Cell) {
 	cell = &Cell{}
@@ -478,6 +467,7 @@ func NewDefaultCell() (cell *Cell) {
 	cell.DisplayContent = &bytes.Buffer{}
 	cell.DisplayCursorPosition = 0
 	cell.RawInput = &bytes.Buffer{}
+	cell.ActiveLineIdx = 0
 	cell.DisplayBuffer = &DisplayBuffer{Buffer: make([]byte, 4096), Lines: make([][]byte, 100)}
 	cell.DisplayBuffer.AllocateLines(4096)
 	return cell
@@ -611,22 +601,102 @@ func (cell *Cell) WriteDisplayBytes(b []byte) {
 	}
 }
 
+func InsertByteAt(a []byte, b byte, startIdx int) []byte {
+	al := len(a)
+	if startIdx >= len(a) {
+		// fmt.Printf("\r\x1b[2Kappending\n\r")
+		//		fmt.Printf("\r\x1b[2k%s\n\r", string(append(a, b)))
+		//	os.Exit(5)
+		return append(a, b)
+	} else if cap(a) >= len(a)+1 {
+		fmt.Printf("\r\x1b[2Kgrowing a\n\r")
+		// os.Exit(6)
+		a = a[0 : al+1]
+		for i := al - 1; i >= startIdx; i-- {
+			if i == startIdx {
+				a[i] = b
+			} else {
+				a[i+1] = a[i]
+			}
+		}
+		//		fmt.Printf("\r\x1b[2k%s\n\r", string(a))
+		return a
+	}
+	// fmt.Printf("\r\x1b[2Kmaking new slice\n\r")
+	// os.Exit(7)
+	tmp := make([]byte, 0, (al+1)*2)
+	tmp = append(tmp, a[0:startIdx]...)
+	tmp = append(tmp, b)
+	tmp = append(tmp, a[startIdx:]...)
+	// fmt.Printf("\r\x1b[2k%s\n\r", string(tmp))
+	return tmp
+}
+
+func InsertAt(a []byte, b []byte, startIdx int) []byte {
+	al := len(a)
+	bl := len(b)
+	if startIdx >= len(a) {
+		return append(a, b...)
+	} else if cap(a) >= len(a)+len(b)+1 {
+		a = a[0 : al+bl]
+		if bl == 1 {
+			for i := al - 1; i >= startIdx; i-- {
+				if i == startIdx {
+					a[i] = b[0]
+				} else {
+					a[i+1] = a[i]
+				}
+			}
+		} else {
+			for i := al - 1 - bl; i >= startIdx; i-- {
+				a[i+bl] = a[i]
+			}
+		}
+		copy(a[startIdx:startIdx+bl], b)
+		return a
+	}
+	tmp := make([]byte, 0, (al+bl)*2)
+	tmp = append(tmp, a[0:startIdx]...)
+	tmp = append(tmp, b...)
+	tmp = append(tmp, a[startIdx:]...)
+	return tmp
+}
+
+func DeleteAt(a []byte, startIdx int, count int) []byte {
+	al := len(a)
+	//	if startIdx == al-1 {
+	//		return a[:al-1]
+	//	}
+	for i := startIdx; i < al-count; i++ {
+		a[i] = a[i+count]
+	}
+	return a[:al-count]
+}
+
+func DeleteByteAt(a []byte, startIdx int, count int) []byte {
+	al := len(a)
+	for i := startIdx; i < al-count; i++ {
+		a[i] = a[i+count]
+	}
+	return a[:al-count]
+}
+
 func DisplayDebugInfo(cell *Cell, callingInfo string, extras []string) {
 	var cursorRight string
-	fmt.Fprintf(cell.Out, "\x1b[B\r\x1b[2K")
-	fmt.Fprintf(cell.Out, "DisplayCursorPosition: %d | LogicalCursorPosition: %d | CalledBy: %s", cell.DisplayCursorPosition, cell.LogicalCursorPosition, callingInfo)
+	fmt.Fprintf(cell.Out, "\n\x1b[B\r\x1b[2K")
+	fmt.Fprintf(cell.Out, "DisplayCursorPosition: %d | LineBuffer: %d | LineSize: %d | CalledBy: %s", cell.DisplayCursorPosition, cell.ActiveLineIdx, len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]), callingInfo)
 	cursorUp := "\x1b[A\r"
 	cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
 	if cell.DisplayCursorPosition > 0 {
 		cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
 	}
-	cursorUp = fmt.Sprintf("\x1b[%dA\r", len(extras)+1)
+	cursorUp = fmt.Sprintf("\x1b[%dA\r", len(extras)+2)
 	//	if cell.DisplayCursorPosition > 0 {
 	//		cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
 	//	}
 	if len(extras) > 0 {
 		for _, extra := range extras {
-			fmt.Fprintf(cell.Out, "\r\n%s\r", extra)
+			fmt.Fprintf(cell.Out, "\r\n\x1b[2K%s\r", extra)
 		}
 	}
 	fmt.Fprintf(cell.Out, "%s%s", cursorUp, cursorRight)
@@ -906,6 +976,8 @@ func main() {
 	if config.Terminal {
 		MakeRawTerm(config)
 	} else if config.Debug {
-		RunScanner(env)
+		cell := NewDefaultCell()
+		cell.DisplayLoop(env)
+		// RunScanner(env)
 	}
 }
