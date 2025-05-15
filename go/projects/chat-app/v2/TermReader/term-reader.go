@@ -200,9 +200,10 @@ func (cell *Cell) DisplayLoop(env *Env) {
 		}
 		if nb > 0 {
 			b := buf[0]
-			_ = cell.HandleByte(b, closer)
+			//_ = cell.HandleByte(b, closer)
+			debug := cell.HandleByte(b, closer)
 			// cell.DisplayActiveLine()
-			// DisplayDebugInfo(cell, "Main Loop", debug)
+			DisplayDebugInfo(cell, "Main Loop", debug)
 		}
 	}
 }
@@ -233,6 +234,12 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 				if oldPos < cell.DisplayCursorPosition {
 					fmt.Fprintf(cell.Out, "\x1b[1C")
 				}
+			} else if esc.Name == "UpArrow" {
+				cell.IncrActiveLine(-1)
+				cell.DisplayActiveLine()
+			} else if esc.Name == "DownArrow" {
+				cell.IncrActiveLine(1)
+				cell.DisplayActiveLine()
 			}
 		} else {
 			debug = cell.WriteDisplayByteByBuffer(b)
@@ -683,10 +690,10 @@ func DisplayDebugInfo(cell *Cell, callingInfo string, extras []string) {
 	fmt.Fprintf(cell.Out, "DisplayCursorPosition: %d | ActiveLineIdx: %d | LineSize: %d | CalledBy: %s\n\r", cell.DisplayCursorPosition, cell.ActiveLineIdx, len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]), callingInfo)
 	fmt.Fprintf(cell.Out, "\x1b[2KActiveLine Buffer: %s", cell.DisplayBuffer.Lines[cell.ActiveLineIdx])
 	cursorUp := "\x1b[A\r"
-	cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
-	if cell.DisplayCursorPosition > 0 {
-		cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
-	}
+	cursorRight = fmt.Sprintf("\x1b[%dG", cell.DisplayCursorPosition+1)
+	//	if cell.DisplayCursorPosition > 0 {
+	//		cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
+	//	}
 	cursorUp = fmt.Sprintf("\x1b[%dA\r", len(extras)+3)
 	//	if cell.DisplayCursorPosition > 0 {
 	//		cursorRight = fmt.Sprintf("\x1b[%dC", cell.DisplayCursorPosition)
