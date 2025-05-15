@@ -162,6 +162,16 @@ func (cell *Cell) ScrollDown(newLine []byte) {
 	cell.IncrementActiveLine(1)
 }
 
+func (cell *Cell) IncrActiveLine(incr int) {
+	numLines := len(cell.DisplayBuffer.Lines)
+	cell.ActiveLineIdx = (cell.ActiveLineIdx + (incr % numLines) + numLines) % numLines
+	/* Previous Line broken down:
+	1) (incr % numLines) truncates sufficiently large negative idexes such that only the remaider of all their wraparounds is subtracted from the current index
+	2) + numLines ensures that the subtraction for any negative result is performed on index addition result
+	3) % numLines at the end ensures that any positive result (say 105) is truncated down to a proper bounded index (5)
+	*/
+}
+
 //func (cell *Cell) IncrementActiveLine(incr int) {
 //	newLine := cell.ActiveLineIdx + incr
 //	if newLine > cell.DisplayBuffer.Size -1
