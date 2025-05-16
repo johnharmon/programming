@@ -218,9 +218,11 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 			if esc.Name == "Backspace" {
 				debug = cell.DeleteDisplayByteByBuffer(-1)
 				cell.DisplayActiveLine()
+				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "Delete" {
 				debug = cell.DeleteDisplayByteByBuffer(0)
 				cell.DisplayActiveLine()
+				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "LeftArrow" {
 				// fmt.Println("left arrow detected")
 				// oldPos := cell.DisplayCursorPosition
@@ -228,26 +230,31 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 				// if oldPos != cell.DisplayCursorPosition {
 				fmt.Fprint(cell.Out, "\x1b[1D")
 				//}
+				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "RightArrow" {
 				oldPos := cell.DisplayCursorPosition
 				cell.IncrCursor(1)
 				if oldPos < cell.DisplayCursorPosition {
 					fmt.Fprintf(cell.Out, "\x1b[1C")
 				}
+				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "UpArrow" {
 				cell.IncrActiveLine(-1)
 				cell.DisplayActiveLine()
-				DisplayDebugInfo(cell, "HandleByte", debug)
+				cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 				cell.MoveCursorToEOL()
+				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "DownArrow" {
 				cell.IncrActiveLine(1)
 				cell.DisplayActiveLine()
-				DisplayDebugInfo(cell, "HandleByte", debug)
+				cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 				cell.MoveCursorToEOL()
+				DisplayDebugInfo(cell, "HandleByte", debug)
 			}
 		} else {
 			debug = cell.WriteDisplayByteByBuffer(b)
 			cell.DisplayActiveLine()
+			DisplayDebugInfo(cell, "HandleByte", debug)
 		}
 	}
 	return debug
@@ -276,6 +283,7 @@ func (cell *Cell) MoveCursorToPosition() {
 
 func (cell *Cell) MoveCursorToEOL() {
 	fmt.Fprintf(cell.Out, "\x1b[%dG", len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
+	cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 }
 
 func (cell *Cell) WriteDisplayByteByBuffer(b byte) (extra []string) {
