@@ -43,6 +43,12 @@ type DisplayBuffer struct {
 	Size   int
 }
 
+func (db *DisplayBuffer) GetSize() int {
+	size := len(db.Lines)
+	db.Size = size
+	return size
+}
+
 func (db *DisplayBuffer) AllocateLines(size int) {
 	for i := range db.Lines {
 		db.Lines[i] = make([]byte, 0, size)
@@ -116,6 +122,7 @@ type Cell struct {
 	DebugInfo             []string
 	CellHistory           []*Cell
 	ActiveLineIdx         int
+	ActiveLineLength      int
 	LogicalRowIdx         int
 	EffecitveRowIdx       int
 }
@@ -165,6 +172,7 @@ func (cell *Cell) ScrollDown(newLine []byte) {
 func (cell *Cell) IncrActiveLine(incr int) {
 	numLines := len(cell.DisplayBuffer.Lines)
 	cell.ActiveLineIdx = (cell.ActiveLineIdx + (incr % numLines) + numLines) % numLines
+	cell.ActiveLineLength = cell.GetALL()
 	/* Previous Line broken down:
 	1) (incr % numLines) truncates sufficiently large negative idexes such that only the remaider of all their wraparounds is subtracted from the current index
 	2) + numLines ensures that the subtraction for any negative result is performed on index addition result
@@ -224,10 +232,7 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 				cell.DisplayActiveLine()
 				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "LeftArrow" {
-				// fmt.Println("left arrow detected")
-				// oldPos := cell.DisplayCursorPosition
 				cell.IncrCursor(-1)
-				// if oldPos != cell.DisplayCursorPosition {
 				fmt.Fprint(cell.Out, "\x1b[1D")
 				//}
 				DisplayDebugInfo(cell, "HandleByte", debug)
@@ -284,6 +289,15 @@ func (cell *Cell) MoveCursorToPosition() {
 func (cell *Cell) MoveCursorToEOL() {
 	fmt.Fprintf(cell.Out, "\x1b[%dG", len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 	cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
+}
+
+func (cell *Cell) GetIncrActiveLine(incr int) int {
+	numLines := len(cell.DisplayBuffer.Lines)
+	return (cell.ActiveLineIdx + (incr % numLines) + numLines) % numLines
+}
+
+func (cell *Cell) GetALL() int {
+	return len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx])
 }
 
 func (cell *Cell) WriteDisplayByteByBuffer(b byte) (extra []string) {
