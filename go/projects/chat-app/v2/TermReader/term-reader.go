@@ -200,10 +200,10 @@ func (cell *Cell) DisplayLoop(env *Env) {
 		}
 		if nb > 0 {
 			b := buf[0]
-			//_ = cell.HandleByte(b, closer)
-			debug := cell.HandleByte(b, closer)
+			_ = cell.HandleByte(b, closer)
+			// debug := cell.HandleByte(b, closer)
 			// cell.DisplayActiveLine()
-			DisplayDebugInfo(cell, "Main Loop", debug)
+			// DisplayDebugInfo(cell, "Main Loop", debug)
 		}
 	}
 }
@@ -237,9 +237,13 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 			} else if esc.Name == "UpArrow" {
 				cell.IncrActiveLine(-1)
 				cell.DisplayActiveLine()
+				DisplayDebugInfo(cell, "HandleByte", debug)
+				cell.MoveCursorToEOL()
 			} else if esc.Name == "DownArrow" {
 				cell.IncrActiveLine(1)
 				cell.DisplayActiveLine()
+				DisplayDebugInfo(cell, "HandleByte", debug)
+				cell.MoveCursorToEOL()
 			}
 		} else {
 			debug = cell.WriteDisplayByteByBuffer(b)
@@ -264,6 +268,14 @@ func (cell *Cell) DeleteDisplayByteByBuffer(offset int) (debug []string) {
 
 func (cell *Cell) DisplayActiveLine() {
 	fmt.Fprintf(cell.Out, "%s%s\r\x1b[%dG", "\r\x1b[2K\r", string(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]), cell.DisplayCursorPosition+1)
+}
+
+func (cell *Cell) MoveCursorToPosition() {
+	fmt.Fprintf(cell.Out, "\x1b[%dG", cell.DisplayCursorPosition+1)
+}
+
+func (cell *Cell) MoveCursorToEOL() {
+	fmt.Fprintf(cell.Out, "\x1b[%dG", len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 }
 
 func (cell *Cell) WriteDisplayByteByBuffer(b byte) (extra []string) {
