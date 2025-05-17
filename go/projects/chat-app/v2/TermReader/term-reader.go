@@ -125,6 +125,10 @@ type Cell struct {
 	ActiveLineLength      int
 	LogicalRowIdx         int
 	EffecitveRowIdx       int
+	BufferLen             int
+	Logger                io.Writer
+	LogFile               *os.File
+	LogLink               string
 }
 
 func (oc *Cell) Display(o io.Writer, env *Env) {
@@ -132,7 +136,15 @@ func (oc *Cell) Display(o io.Writer, env *Env) {
 	fmt.Fprint(o, formattedContent)
 }
 
+func (cell *Cell) Log(message string, a ...any) {
+	fmt.Fprintf(cell.Logger, message+"\n", a...)
+}
+
 func (oc *Cell) OverWrite(newContent []byte) {
+}
+
+func (cell *Cell) GetBufferLen() int {
+	return len(cell.DisplayBuffer.Lines)
 }
 
 func (cell *Cell) IncrementActiveLine(incr int) {
@@ -169,10 +181,38 @@ func (cell *Cell) ScrollDown(newLine []byte) {
 	cell.IncrementActiveLine(1)
 }
 
-func (cell *Cell) IncrActiveLine(incr int) {
+func (cell *Cell) GetLineLen(index int) int {
+	if index < 0 || index >= cell.BufferLen {
+		cell.Log("index out of bounds: %d", index)
+		return -1
+	}
+	return len(cell.DisplayBuffer.Lines[index])
+}
+
+func (cell *Cell) ScrollLine(scrollVector int) {
+	currentLength := cell.ActiveLineLength
+	cell.Log("=========INPUT BREAK========")
+	cell.Log("Called ScrollLIne with a scrollVector of %d", scrollVector)
+	cell.Log("Current line index: %d", cell.ActiveLineIdx)
+	cell.Log("Current line length: %d", currentLength)
+	nextLineIndex := cell.GetIncrActiveLine(scrollVector)
+	cell.Log("Next line index: %d", nextLineIndex)
+	nextLineLength := cell.GetLineLen(nextLineIndex)
+	cell.Log("Next line length: %d", nextLineLength)
+	if currentLength <= 0 && nextLineLength <= 0 {
+		cell.Log("Line state not compabible with scrolling, ignoring...")
+		return
+	} else {
+		cell.Log("Scrolling %d", scrollVector)
+		cell.IncrActiveLine(scrollVector)
+	}
+}
+
+func (cell *Cell) IncrActiveLine(incr int) int {
 	numLines := len(cell.DisplayBuffer.Lines)
 	cell.ActiveLineIdx = (cell.ActiveLineIdx + (incr % numLines) + numLines) % numLines
 	cell.ActiveLineLength = cell.GetALL()
+	return cell.ActiveLineIdx
 	/* Previous Line broken down:
 	1) (incr % numLines) truncates sufficiently large negative idexes such that only the remaider of all their wraparounds is subtracted from the current index
 	2) + numLines ensures that the subtraction for any negative result is performed on index addition result
@@ -193,13 +233,7 @@ func (cell *Cell) DisplayLoop(env *Env) {
 		panic(err)
 	}
 	closer := make(chan interface{})
-	go func() {
-		<-closer
-		fmt.Println("\n\rRestoring old state")
-		term.Restore(fd, oldState)
-		os.Exit(0)
-	}()
-	defer term.Restore(fd, oldState)
+	go cell.Cleanup(closer, fd, oldState)
 	buf := make([]byte, 1)
 	for {
 		nb, err := cell.In.Read(buf)
@@ -214,6 +248,16 @@ func (cell *Cell) DisplayLoop(env *Env) {
 			// DisplayDebugInfo(cell, "Main Loop", debug)
 		}
 	}
+}
+
+func (cell *Cell) Cleanup(closer chan interface{}, fd int, oldState *term.State) {
+	<-closer
+	fmt.Println("\n\rRestoring old state")
+	term.Restore(fd, oldState)
+	cell.LogFile.Close()
+	os.Remove(cell.LogFile.Name())
+	os.Remove(cell.LogLink)
+	os.Exit(0)
 }
 
 func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
@@ -244,13 +288,15 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 				}
 				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "UpArrow" {
-				cell.IncrActiveLine(-1)
+				cell.ScrollLine(-1)
+				// cell.IncrActiveLine(-1)
 				cell.DisplayActiveLine()
 				cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 				cell.MoveCursorToEOL()
 				DisplayDebugInfo(cell, "HandleByte", debug)
 			} else if esc.Name == "DownArrow" {
-				cell.IncrActiveLine(1)
+				cell.ScrollLine(1)
+				// cell.IncrActiveLine(1)
 				cell.DisplayActiveLine()
 				cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
 				cell.MoveCursorToEOL()
@@ -296,6 +342,11 @@ func (cell *Cell) GetIncrActiveLine(incr int) int {
 	return (cell.ActiveLineIdx + (incr % numLines) + numLines) % numLines
 }
 
+func (cell *Cell) SetIncrActiveLine(incr int) {
+	numLines := len(cell.DisplayBuffer.Lines)
+	cell.ActiveLineIdx = (cell.ActiveLineIdx + (incr % numLines) + numLines) % numLines
+}
+
 func (cell *Cell) GetALL() int {
 	return len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx])
 }
@@ -330,6 +381,7 @@ func (cell *Cell) IncrCursor(incr int) {
 		newPos = len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx])
 	}
 	cell.DisplayCursorPosition = newPos
+	cell.ActiveLineLength = cell.GetALL()
 }
 
 func (cell *Cell) RedrawActiveLine() {
@@ -503,6 +555,37 @@ func NewDefaultCell() (cell *Cell) {
 	cell.ActiveLineIdx = 0
 	cell.DisplayBuffer = &DisplayBuffer{Buffer: make([]byte, 4096), Lines: make([][]byte, 100)}
 	cell.DisplayBuffer.AllocateLines(4096)
+	cell.Logger = io.Discard
+	return cell
+}
+
+func NewDefaultCellWithFileLogger() (cell *Cell) {
+	var err error
+	cell = &Cell{}
+	cell.Out = os.Stdout
+	cell.In = os.Stdin
+	cell.DisplayContent = &bytes.Buffer{}
+	cell.DisplayCursorPosition = 0
+	cell.RawInput = &bytes.Buffer{}
+	cell.ActiveLineIdx = 0
+	cell.DisplayBuffer = &DisplayBuffer{Buffer: make([]byte, 4096), Lines: make([][]byte, 100)}
+	cell.DisplayBuffer.AllocateLines(4096)
+	cell.BufferLen = len(cell.DisplayBuffer.Lines)
+	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
+	if err != nil {
+		fmt.Printf("Error opening tmp file: %s\n", err)
+		cell.Logger = io.Discard
+		cell.LogFile = nil
+	} else {
+		os.Remove("term-reader-logger.txt")
+		err := os.Symlink(f.Name(), "term-reader-logger.txt")
+		if err != nil {
+			fmt.Printf("Error creating logger symlink: %s\n", err)
+		}
+		cell.Logger, cell.LogFile = f, f
+		cell.LogLink = "term-reader-logger.txt"
+		fmt.Printf("Opened logger at %s\n", f.Name())
+	}
 	return cell
 }
 
@@ -1014,7 +1097,7 @@ func main() {
 	if config.Terminal {
 		MakeRawTerm(config)
 	} else if config.Debug {
-		cell := NewDefaultCell()
+		cell := NewDefaultCellWithFileLogger()
 		cell.DisplayLoop(env)
 		// RunScanner(env)
 	}
