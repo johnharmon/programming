@@ -31,7 +31,7 @@
         {{- num}}
       {% endfor %}
 
-- name: "Lets loop and ignore the first and last iterations in out printing"
+- name: "Lets loop and ignore the first and last iterations when printing"
   vars:
     words: "This is a sentence we will split along words and ignore the first and last one"
   ansible.builtin.debug:
@@ -47,7 +47,7 @@
     msg: |
       {% for number in range(0,11) %}
         {{- loop.cycle('even', 'odd') }}
-        {#- Yes this can be done with the modulus operator, i'm only showing this to demonstrate the cycle functionality -#}
+        {#- Yes this can be done with the modulus operator, I'm only showing this to demonstrate the cycle functionality -#}
       {% endfor %}
 
 - name: "Test cloud-init template"
