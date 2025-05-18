@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -27,19 +27,19 @@ const (
 	Druid              = "druid"                // Can do a special morale raising chant
 	PowerCharge        = "power_charge"         // unkown
 	FreeUpkeepUnit     = "free_upkeep_unit"     // Unit can be supported free in a city
+	DefaultErrorFormat = "Line: %d | error converting %s value of %s to %s: %s\n"
+	DefaultInfoFormat  = "Line: %d | Attribute: \"%s\" | Position: %d | Converted \"%s\" to %s\n"
 )
 
-type LogLevel int 
+type LogLevel int
 
 const (
-	LevelNone LogLevel = iota 
-	LevelError LogLevel  
-	LevelWarn LogLevel 
-	LevelInfo LogLevel 
-	LevelDebug LogLevel  
+	LevelNone LogLevel = iota
+	LevelError
+	LevelWarn
+	LevelInfo
+	LevelDebug
 )
-
-var LogLevel = 0
 
 type logger interface {
 	SDebugf(format string, fields ...any) string
@@ -52,27 +52,44 @@ type logger interface {
 	FErrorf(format string, fields ...any)
 }
 
-func DebugLogger() ( *UnitLogger) {
-	logBuffer := &bytes.Buffer{}
-	ul := &UnitLogger {
-	debugStream: logBuffer,
-	infoStream: logBuffer,
-	warnStream: logBuffer,
-	errorStream: logBuffer,
+func DebugLogger(w io.Writer) *UnitLogger {
+	ul := &UnitLogger{
+		debugStream: w,
+		infoStream:  w,
+		warnStream:  w,
+		errorStream: w,
 	}
 	return ul
 }
 
 type UnitLogger struct {
-	logLevel  int
-	debugStream *bytes.Buffer
-	infoStream  *bytes.Buffer
-	warnStream  *bytes.Buffer
-	errorStream *bytes.Buffer
-	defaultDebugFormat string 
-	defaultInfoFormat string 
-	defaultWarnFormat string 
-	defaultErrorFormat string 
+	Unit               *Unit
+	logLevel           LogLevel
+	debugStream        io.Writer
+	infoStream         io.Writer
+	warnStream         io.Writer
+	errorStream        io.Writer
+	defaultDebugFormat string
+	defaultInfoFormat  string
+	defaultWarnFormat  string
+	defaultErrorFormat string
+}
+
+func NewUnitLogger(logLevel LogLevel, output io.Writer, discard io.Writer) (ul *UnitLogger) {
+	ul = &UnitLogger{logLevel: logLevel}
+	for level := 0; level <= int(logLevel); level++ {
+		switch {
+		case level == 1 && level <= int(logLevel):
+			ul.errorStream = output
+		case level == 2 && level <= int(logLevel):
+			ul.warnStream = output
+		case level == 3 && level <= int(logLevel):
+			ul.infoStream = output
+		case level == 3 && level <= int(logLevel):
+			ul.debugStream = output
+		}
+	}
+	return ul
 }
 
 func (ul UnitLogger) SDebugf(format string, fields ...any) string {
@@ -99,16 +116,6 @@ func (ul *UnitLogger) FWarnf(format string, fields ...any) {
 }
 func (ul *UnitLogger) FErrorf(format string, fields ...any) {
 	fmt.Fprintf(ul.errorStream, format, fields...)
-}
-
-func CleanLine(line string) []string {
-	re := regexp.MustCompile(`\s+`)
-	lineSections := strings.SplitN(re.ReplaceAllString(line, " "), " ", 2)
-	cleanSections := make([]string, len(lineSections))
-	for _, item := range lineSections {
-		cleanSections = append(cleanSections, strings.TrimSpace(item))
-	}
-	return cleanSections
 }
 
 func ParseModifier(modifier string) (int, error) {
@@ -172,6 +179,7 @@ func ParseLineRecord(lr *LineRecord) (err error) {
 }
 
 func UnmarshalLineRecord(line string, lineNumber int, unit *Unit) (lr *LineRecord) {
+	lr = &LineRecord{}
 	lr.LineNumber = lineNumber
 	lr.Raw = line
 	lr.Unit = unit
@@ -180,7 +188,6 @@ func UnmarshalLineRecord(line string, lineNumber int, unit *Unit) (lr *LineRecor
 
 	}
 	return lr
-
 }
 
 func (lr *LineRecord) Unmarshal(line string, lineNumber int) {
@@ -202,23 +209,23 @@ type UnitLog struct {
 }
 
 type UnitAttributes struct {
-	SeaFaring          string `unit:"sea_faring"`           // can board ships;can_swim : can swim across rivers
-	HideForest         string `unit:"hide_forest"`          // defines where the unit can hide
-	HideImprovedForest string `unit:"hide_improved_forest"` // defines where the unit can hide
-	HideAnywhere       string `unit:"hide_anywhere"`        // defines where the unit can hide
-	CanSap             string `unit:"can_sap"`              // Can dig tunnels under walls
-	FrightenFoot       string `unit:"frighten_foot"`        // Cause fear to certain nearby unit types
-	FrightenMounted    string `unit:"frighten_mounted"`     // Cause fear to certain nearby unit types
-	CanRunAmok         string `unit:"can_run_amok"`         // Unit may go out of control when riders lose control of animals
-	GeneralUnit        string `unit:"general_unit"`         // The unit can be used for a named character's bodyguard
-	CantabrianCircle   string `unit:"cantabrian_circle"`    // The unit has this special ability
-	NoCustom           string `unit:"no_custom"`            // The unit may not be selected in custom battles
-	Command            string `unit:"command"`              // The unit carries a legionary eagle, and gives bonuses to nearby units
-	MercenaryUnit      string `unit:"mercenary_unit"`       // The unit is s mercenary unit available to all factions
-	IsPeasant          string `unit:"is_peasant"`           // unknown
-	Druid              string `unit:"druid"`                // Can do a special morale raising chant
-	PowerCharge        string `unit:"power_charge"`         // unkown
-	FreeUpkeepUnit     string `unit:"free_upkeep_unit"`     // Unit can be supported free in a city
+	SeaFaring          string `unit:"sea_faring" json:"sea_faring"`                     // can board ships;can_swim : can swim across rivers
+	HideForest         string `unit:"hide_forest" json:"hide_forest"`                   // defines where the unit can hide
+	HideImprovedForest string `unit:"hide_improved_forest" json:"hide_improved_forest"` // defines where the unit can hide
+	HideAnywhere       string `unit:"hide_anywhere" json:"hide_anywhere"`               // defines where the unit can hide
+	CanSap             string `unit:"can_sap" json:"can_sap"`                           // Can dig tunnels under walls
+	FrightenFoot       string `unit:"frighten_foot" json:"frighten_foot"`               // Cause fear to certain nearby unit types
+	FrightenMounted    string `unit:"frighten_mounted" json:"frighten_mounted"`         // Cause fear to certain nearby unit types
+	CanRunAmok         string `unit:"can_run_amok" json:"can_run_amok"`                 // Unit may go out of control when riders lose control of animals
+	GeneralUnit        string `unit:"general_unit" json:"general_unit"`                 // The unit can be used for a named character's bodyguard
+	CantabrianCircle   string `unit:"cantabrian_circle" json:"cantabrian_circle"`       // The unit has this special ability
+	NoCustom           string `unit:"no_custom" json:"no_custom"`                       // The unit may not be selected in custom battles
+	Command            string `unit:"command" json:"command"`                           // The unit carries a legionary eagle, and gives bonuses to nearby units
+	MercenaryUnit      string `unit:"mercenary_unit" json:"mercenary_unit"`             // The unit is s mercenary unit available to all factions
+	IsPeasant          string `unit:"is_peasant" json:"is_peasant"`                     // unknown
+	Druid              string `unit:"druid" json:"druid"`                               // Can do a special morale raising chant
+	PowerCharge        string `unit:"power_charge" json:"power_charge"`                 // unkown
+	FreeUpkeepUnit     string `unit:"free_upkeep_unit" json:"free_upkeep_unit"`         // Unit can be supported free in a city
 
 }
 
@@ -228,39 +235,39 @@ type BoolAttribute struct {
 }
 
 type Unit struct {
-	Logger *UnitLogger
+	Logger                 *UnitLogger
 	LineRecords            []*LineRecord
 	Lines                  []string
-	Type                   string            `unit:"type"`
-	Dictionary             string            `unit:"dictionary"`
-	Class                  string            `unit:"class"`
-	VoiceType              string            `unit:"voice_type"`
-	Accent                 string            `unit:"accent"`
-	BannerFaction          string            `unit:"banner_faction"`
-	BannerHoly             string            `unit:"banner_holy"`
-	Soldier                *Soldier          `unit:"soldier"`
-	Officer                string            `unit:"officer"`
-	MountEffect            *MountEffect      `unit:"mount_effect"`
-	Attributes             []string          `unit:"attributes"`
-	Formation              *Formation        `unit:"formation"`
-	StatHealth             *Health           `unit:"stat_health"`
-	StatPrimary            *Weapon           `unit:"stat_pri"`
-	StatPrimaryAttribute   *WeaponAttributes `unit:"stat_pri_attr"`
-	StatSecondary          *Weapon           `unit:"stat_sec"`
-	StatSecondaryAttribute *WeaponAttributes `unit:"stat_sec_attr"`
-	StatPrimaryArmor       *Armor            `unit:"Stat_pri_armor"`
-	StatSecondaryArmor     *Armor            `unit:"Stat_sec_armor"`
-	StatHeat               *Heat             `unit:"stat_heat"`
-	StatGround             *Ground           `unit:"stat_ground"`
-	StatMental             string            `unit:"stat_mental"`
-	StatChargeDistance     int               `unit:"stat_charge_dist"`
-	StatFireDelay          int               `unit:"stat_fire_delay"`
-	StatFood               string            `unit:"stat_food"`
-	StatCost               string            `unit:"stat_cost"`
-	ArmorUpgradeLevels     []int             `unit:"armor_upgrade_levels"`
-	ArmorUpgradeModels     []string          `unit:"armor_upgrade_models"`
-	Ownership              string            `unit:"ownership"`
-	RecruitPriorityOffset  int               `unit:"recruit_priority_offset"`
+	Type                   string            `unit:"type" json:"type"`
+	Dictionary             string            `unit:"dictionary" json:"dictionary"`
+	Class                  string            `unit:"class" json:"class"`
+	VoiceType              string            `unit:"voice_type" json:"voice_type"`
+	Accent                 string            `unit:"accent" json:"accent"`
+	BannerFaction          string            `unit:"banner_faction" json:"banner_faction"`
+	BannerHoly             string            `unit:"banner_holy" json:"banner_holy"`
+	Soldier                *Soldier          `unit:"soldier" json:"soldier"`
+	Officer                string            `unit:"officer" json:"officer"`
+	MountEffect            *MountEffect      `unit:"mount_effect" json:"mount_effect"`
+	Attributes             []string          `unit:"attributes" json:"attributes"`
+	Formation              *Formation        `unit:"formation" json:"formation"`
+	StatHealth             *Health           `unit:"stat_health" json:"stat_health"`
+	StatPrimary            *Weapon           `unit:"stat_pri" json:"stat_pri"`
+	StatPrimaryAttribute   *WeaponAttributes `unit:"stat_pri_attr" json:"stat_pri_attr"`
+	StatSecondary          *Weapon           `unit:"stat_sec" json:"stat_sec"`
+	StatSecondaryAttribute *WeaponAttributes `unit:"stat_sec_attr" json:"stat_sec_attr"`
+	StatPrimaryArmor       *Armor            `unit:"Stat_pri_armor" json:"Stat_pri_armor"`
+	StatSecondaryArmor     *Armor            `unit:"Stat_sec_armor" json:"Stat_sec_armor"`
+	StatHeat               *Heat             `unit:"stat_heat" json:"stat_heat"`
+	StatGround             *Ground           `unit:"stat_ground" json:"stat_ground"`
+	StatMental             string            `unit:"stat_mental" json:"stat_mental"`
+	StatChargeDistance     int               `unit:"stat_charge_dist" json:"stat_charge_dist"`
+	StatFireDelay          int               `unit:"stat_fire_delay" json:"stat_fire_delay"`
+	StatFood               string            `unit:"stat_food" json:"stat_food"`
+	StatCost               string            `unit:"stat_cost" json:"stat_cost"`
+	ArmorUpgradeLevels     []int             `unit:"armor_upgrade_levels" json:"armor_upgrade_levels"`
+	ArmorUpgradeModels     []string          `unit:"armor_upgrade_models" json:"armor_upgrade_models"`
+	Ownership              string            `unit:"ownership" json:"ownership"`
+	RecruitPriorityOffset  int               `unit:"recruit_priority_offset" json:"recruit_priority_offset"`
 }
 
 type Soldier struct {
@@ -272,16 +279,16 @@ type Soldier struct {
 
 type MountEffect struct {
 	Effects            map[string]int
-	Horse              int `unit:"horse"`
-	Camel              int `unit:"camel"`
-	Elephant           int `unit:"elephant"`
-	ElephantCannon     int `unit:"elephant_cannon"`
-	SimpleHorse        int `unit:"simple horse"`
-	MountLightWolf     int `unit:"mount_light_wolf"`
-	WargCamel          int `unit:"warg_camel"`
-	SwanGuardHorse     int `unit:"swan guard horse"`
-	Eorlingas          int `unit:"eorlingas"`
-	NorthernHeavyHorse int `unit:"northern heavy horse"`
+	Horse              int `unit:"horse" json:"horse"`
+	Camel              int `unit:"camel" json:"camel"`
+	Elephant           int `unit:"elephant" json:"elephant"`
+	ElephantCannon     int `unit:"elephant_cannon" json:"elephant_cannon"`
+	SimpleHorse        int `unit:"simple horse" json:"simple horse"`
+	MountLightWolf     int `unit:"mount_light_wolf" json:"mount_light_wolf"`
+	WargCamel          int `unit:"warg_camel" json:"warg_camel"`
+	SwanGuardHorse     int `unit:"swan guard horse" json:"swan guard horse"`
+	Eorlingas          int `unit:"eorlingas" json:"eorlingas"`
+	NorthernHeavyHorse int `unit:"northern heavy horse" json:"northern heavy horse"`
 }
 
 func (me *MountEffect) Unmarshal(effectInfo string) error {
@@ -291,7 +298,7 @@ func (me *MountEffect) Unmarshal(effectInfo string) error {
 		effects := strings.SplitN(effect, " ", 2)
 		effectKey := effects[0]
 		effectValue := effects[2]
-		effectInt, err := ParseModifier(effectValue)
+		effectInt, _ := ParseModifier(effectValue)
 		me.Effects[effectKey] = effectInt
 	}
 	return nil
@@ -299,26 +306,24 @@ func (me *MountEffect) Unmarshal(effectInfo string) error {
 
 // type Attributes struct{}
 type Formation struct {
-	SidetoSideSpacingTight  float64
-	FronttoBackSpacingTight float64
-	SidetoSideSpacingLoose  float64
-	FronttoBackSpacingLoose float64
-	DefaultRanks            int
-	PossibleFormations      []string
+	SidetoSideSpacingTight  float64  `json:"sideTight"`
+	FronttoBackSpacingTight float64  `json:"frontTight"`
+	SidetoSideSpacingLoose  float64  `json:"sideLoose"`
+	FronttoBackSpacingLoose float64  `json:"frontLoose"`
+	DefaultRanks            int      `json:"defaultRanks"`
+	PossibleFormations      []string `json:"possibleFormations"`
 }
 
-func (f *Formation) Unmarshal(formationInfo string) error {
-	lineSections := CleanLine(formationInfo)
-	formationStats := strings.Split(lineSections[1], ",")
-	numFields := len(formationStats)
+func (f *Formation) Unmarshal(formationInfo string, ul *UnitLogger, lr *LineRecord) (fieldErrors error) {
+	formationStats, numFields, fieldErrors := GetFieldInfo(formationInfo, 6, ul, lr)
 	if numFields < 6 {
 		return fmt.Errorf("error, insufficient number of fields for formation")
 	}
-	f.SidetoSideSpacingTight, _ = strconv.ParseFloat(formationStats[0], 64)
-	f.FronttoBackSpacingTight, _ = strconv.ParseFloat(formationStats[1], 64)
-	f.SidetoSideSpacingLoose, _ = strconv.ParseFloat(formationStats[2], 64)
-	f.FronttoBackSpacingLoose, _ = strconv.ParseFloat(formationStats[3], 64)
-	f.DefaultRanks, _ = strconv.Atoi(formationStats[4])
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.SidetoSideSpacingTight, formationStats[0], "sideToSideTight", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.FronttoBackSpacingTight, formationStats[1], "frontToBackTight", 1, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.SidetoSideSpacingLoose, formationStats[2], "sideToSideLoose", 2, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetFloatAttribute(&f.FronttoBackSpacingLoose, formationStats[3], "frontToBackLoose", 3, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
+	fieldErrors = errors.Join(fieldErrors, CheckSetIntAttribute(&f.DefaultRanks, formationStats[3], "frontToBackLoose", 3, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber))
 	f.PossibleFormations = append(f.PossibleFormations, formationStats[5])
 	if numFields > 6 {
 		f.PossibleFormations = append(f.PossibleFormations, formationStats[6])
@@ -331,126 +336,127 @@ type Health struct {
 	MountHP int
 }
 
-func (h *Health) Unmarshal(healthInfo string) error {
+func (h *Health) Unmarshal(healthInfo string, ul *UnitLogger, lr *LineRecord) error {
 	lineSections := CleanLine(healthInfo)
 	healthStats := strings.Split(lineSections[1], ",")
-	h.HP, _ = strconv.Atoi(strings.TrimSpace(healthStats[0]))
-	h.MountHP, _ = strconv.Atoi(strings.TrimSpace(healthStats[1]))
+	_ = CheckSetIntAttribute(&h.HP, healthStats[0], "Health", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	_ = CheckSetIntAttribute(&h.MountHP, healthStats[0], "Health", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
 	return nil
 }
 
 type Weapon struct {
-	Attack             int `json:"attack"`
-	Charge             int `json:"charge"`
+	Attack             int    `json:"attack"`
+	Charge             int    `json:"charge"`
 	MissileType        string `json:"missile_type"`
-	MissileRange       int `json:"missile_range"`
-	MissileAmmo        int `json:"missile_ammo"`
+	MissileRange       int    `json:"missile_range"`
+	MissileAmmo        int    `json:"missile_ammo"`
 	WeaponType         string `json:"weapon_type"`
 	TechType           string `json:"tech_type"`
 	DamageType         string `json:"damage_type"`
 	SoundType          string `json:"sound_type"`
 	FireEffect         string `json:"fire_effect"`
-	MinDelay           int `json:"min_delay"`
-	CompensationFactor int `json:"compensation_factor"`
+	MinDelay           int    `json:"min_delay"`
+	CompensationFactor int    `json:"compensation_factor"`
+	FieldName          string
 }
 
-
-func TrimValues(values []string) (tv []string) {
-	for _, value := range vlaues {
-		tv = append(tv, strings.TrimSpace(value))
-	}
-	return tv
-}
-
-func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) error {
-	conversionErrorFormat := fmt.Sprintf("line: %d | error converting %%s value of %%s to %%s: %%s\n")
+func (w *Weapon) Unmarshal(weaponInfo string, ul *UnitLogger, lr *LineRecord) (fieldErrors error) {
 	lineSections := CleanLine(weaponInfo)
+	w.FieldName = lineSections[0]
 	weaponStats := strings.Split(lineSections[1], ",")
 	numFields := len(weaponStats)
 	if numFields < 11 {
 		ul.FErrorf("error parsing attack stats, too few fields")
 	}
-	weaponsStats = TrimValues(weaponStats)
-	w.MissileType := weaponStats[2]
-	w.WeaponType := weaponStats[5]
-	w.TechType := weaponStats[6]
-	w.DamageType := weaponStats[7]
-	w.SoundType := weaponStats[8]
-	atk := weaponStats[0]
-	chg := weaponStats[1]
-	mr := weaponStats[3]
-	ma := weaponStats[4]
-	w.Attack, atkErr = strconv.Atoi(atk)
-	w.Charge, chgErr = strconv.Atoi(crg)
-	w.MissileRange, rangeErr = strconv.Atoi(mr)
-	w.MissileAmmo, ammoErr = strconv.Atoi(atk)
-	if atkErr != nil {
-		ul.FErrorf(conversionErrorFormat, "Attack", atk, atkErr)
-		return atkErr
-	}
-	if chgErr != nil {
-		ul.FErrorf(conversionErrorFormat, "Charge", chg, chgErr)
-		return chgErr
-	}
-	if rangeErr != nil {
-		ul.FErrorf(conversionErrorFormat, "MissileRange", mr, rangeErr)
-		return rangeErr
-	}
-	if ammoErr != nil {
-		ul.FErrorf(conversionErrorFormat, "MissileAmmo", ma, ammoErr)
-		return ammoErr
-	}
-	switch numFields {
-	case 11:
-		md := weaponStats[9]
-		cf := weaponStats[10]
-		w.MinDelay, delayErr = strconv.Atoi(md)
-		w.CompensationFactor, cfErr = strconv.Atoi(cf)
-		if delayErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-		return delayErr
-		}
-		if cfErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-		return cfErr
-		}
-	default:
-		w.FireEffect = weaponStats[9]
-		md := weaponStats[10]
-		cf := weaponStats[11]
-		w.MinDelay, delayErr = strconv.Atoi(md)
-		w.CompensationFactor, cfErr = strconv.Atoi(cf)
-		if delayErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "MinDelay", md, delayErr)
-		return delayErr
-		}
-		if cfErr != nil {
-		ul.FErrorf(conversionErrorFormat, lr.LineNumber, "CompensationFactor", cf, cfErr)
-		return cfErr
+	weaponStats = TrimValues(weaponStats)
+	for index, value := range weaponStats {
+		switch index {
+		case 0:
+			err := CheckSetIntAttribute(&w.Attack, value, "Attack", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
+		case 1:
+			err := CheckSetIntAttribute(&w.Charge, value, "Charge", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
+		case 2:
+			SetStrAttribute(&w.MissileType, value, "MissileType", ul, lr.LineNumber)
+		case 3:
+			err := CheckSetIntAttribute(&w.MissileRange, value, "MissileRange", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
+		case 4:
+			err := CheckSetIntAttribute(&w.MissileAmmo, value, "MissileAmmo", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
+		case 5:
+			SetStrAttribute(&w.WeaponType, value, "WeaponType", ul, lr.LineNumber)
+		case 6:
+			SetStrAttribute(&w.TechType, value, "TechType", ul, lr.LineNumber)
+		case 7:
+			SetStrAttribute(&w.DamageType, value, "DamageType", ul, lr.LineNumber)
+		case 8:
+			SetStrAttribute(&w.SoundType, value, "SoundType", ul, lr.LineNumber)
+		case 9:
+			if numFields == 11 {
+				err := CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+				if err != nil {
+					fieldErrors = errors.Join(fieldErrors, err)
+				}
+			} else {
+				w.FireEffect = value
+				SetStrAttribute(&w.FireEffect, value, "FireEffect", ul, lr.LineNumber)
+			}
+		case 10:
+			if numFields == 11 {
+				err := CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+				if err != nil {
+					fieldErrors = errors.Join(fieldErrors, err)
+				}
+			} else {
+				err := CheckSetIntAttribute(&w.MinDelay, value, "MinDelay", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+				if err != nil {
+					fieldErrors = errors.Join(fieldErrors, err)
+				}
+			}
+		case 11:
+			err := CheckSetIntAttribute(&w.CompensationFactor, value, "CompensationFactor", index, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+			if err != nil {
+				fieldErrors = errors.Join(fieldErrors, err)
+			}
+		default:
+			break
 		}
 	}
 	jsonBytes, _ := json.Marshal(w)
 	sb := strings.Builder{}
-	sb.WriteByte(jsonBytes)
-	jsonString := sb.String
-	ul.FDebugf("line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
-	return nil
+	sb.Write(jsonBytes)
+	jsonString := sb.String()
+	ul.FDebugf("Line: %d | Unmarshaled to %s\n", lr.LineNumber, jsonString)
+	return fieldErrors
+}
+
+func (w Weapon) Marshal() (field string) {
+	return field
 }
 
 type WeaponAttributes struct {
-	Attributes map[string][bool]
-	AP         BoolAttribute `unit:"ap"`            // armour piercing. Only counts half of target's armour
-	BP         BoolAttribute `unit:"bp"`            // body piercing. Missile can pass through men and hit those behind
-	Spear      BoolAttribute `unit:"spear"`         // Used for long spears. Gives bonuses fighting cavalry, and penalties against infantry
-	LongPike   BoolAttribute `unit:"long_pike"`     // Use very long pikes. Phalanx capable units only
-	ShortPike  BoolAttribute `unit:"short_pike"`    // Use shorter than normal spears.
-	Prec       BoolAttribute `unit:"prec"`          // Missile weapon is only thrown/ fired just before charging into combat
-	Thrown     BoolAttribute `unit:"thrown"`        // The missile type if thrown rather than fired
-	launching  BoolAttribute `unit:"launching"`     // attack may throw target men into the air
-	Area       BoolAttribute `unit:"area"`          // attack affects an area, not just one man
-	LightSpear BoolAttribute `unit:"light_spear"`   // The unit when braced has various protecting mechanisms versus cavalry charges from the frontk
-	SpearBonus BoolAttribute `unit:"spear_bonus_x"` // attack bonus against cavalry. x = 2, 4, 6, 8, 10 or 12
-
+	Attributes map[string]bool
+	AP         BoolAttribute `unit:"ap" json:"ap"`                       // armour piercing. Only counts half of target's armour
+	BP         BoolAttribute `unit:"bp" json:"bp"`                       // body piercing. Missile can pass through men and hit those behind
+	Spear      BoolAttribute `unit:"spear" json:"spear"`                 // Used for long spears. Gives bonuses fighting cavalry, and penalties against infantry
+	LongPike   BoolAttribute `unit:"long_pike" json:"long_pike"`         // Use very long pikes. Phalanx capable units only
+	ShortPike  BoolAttribute `unit:"short_pike" json:"short_pike"`       // Use shorter than normal spears.
+	Prec       BoolAttribute `unit:"prec" json:"prec"`                   // Missile weapon is only thrown/ fired just before charging into combat
+	Thrown     BoolAttribute `unit:"thrown" json:"thrown"`               // The missile type if thrown rather than fired
+	Launching  BoolAttribute `unit:"launching" json:"launching"`         // attack may throw target men into the air
+	Area       BoolAttribute `unit:"area" json:"area"`                   // attack affects an area, not just one man
+	LightSpear BoolAttribute `unit:"light_spear" json:"light_spear"`     // The unit when braced has various protecting mechanisms versus cavalry charges from the frontk
+	SpearBonus BoolAttribute `unit:"spear_bonus_x" json:"spear_bonus_x"` // attack bonus against cavalry. x = 2, 4, 6, 8, 10 or 12
 }
 
 type Armor struct {
@@ -458,10 +464,26 @@ type Armor struct {
 	DefenseSkill int
 	Shield       int
 	Sound        string
+	FieldName    string
 }
 
-type ArmorEx struct {
+func (a *Armor) Unmarshal(armorInfo string, ul *UnitLogger, lr *LineRecord) (fieldErrors error) {
+	armorStats, numFields, err := GetFieldInfo(armorInfo, 4, ul, lr)
+	ul.FInfof("[INFO] Line: %d | %d fields detected", lr.LineNumber, numFields)
+	if err != nil {
+		fieldErrors = errors.Join(fieldErrors, err)
+	}
+	armorErr := CheckSetIntAttribute(&a.Armor, armorStats[0], "armor", 0, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	defErr := CheckSetIntAttribute(&a.Armor, armorStats[1], "defense skill", 1, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	shieldErr := CheckSetIntAttribute(&a.Armor, armorStats[2], "shield", 2, ul, DefaultErrorFormat, DefaultInfoFormat, lr.LineNumber)
+	SetStrAttribute(&a.Sound, armorStats[3], "sound", ul, lr.LineNumber)
+	if armorErr != nil || defErr != nil || shieldErr != nil {
+		fieldErrors = errors.Join(fieldErrors, armorErr, defErr, shieldErr)
+	}
+	return fieldErrors
 }
+
+type ArmorEx struct{}
 type Heat struct{}
 type Ground struct{}
 type Mental struct{}

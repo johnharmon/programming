@@ -2,7 +2,7 @@
 
 #### FILTERS ####
 # Filters are used for data processing, extraction, transformation, and manipulation
-# If you are an environment of ansible-core >= 2.10 you can get a list of lookups plugins ansible knows about by running:
+# If you are an environment of ansible-core >= 2.10 you can get a list of filter plugins ansible knows about by running:
 #   ansible-doc -t filter --list
 
 
@@ -60,7 +60,7 @@
     msg: |
       Encoded value: "{{ b64_encoded_string }}"
       Decoded value: "{{ b64_decoded_string }}"
-    # the pip ('|') symbol here for yaml indicates a block scalar, telling the parser that everything underneath the msg block up until the first unindented line is to be breated as a multi line string where whitepace including new lines is preserverd
+    # the pipe ('|') symbol here for yaml indicates a block scalar, telling the parser that everything underneath the msg block up until the first unindented line is to be breated as a multi line string where whitepace including new lines is preserverd
     # Block scalar documentation: https://yaml-multiline.info/#:~:text=Block%20Scalars,-A%20block%20scalar&text=If%20you%20would%20like%20them,by%20putting%20two%20newlines%20in.
 
 - name: "Get absolute filepaths for role files"
@@ -82,14 +82,12 @@
 
 - name: "Extract information from json and yaml files"
   ansible.builtin.set_fact:
-    #test: true
     yaml_vars: "{{ lookup('ansible.builtin.file', role_path ~ '/files/info.yml') | ansible.builtin.from_yaml }}"
     # The from_yaml filter will attempt to convert given input into a proper variable structure using the yaml serializer
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_yaml_filter.html
     json_vars: "{{ lookup('ansible.builtin.file', role_path ~ '/files/info.json') | ansible.builtin.from_json }}"
     # The from_json filter will attempt to convert given input into a proper variable structure using the json serializer
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/from_json_filter.html
-    #
 
 - name: "Debug our serialized variables"
   ansible.builtin.debug:
@@ -117,10 +115,10 @@
 - name: "Convert items to dictionary and vice versa"
   ansible.builtin.set_fact:
     myitems2dict: "{{ myitems | ansible.builtin.items2dict }}"
-    # The ansible.builtin.items2dict takes a list of dictionaries with a key and a value entry, ant combines all those into one dictionary
+    # The ansible.builtin.items2dict takes a list of dictionaries with a key and a value entry, and combines all those into one dictionary
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/items2dict_filter.html
     mydict2items: "{{ mydict | ansible.builtin.dict2items }}"
-    # The ansible.builtin.dict2items takes a dictionary and converts it to a list of dictionaries with a key and value entry (literal inverse of items2dict
+    # The ansible.builtin.dict2items takes a dictionary and converts it to a list of dictionaries with a key and value entry (literal inverse of items2dict)
     # Filter docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dict2items_filter.html
 
 - name: "Debug transformed data structures"
