@@ -1,0 +1,4 @@
+FROM registry.redhat.io/ansible-automation-platform/ansible-builder-rhel as RHEL9-BASE
+
+RUN dnf -y install nmap-ncat  net-tools
+

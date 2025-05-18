@@ -1,32 +1,54 @@
+-- OPTIONS SETTING
+vim.opt.signcolumn = "yes"
+vim.opt.scrolloff = 10
+vim.opt.updatetime = 50
+vim.opt.colorcolumn = "80"
+-- -- UNDO OPTIONS
+vim.opt.undodir = os.getenv("HOME") .. "/.vim/undodir"
+vim.opt.undofile = true
+-- -- END UNDO OPTIONS
+-- -- TAB OPTIONS
 vim.opt.tabstop = 4
-vim.opt.autoindent = true
-vim.opt.tildeop = true
+vim.opt.softtabstop = 4
+vim.opt.shiftwidth = 4
+vim.opt.expandtab = true
+-- -- END TAB OPTIONS
+-- -- LINE NUMBER OPTIONS
 vim.opt.number = true
+vim.opt.relativenumber = true
+-- -- END LINE NUMBER OPTIONS
+-- -- SPLIT OPTIONS
 vim.opt.splitright = true
-vim.opt.tildeop = true
 vim.opt.splitbelow = true
+-- -- END SPLIT OPTIONS
+vim.opt.tildeop = true
 vim.opt.showcmd = true
-vim.opt.hlsearch = true
+--vim.opt.hlsearch = true
+vim.opt.incsearch = true
+vim.opt.termguicolors = true
 vim.opt.smartcase = true
 vim.opt.ignorecase = true
+vim.opt.autoindent = true
+vim.opt.tildeop = true
 vim.opt.linebreak = true
 vim.opt.showbreak = "---->"
-vim.opt.breakindent = true
-vim.opt.virtualedit = { "block", "onemore" }
 vim.opt.laststatus = 2
 vim.opt.foldlevelstart = 0
+vim.opt.virtualedit = { "block", "onemore" }
 vim.opt.tabstop = 4
+vim.opt.breakindent = true
 vim.opt.shiftwidth = 4
 vim.opt.expandtab = true
 vim.opt.showtabline = 1
 vim.g.mapleader = " "
+-- END OPTIONS SETTING
 function Nnoremap()
 	local opts = { noremap = true, silent = true }
 	local leader = " "
-	vim.keymap.set("n", "<CR>", "i<CR><ESC>", opts)
-	vim.keymap.set("n", "<C-j>", "<C-w>j", opts)
-	vim.keymap.set("n", "<C-k>", "<C-w>k", opts)
-	vim.keymap.set("n", "<C-h>", "<C-w>h", opts)
+	vim.keymap.set("n", "-", "ddp", opts)
+	vim.keymap.set("n", "_", "ddkP", opts)
+	vim.keymap.set("v", "-", "dp", opts)
+	vim.keymap.set("v", "_", "dkP", opts)
 	vim.keymap.set("n", "<C-l>", "<C-w>l", opts)
 	vim.keymap.set("n", "<S-j>", "<pagedown>", opts)
 	vim.keymap.set("n", "<S-k>", "<pageup>", opts)
@@ -48,20 +70,52 @@ function Nnoremap()
 	-- Remaps to allow for <S-J> and <S-K> functionality in case i don't like the pager toggle funciton lol
 	vim.keymap.set("n", "<Leader>j", "S-j", opts)
 	vim.keymap.set("n", "<Leader>k", "S-K", opts)
+	vim.keymap.set("n", "Y", "yg$")
+	vim.keymap.set("n", "J", "mzJ`z")
+	vim.keymap.set("n", "n", "nzzzv")
+	vim.keymap.set("n", "N", "Nzzzv")
+	vim.keymap.set("n", "<leader>y", '"+y')
+	vim.keymap.set("n", "<leader>Y", '"+Y')
+	vim.keymap.set("n", "Q", "<nop>")
+	vim.keymap.set("n", "<leader>d", '"_d')
+	vim.keymap.set("n", "<C-f>", "<cmd>silent !tmux neww tmux-sessionizer<CR>")
+	-- QUICKFIX NAVIGATION
+	vim.keymap.set("n", "<C-k>", "<cmd>cnext<CD>zz")
+	vim.keymap.set("n", "<C-j>", "<cmd>cprev<CD>zz")
+	vim.keymap.set("n", "<<leader>k", "<cmd>lnext<CD>zz")
+	vim.keymap.set("n", "<<leader>j", "<cmd>lprev<CD>zz")
+	-- END QUICKFIX NAVIGATION
+	-- GET FROM HIS VIDEO WHERE HE IS COVERING IT WITH HIS SUTPID HEAD
+	vim.keymap.set("n", "<leader>s", ":%s/\\<<C-r><C-w>\\>/<C-r><C-w>/gI<Left><Left><Left>")
+end
+Nnoremap()
+vim.api.nvim_set_keymap("n", "K", "<cmd>lua vim.lsp.buf.hover()<CR>", { noremap = true, silent = true })
+
+function Xnoremap()
+	vim.keymap.set("x", "<leader>p", '"_dP') -- Deletes/pastes over word and delets it into the void register so you keep current default regisgter contents
+end
+Xnoremap()
+
+function Inoremap()
+	vim.keymap.set("i", "jk", "<ESC>", { noremap = true })
 end
 
-Nnoremap()
+Inoremap()
+
+function Vnoremap()
+	vim.keymap.set("v", "J", ":m '>+1<CR>gv=gv")
+	vim.keymap.set("v", "K", ":m '<-2<CR>gv=gv")
+	vim.keymap.set("v", "<leader>y", '"+y')
+	vim.keymap.set("v", "<leader>d", '"_d')
+end
+Vnoremap()
+
 vim.api.nvim_create_autocmd("FileType", {
 	pattern = "netrw",
 	callback = function()
 		vim.opt_local.relativenumber = true
 	end,
 })
-function inoremap()
-	vim.keymap.set("i", "jk", "<ESC>", { noremap = true })
-end
-
-inoremap()
 local opts = { noremap = true, silent = true }
 
 -- Variable to track the toggle state
@@ -92,6 +146,7 @@ vim.cmd([[
 
     " List your plugins here, for example:
       " Plug 'ThePrimeagen/vim-be-good'
+      Plug 'towolf/vim-helm'
 
         call plug#end()
         ]])
@@ -229,7 +284,6 @@ vim.opt.ignorecase = true
 vim.opt.smartcase = true
 
 -- Keep signcolumn on by default
-vim.opt.signcolumn = "yes"
 
 -- Decrease update time
 vim.opt.updatetime = 250
@@ -255,7 +309,6 @@ vim.opt.inccommand = "split"
 vim.opt.cursorline = true
 
 -- Minimal number of screen lines to keep above and below the cursor.
-vim.opt.scrolloff = 10
 
 -- [[ Basic Keymaps ]]
 --  See `:help vim.keymap.set()`
