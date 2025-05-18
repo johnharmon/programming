@@ -125,6 +125,7 @@ type Cell struct {
 	ActiveLineLength      int
 	LogicalRowIdx         int
 	EffecitveRowIdx       int
+	LogCh                 chan string
 	BufferLen             int
 	Logger                io.Writer
 	LogFile               *os.File
@@ -136,8 +137,14 @@ func (oc *Cell) Display(o io.Writer, env *Env) {
 	fmt.Fprint(o, formattedContent)
 }
 
+func (cell *Cell) RunLogger() {
+	for msg := range cell.LogCh {
+		fmt.Fprint(cell.Logger, msg)
+	}
+}
+
 func (cell *Cell) Log(message string, a ...any) {
-	fmt.Fprintf(cell.Logger, message+"\n", a...)
+	cell.LogCh <- fmt.Sprintf(message+"\n", a...)
 }
 
 func (oc *Cell) OverWrite(newContent []byte) {
@@ -208,10 +215,15 @@ func (cell *Cell) ScrollLine(scrollVector int) {
 	}
 }
 
+func (cell *Cell) SetCursorPositionFromActiveLine() {
+	cell.DisplayCursorPosition = cell.ActiveLineLength
+}
+
 func (cell *Cell) IncrActiveLine(incr int) int {
 	numLines := len(cell.DisplayBuffer.Lines)
 	cell.ActiveLineIdx = (cell.ActiveLineIdx + (incr % numLines) + numLines) % numLines
 	cell.ActiveLineLength = cell.GetALL()
+	cell.DisplayCursorPosition = cell.ActiveLineLength
 	return cell.ActiveLineIdx
 	/* Previous Line broken down:
 	1) (incr % numLines) truncates sufficiently large negative idexes such that only the remaider of all their wraparounds is subtracted from the current index
@@ -263,9 +275,14 @@ func (cell *Cell) Cleanup(closer chan interface{}, fd int, oldState *term.State)
 func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 	if b == 3 {
 		ch <- struct{}{}
+	} else if b == 13 {
+		cell.ScrollLine(1)
+		cell.SetCursorPositionFromActiveLine()
+		cell.DisplayActiveLine()
 	} else {
 		isMod, modSeq := isModificationByte(b)
 		if isMod {
+			HandleModSequence(cell, modSeq)
 			esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
 			if esc.Name == "Backspace" {
 				debug = cell.DeleteDisplayByteByBuffer(-1)
@@ -309,6 +326,46 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 		}
 	}
 	return debug
+}
+
+func HandleModSequence(cell *Cell, modSeq *ModificationSequence) {
+	debug := []string{}
+	mod, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
+	if mod.Name == "Backspace" {
+		debug = cell.DeleteDisplayByteByBuffer(-1)
+		cell.DisplayActiveLine()
+		DisplayDebugInfo(cell, "HandleByte", debug)
+	} else if mod.Name == "Delete" {
+		debug = cell.DeleteDisplayByteByBuffer(0)
+		cell.DisplayActiveLine()
+		DisplayDebugInfo(cell, "HandleByte", debug)
+	} else if mod.Name == "LeftArrow" {
+		cell.IncrCursor(-1)
+		fmt.Fprint(cell.Out, "\x1b[1D")
+		//}
+		DisplayDebugInfo(cell, "HandleByte", debug)
+	} else if mod.Name == "RightArrow" {
+		oldPos := cell.DisplayCursorPosition
+		cell.IncrCursor(1)
+		if oldPos < cell.DisplayCursorPosition {
+			fmt.Fprintf(cell.Out, "\x1b[1C")
+		}
+		DisplayDebugInfo(cell, "HandleByte", debug)
+	} else if mod.Name == "UpArrow" {
+		cell.ScrollLine(-1)
+		// cell.IncrActiveLine(-1)
+		cell.DisplayActiveLine()
+		cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
+		cell.MoveCursorToEOL()
+		DisplayDebugInfo(cell, "HandleByte", debug)
+	} else if mod.Name == "DownArrow" {
+		cell.ScrollLine(1)
+		// cell.IncrActiveLine(1)
+		cell.DisplayActiveLine()
+		cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
+		cell.MoveCursorToEOL()
+		DisplayDebugInfo(cell, "HandleByte", debug)
+	}
 }
 
 func (cell *Cell) DeleteDisplayByteByBuffer(offset int) (debug []string) {
@@ -571,6 +628,7 @@ func NewDefaultCellWithFileLogger() (cell *Cell) {
 	cell.DisplayBuffer = &DisplayBuffer{Buffer: make([]byte, 4096), Lines: make([][]byte, 100)}
 	cell.DisplayBuffer.AllocateLines(4096)
 	cell.BufferLen = len(cell.DisplayBuffer.Lines)
+	cell.LogCh = make(chan string, 1000)
 	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
@@ -584,7 +642,8 @@ func NewDefaultCellWithFileLogger() (cell *Cell) {
 		}
 		cell.Logger, cell.LogFile = f, f
 		cell.LogLink = "term-reader-logger.txt"
-		fmt.Printf("Opened logger at %s\n", f.Name())
+		cell.Log("\x1b[2J==========LOG START=========")
+		cell.Log("Opened New logger at %s", f.Name())
 	}
 	return cell
 }
@@ -821,9 +880,6 @@ func DisplayDebugInfo(cell *Cell, callingInfo string, extras []string) {
 		}
 	}
 	fmt.Fprintf(cell.Out, "%s%s", cursorUp, cursorRight)
-}
-
-func HandleModSequence(cell *Cell, esc *ModificationSequence) {
 }
 
 func RedrawLine(mod *ModificationSequence, cell *Cell) (newLine []byte, err error) {
@@ -1098,6 +1154,7 @@ func main() {
 		MakeRawTerm(config)
 	} else if config.Debug {
 		cell := NewDefaultCellWithFileLogger()
+		go cell.RunLogger()
 		cell.DisplayLoop(env)
 		// RunScanner(env)
 	}
