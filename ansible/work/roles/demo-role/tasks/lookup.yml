@@ -24,7 +24,6 @@
   ansible.builtin.debug:
     var: file_content
 
-
 - name: "Lookup a list of multiple files"
   ansible.builtin.set_fact:
     file_list: "{{ lookup('ansible.builtin.fileglob', role_path ~ '/files/*.txt') }}"
@@ -34,7 +33,10 @@
 
 - name: "Debug file_content"
   ansible.builtin.debug:
-    var: file_list
+    msg: |
+      {% for file in file_list %}
+        - {{ file }} 
+      {% endfor %}
 
 - name: "Lookup info from a csv file"
   ansible.builtin.set_fact:
@@ -83,7 +85,7 @@
 - name: "Lookup variable names matching a  regex pattern"
   ansible.builtin.set_fact:
     user_vars: "{{ lookup('ansible.builtin.varnames', '.*user.*') }}"
-    # ansible.builtin.env looks up variable names from the ansible runtime that match a pattern
+    # ansible.builtin.varnames looks up variable names from the ansible runtime that match a pattern
     # In this case, we match all variables containing the word user in them
     # Lookup docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/varnames_lookup.html
 
@@ -103,8 +105,26 @@
     # In this example, the lookup gets ran looking for 'variable' concatenated with the value from myvar ('name')
     # Ths result of this is that it looks for a variable called 'variablename' which has a value of hello
     # The value of our 'derived_value' is then set to hello
+    # Honestly if you end up having to use this I would consider checking the rest of your logic to see if it is really necessary, not recommending this unless you really NEED it
     # Lookup docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/env_lookup.html
 
 - name: "Debug var lookup result"
   ansible.builtin.debug:
     var: derived_value
+
+- name: "Set fact from lines lookup"
+  ansible.builtin.set_fact:
+    lookup_lines: "{{ lookup('ansible.builtin.lines', 'ls -l ~/') }}"
+  # The lines lookup executes a command and returns the output as a list of lines
+  # This filter can have issues and not treat what shows up as separate lines in the shell as actual separate lines
+  # Lookup Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lines_lookup.html
+
+- name: "Demonstrate lines lookup"
+  vars:
+    lookup_lines: "{{ lookup('ansible.builtin.lines', 'ls -l ~/') }}"
+  ansible.builtin.debug:
+  # I am also demonstrating the ability to use jinja templating in a debug (or any block scalar)
+    msg: |
+      {% for line in (lookup('ansible.builtin.lines', 'ls -l ~/') | ansible.builtin.split(',')) %}
+        {{- line}}
+      {% endfor %}

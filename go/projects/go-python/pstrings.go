@@ -95,21 +95,72 @@ func (p PythonString) ExpandTabs(size int) PythonString {
 }
 
 func (p PythonString) Find(sub string) int {
+	pBytes := []byte(p)
+	sBytes := []byte(sub)
 	matched := -1
-	for i, r := range p {
-		if byte(r) == sub[0] {
+	for i, b := range pBytes {
+		if i+len(sBytes) > len(pBytes) {
+			matched = -1
+			break
+		}
+		if b == sBytes[0] {
 			matched = i
-			for si, sr := range sub {
-				if byte(sr) != p[i+si] {
+			for si, sb := range sBytes {
+				if i+si < len(pBytes) || sb != pBytes[i+si] {
 					matched = -1
 					break
 				}
 			}
 			if matched != -1 {
-				//return matched
 				break
 			}
 		}
 	}
 	return matched
+}
+
+func (p PythonString) FastFind(sub string) int {
+	// Only difference between this and the normal find is that this will detect the start of the substring inside of the matching search and skip ahead to that index if the match fails
+	pBytes := []byte(p)
+	subBytes := []byte(sub)
+	pLen := len(pBytes)
+	sLen := len(subBytes)
+	nextMatchStarted := false
+	matched := -1
+	nextMatchStart := 1
+	for i := 0; i < pLen; i += nextMatchStart {
+		if i+sLen > pLen {
+			break
+		}
+		if pBytes[i] == subBytes[0] {
+			matched = i
+			nextMatchStart = 1
+			nextMatchStarted = false
+			for si := 0; si < sLen; si++ {
+				if i+si >= pLen || subBytes[si] != pBytes[i+si] {
+					matched = -1
+					break
+				}
+				if subBytes[si] == subBytes[0] && !nextMatchStarted {
+					nextMatchStart = si
+					nextMatchStarted = true
+				}
+			}
+			if matched != -1 {
+				break
+			}
+		}
+	}
+	return matched
+}
+
+func (p PythonString) Join(s []string) PythonString {
+	var ps strings.Builder
+	for si, sv := range s {
+		if si > 0 {
+			ps.WriteString(string(p))
+		}
+		ps.WriteString(sv)
+	}
+	return PythonString(ps.String())
 }

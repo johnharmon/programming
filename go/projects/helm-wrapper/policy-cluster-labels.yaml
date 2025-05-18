@@ -1,11 +1,11 @@
  #meta
 {{ "{{" }}
 {{- if (.Values.enabled | default false) }}
-{{- $allClusterSets := $.Values.hubClusterSets }}
+{{- $allClusterSets := $.Values.hubClusterSets -}}
 {{- range $clusterSetKey, $clusterSetValue := $allClusterSets }}
-{{hub- $hubClusterSet := $.Values.hubClusterSet | default "hub" }}
+{{hub- $hubClusterSet := $.Values.hubClusterSet | default "hub" -hub}}
 {{- $policyName := printf "policy-%s-cluster-labels" $clusterSetKey }}
-{{hub $configPolicyName := printf "cluster-labels-%s" $clusterSetKey }}
+{{hub $configPolicyName := printf "cluster-labels-%s" $clusterSetKey hub}}
 {{- $placementName := printf "placement-%s" $policyName }}
  #meta
 apiVersion: policy.open-cluster-management.io/v1
