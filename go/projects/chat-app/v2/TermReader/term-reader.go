@@ -283,41 +283,6 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 		isMod, modSeq := isModificationByte(b)
 		if isMod {
 			HandleModSequence(cell, modSeq)
-			// 		esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
-			//		if esc.Name == "Backspace" {
-			//			debug = cell.DeleteDisplayByteByBuffer(-1)
-			//			cell.DisplayActiveLine()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "Delete" {
-			//			debug = cell.DeleteDisplayByteByBuffer(0)
-			//			cell.DisplayActiveLine()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "LeftArrow" {
-			//			cell.IncrCursor(-1)
-			//			fmt.Fprint(cell.Out, "\x1b[1D")
-			//			//}
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "RightArrow" {
-			//			oldPos := cell.DisplayCursorPosition
-			//			cell.IncrCursor(1)
-			//			if oldPos < cell.DisplayCursorPosition {
-			//				fmt.Fprintf(cell.Out, "\x1b[1C")
-			//			}
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "UpArrow" {
-			//			cell.ScrollLine(-1)
-			//			// cell.IncrActiveLine(-1)
-			//			cell.DisplayActiveLine()
-			//			cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
-			//			cell.MoveCursorToEOL()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "DownArrow" {
-			//			cell.ScrollLine(1)
-			//			// cell.IncrActiveLine(1)
-			//			cell.DisplayActiveLine()
-			//			cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
-			//			cell.MoveCursorToEOL()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
 		} else {
 			debug = cell.WriteDisplayByteByBuffer(b)
 			cell.DisplayActiveLine()
