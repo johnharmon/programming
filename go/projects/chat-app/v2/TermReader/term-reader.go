@@ -20,6 +20,8 @@ const (
 	MD = "\033[1B"
 )
 
+var TermHeight, TermWidth = GetTermSize()
+
 type Env struct {
 	Config       *FlagConfig
 	DebugWriter  io.Writer
@@ -105,6 +107,21 @@ type FormatInfo struct {
 	TermLength     int      // how many lines long including headers and footers the ouput is
 }
 
+type VisibleBuffer struct {
+	StartIndex    int
+	EndIndex      int
+	RawStartIndex int
+	RawEndIndex   int
+}
+
+func (vb VisibleBuffer) Render(cell *Cell) {
+	fmt.Fprintf(cell.Out, "\x1b[%d;0H", vb.RawStartIndex)
+	displaySlice := cell.DisplayBuffer.Lines[vb.StartIndex : vb.EndIndex+1]
+	for i := 0; i <= vb.RawEndIndex-vb.RawStartIndex; i++ {
+		fmt.Fprintf(cell.Out, "%s\r\n", displaySlice[i])
+	}
+}
+
 type Cell struct {
 	formatInfo            *FormatInfo
 	RawContent            *bytes.Buffer
@@ -119,6 +136,7 @@ type Cell struct {
 	CursorLine            int
 	CursorColumn          int
 	DisplayBuffer         *DisplayBuffer
+	VisibleBuffer         *VisibleBuffer
 	DebugInfo             []string
 	CellHistory           []*Cell
 	ActiveLineIdx         int
@@ -130,6 +148,11 @@ type Cell struct {
 	Logger                io.Writer
 	LogFile               *os.File
 	LogLink               string
+}
+
+func (cell *Cell) ScrollVisibleBuffer(scrollVector int) {
+	cell.VisibleBuffer.StartIndex += scrollVector
+	cell.VisibleBuffer.EndIndex += scrollVector
 }
 
 func (oc *Cell) Display(o io.Writer, env *Env) {
@@ -432,6 +455,16 @@ type DisplayWrapper struct {
 
 func (es ModificationSequence) String() string {
 	return es.Name
+}
+
+func GetTermSize() (height int, width int) {
+	width, height, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		height = 10
+		width = 50
+		fmt.Printf("Error getting term size: %s\n", err)
+	}
+	return width, height
 }
 
 func MakeRawTerm(config *FlagConfig) {
