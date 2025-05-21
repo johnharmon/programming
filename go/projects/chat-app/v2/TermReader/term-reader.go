@@ -64,7 +64,7 @@ func (db *DisplayBuffer) Write(p []byte) (int, error) {
 
 func (db *DisplayBuffer) Reset() {
 	if cap(db.Buffer) > 4096 {
-		db.Buffer = make([]byte, 4096)
+		db.Buffer = make([]byte, 0, 4096)
 	} else {
 		clear(db.Buffer)
 		db.Buffer = db.Buffer[:0]
@@ -114,6 +114,10 @@ type VisibleBuffer struct {
 	RawEndIndex   int
 }
 
+func (vb VisibleBuffer) Size() int {
+	return vb.EndIndex - vb.StartIndex
+}
+
 func (vb VisibleBuffer) Render(cell *Cell) {
 	fmt.Fprintf(cell.Out, "\x1b[%d;0H", vb.RawStartIndex)
 	displaySlice := cell.DisplayBuffer.Lines[vb.StartIndex : vb.EndIndex+1]
@@ -122,12 +126,17 @@ func (vb VisibleBuffer) Render(cell *Cell) {
 	}
 }
 
+type VirtualBuffer struct {
+	Buf [][]byte
+}
+
 type Cell struct {
 	formatInfo            *FormatInfo
 	RawContent            *bytes.Buffer
 	RawInput              *bytes.Buffer
 	ContentReader         *bytes.Reader
 	Out                   io.Writer
+	VBuf                  [][]byte
 	In                    io.Reader
 	DisplayContent        *bytes.Buffer
 	CursorPosition        int
@@ -137,6 +146,7 @@ type Cell struct {
 	CursorColumn          int
 	DisplayBuffer         *DisplayBuffer
 	VisibleBuffer         *VisibleBuffer
+	VirtualBuffer         [][]byte
 	DebugInfo             []string
 	CellHistory           []*Cell
 	ActiveLineIdx         int
@@ -148,6 +158,35 @@ type Cell struct {
 	Logger                io.Writer
 	LogFile               *os.File
 	LogLink               string
+}
+
+func AllocateNestedBuffer(outerSize int, innerSize int) [][]byte {
+	outer := make([][]byte, 0, outerSize)
+	outer = AllocateBuffer(outer, innerSize)
+	return outer
+}
+
+func AllocateBuffer(b [][]byte, size int) [][]byte {
+	for i := range b {
+		b[i] = make([]byte, 0, size)
+	}
+	return b
+}
+
+func (cell *Cell) VirtualRender(vb *VisibleBuffer) [][]byte {
+	v := cell.DisplayBuffer.Lines[vb.StartIndex : vb.EndIndex+1]
+	return v
+}
+
+func (cell *Cell) MarkForRedraw(vBuf [][]byte) []int {
+	redrawLines := make([]int, cell.VisibleBuffer.Size())
+	vbuf := cell.VirtualRender(cell.VisibleBuffer)
+	for i, line := range vbuf {
+		if string(line) != string(cell.DisplayBuffer.Lines[i+cell.VisibleBuffer.StartIndex]) {
+			redrawLines = append(redrawLines, i)
+		}
+	}
+	return redrawLines
 }
 
 func (cell *Cell) ScrollVisibleBuffer(scrollVector int) {
