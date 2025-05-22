@@ -7,7 +7,7 @@
 		<value name="DemoDeviceModeEnabled">false</value>
 	</map>
 	<map name="DataCollectionSettings">
-		<value name="configuration_loaded_date">2025-04-30T19:48:31.116</value>
+		<value name="configuration_loaded_date">2025-04-18T18:40:14.715</value>
 		<value name="dataConsent">false</value>
 		<map name="hwProfilesHashes">
 			<map name="{b34a8d8b-32db-4270-a610-951c3ea5b260}">
@@ -16,7 +16,7 @@
 		</map>
 		<value name="initialProfilesSent">true</value>
 		<value name="needToSendSystemSensorsInfo">false</value>
-		<value name="session_ended">false</value>
+		<value name="session_ended">true</value>
 	</map>
 	<map name="Devices">
 		<binary name="UniqueDeviceIds">%00%01%00%00%00%00%00%005QHash%3CQUuid%2CUniqueDeviceIdStorage%3A%3AUniqueDeviceData%3E%00%00%00%00%02%B3J%8D%8B2%DBBp%A6%10%95%1C%3E%A5%B2%60%00%00%1B%1C%00%00%2A%00%00%00%00%1C%00A%009%00S%00W%00C%004%003%001%000%008%00V%00P%008%008%00%00%00%10%87%A1%14HN%C6%A4%97s%2FG%A3fj%25%24%D8%D9%80%0F%7B%9EJ%A0%B26%1F%D0%E1r%16%86%00%00%1B%1C%00%00%2A%02%00%00%00%1C%00A%009%00S%00W%00C%004%003%001%000%008%00V%00P%008%008%00%00%00%10%87%A1%14HN%C6%A4%97s%2FG%A3fj%25%24</binary>
@@ -25,7 +25,6 @@
 				<value name="ActiveHardwareProfileIndex">0</value>
 				<value name="BodyColor">0</value>
 				<value name="BrightnessLevel">0</value>
-				<value name="DeviceMemoryModeEnabled">true</value>
 				<value name="FirstDetected">2024-11-06T23:57:56.998Z</value>
 				<value name="Layout">1</value>
 				<binary name="LedChannelCounts">%00%01%00%00%00%00%00%00%0BQList%3Cint%3E%00%00%00%00%00</binary>
@@ -36,8 +35,6 @@
 				<value name="LightingMode">Software</value>
 				<value name="SleepModeEnabled">true</value>
 				<value name="SleepModeWaitDelaySec">300</value>
-				<value name="SoundNotificationsEnabled">false</value>
-				<value name="TaskbarBatteryIconEnabled">true</value>
 				<value name="UniqueDeviceId">{c7b9c326-12aa-450d-b259-658f4bdf7135}</value>
 				<value name="UniqueDongleId">{f49dac9f-569a-4fff-9b61-ede1a414e4c0}</value>
 			</map>
@@ -56,9 +53,6 @@
 				<value name="UniqueDeviceId">{ea608239-1644-4f85-88ca-54b1563de08f}</value>
 			</map>
 		</map>
-	</map>
-	<map name="HWPInfoPopup">
-		<value name="InfoPopupVisible">false</value>
 	</map>
 	<value name="Language">en</value>
 	<value name="LastDataCollectionConsentAppVersion">5.20.89</value>
@@ -84,7 +78,7 @@
 		<value name="-Users-johnharmon-Library-Application Support-Corsair-CUE5-sensors-UserProps">true</value>
 	</map>
 	<map name="SwUpdate">
-		<value name="LastCheckDate">2025-05-08</value>
+		<value name="LastCheckDate">2025-04-24</value>
 	</map>
 	<value name="defaultProfile">{6cd71b5b-3931-40b3-b349-10604b36d69e}</value>
 </config>

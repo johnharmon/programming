@@ -36,10 +36,10 @@ vim.opt.laststatus = 2
 vim.opt.foldlevelstart = 0
 vim.opt.virtualedit = { "block", "onemore" }
 vim.opt.tabstop = 4
+vim.opt.shell = "/opt/homebrew/bin/fish"
+--vim.opt.shell = "/bin/zsh -l"
 vim.opt.breakindent = true
-vim.opt.shell = "/bin/zsh -l"
 vim.opt.shiftwidth = 4
-vim.opt.shellcmdflag = "-c 'source ~/.zprofile; exec zsh'"
 vim.opt.expandtab = true
 vim.opt.showtabline = 1
 vim.g.mapleader = " "
@@ -48,15 +48,15 @@ function Nnoremap()
 	local opts = { noremap = true, silent = true }
 	local leader = " "
 	vim.keymap.set("n", "-", "ddp", opts)
-	vim.keymap.set("n", "<C-PageUp>", ":cprevious<CR>", opts)
-	vim.keymap.set("n", "<C-PageDown>", ":cnext<CR>", opts)
 	vim.keymap.set("n", "_", "ddkP", opts)
 	vim.keymap.set("v", "-", "dp", opts)
 	vim.keymap.set("v", "_", "dkP", opts)
 	vim.keymap.set("n", "<C-l>", "<C-w>l", opts)
 	vim.keymap.set("n", "<S-j>", "<pagedown>", opts)
-	vim.keymap.set("n", "<S-k>", "<pageup>", opts)
+	--vim.keymap.set("n", "<S-k>", "<pageup>", opts)
 	-- vim.keymap.set("n", "<C-u>", "viw<S-u>", opts)
+	vim.keymap.set("n", "<S-k>", vim.lsp.buf.hover, opts)
+	vim.keymap.set("n", "<leader>ic", ":set ignorecase! | echo 'set ic!'<CR>", opts)
 	vim.keymap.set("n", "<C-u>", "<C-u>zz", opts)
 	vim.keymap.set("n", "<C-d>", "<C-d>zz", opts)
 	vim.keymap.set("n", "dw", "lbdw", opts)
@@ -94,7 +94,6 @@ function Nnoremap()
 	vim.keymap.set("n", "<leader>s", ":%s/\\<<C-r><C-w>\\>/<C-r><C-w>/gI<Left><Left><Left>")
 end
 Nnoremap()
-vim.api.nvim_set_keymap("n", "K", "<cmd>lua vim.lsp.buf.hover()<CR>", { noremap = true, silent = true })
 
 function Xnoremap()
 	vim.keymap.set("x", "<leader>p", '"_dP') -- Deletes/pastes over word and delets it into the void register so you keep current default regisgter contents
@@ -152,7 +151,6 @@ vim.cmd([[
     " List your plugins here, for example:
       " Plug 'ThePrimeagen/vim-be-good'
       Plug 'towolf/vim-helm'
-  
 
         call plug#end()
         ]])
@@ -390,43 +388,6 @@ require("lazy").setup({
 	-- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
 	"tpope/vim-sleuth", -- Detect tabstop and shiftwidth automatically
 	"ThePrimeagen/vim-be-good",
-	{
-		"zaldih/themery.nvim",
-		lazy = false,
-		config = function()
-			require("themery").setup({
-				themes = {
-					"tokyodark",
-					"tokyonight-night",
-					"tokyonight-moon",
-					"tokyonight-storm",
-					"kanagawa",
-					"kanagawa-dragon",
-					"kanagawa-wave",
-					"rose-pine",
-					"rose-pine-moon",
-					"rose-pine-main",
-					"synthweave",
-					"synthweave-transparent",
-					"spaceduck",
-					"neovim_purple",
-					"embark",
-				},
-				livePreview = true,
-			})
-		end,
-	},
-
-	-- THEMES
-	"tiagovla/tokyodark.nvim",
-	"rebelot/kanagawa.nvim",
-	"rose-pine/neovim",
-	"samharju/synthweave.nvim",
-	"pineapplegiant/spaceduck",
-	"jthvai/lavender.nvim",
-	"unrealjo/neovim-purple",
-	"embark-theme/vim",
-	"Rigellute/shades-of-purple.vim",
 
 	-- NOTE: Plugins can also be added by using a table,
 	-- with the first argument being the link and the following
@@ -608,22 +569,20 @@ require("lazy").setup({
 			vim.keymap.set("n", "<leader>sr", builtin.resume, { desc = "[S]earch [R]esume" })
 			vim.keymap.set("n", "<leader>s.", builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
 			vim.keymap.set("n", "<leader><leader>", builtin.buffers, { desc = "[ ] Find existing buffers" })
-			vim.keymap.set("n", "<leader>sz", function()
-				builtin.find_files({
-					hidden = true,
-					no_ignore = true,
-					no_ignore_parent = true,
-				})
-			end, { desc = "[S]earch [F]iles" })
 
 			-- Slightly advanced example of overriding default behavior and theme
-			vim.keymap.set("n", "<leader>/", function()
-				-- You can pass additional configuration to Telescope to change the theme, layout, etc.
-				builtin.current_buffer_fuzzy_find(require("telescope.themes").get_dropdown({
-					winblend = 10,
-					previewer = false,
-				}))
-			end, { desc = "[/] Fuzzily search in current buffer" })
+			vim.keymap.set(
+				"n",
+				"<leader>/",
+				builtin.current_buffer_fuzzy_find,
+				{ desc = "[/] Fuzzily search in current buffer" }
+			)
+			-- You can pass additional configuration to Telescope to change the theme, layout, etc.
+			--builtin.current_buffer_fuzzy_find(require("telescope.themes").get_dropdown({
+			--winblend = 10,
+			--previewer = true,
+			--}))
+			--end, { desc = "[/] Fuzzily search in current buffer" })
 
 			-- It's also possible to pass additional configuration options.
 			--  See `:help telescope.builtin.live_grep()` for information about particular keys
@@ -1206,5 +1165,6 @@ require("lazy").setup({
 		},
 	},
 })
+
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
