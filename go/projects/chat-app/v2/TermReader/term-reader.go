@@ -107,18 +107,35 @@ type FormatInfo struct {
 	TermLength     int      // how many lines long including headers and footers the ouput is
 }
 
-type VisibleBuffer struct {
+type WindowBuffer [][]byte
+
+type Window struct {
 	StartIndex    int
+	StartLine     int
+	Buf           *WindowBuffer
+	Height        int
+	Width         int
+	StartCol      int
 	EndIndex      int
 	RawStartIndex int
 	RawEndIndex   int
 }
 
-func (vb VisibleBuffer) Size() int {
+func (vb Window) Size() int {
 	return vb.EndIndex - vb.StartIndex
 }
 
-func (vb VisibleBuffer) Render(cell *Cell) {
+func NewWindow(line int, column int, height int, width int) (w *Window) {
+	w = &Window{}
+	w.StartLine = line
+	w.StartCol = column
+	w.Height = height
+	w.Width = width
+	w.Buf = &WindowBuffer{}
+	return w
+}
+
+func (vb Window) Render(cell *Cell) {
 	fmt.Fprintf(cell.Out, "\x1b[%d;0H", vb.RawStartIndex)
 	displaySlice := cell.DisplayBuffer.Lines[vb.StartIndex : vb.EndIndex+1]
 	for i := 0; i <= vb.RawEndIndex-vb.RawStartIndex; i++ {
@@ -145,7 +162,7 @@ type Cell struct {
 	CursorLine            int
 	CursorColumn          int
 	DisplayBuffer         *DisplayBuffer
-	VisibleBuffer         *VisibleBuffer
+	Window                *Window
 	VirtualBuffer         [][]byte
 	DebugInfo             []string
 	CellHistory           []*Cell
@@ -173,25 +190,40 @@ func AllocateBuffer(b [][]byte, size int) [][]byte {
 	return b
 }
 
-func (cell *Cell) VirtualRender(vb *VisibleBuffer) [][]byte {
+func BufCmp(a []byte, b []byte) bool {
+	eq := true
+	if len(a) == len(b) {
+		for i := 0; i < len(a); i++ {
+			if a[i] != b[i] {
+				eq = false
+				break
+			}
+		}
+	} else {
+		eq = false
+	}
+	return eq
+}
+
+func (cell *Cell) VirtualRender(vb *Window) [][]byte {
 	v := cell.DisplayBuffer.Lines[vb.StartIndex : vb.EndIndex+1]
 	return v
 }
 
 func (cell *Cell) MarkForRedraw(vBuf [][]byte) []int {
-	redrawLines := make([]int, cell.VisibleBuffer.Size())
-	vbuf := cell.VirtualRender(cell.VisibleBuffer)
+	redrawLines := make([]int, cell.Window.Size())
+	vbuf := cell.VirtualRender(cell.Window)
 	for i, line := range vbuf {
-		if string(line) != string(cell.DisplayBuffer.Lines[i+cell.VisibleBuffer.StartIndex]) {
+		if !BufCmp(line, cell.DisplayBuffer.Lines[i+cell.Window.StartIndex]) {
 			redrawLines = append(redrawLines, i)
 		}
 	}
 	return redrawLines
 }
 
-func (cell *Cell) ScrollVisibleBuffer(scrollVector int) {
-	cell.VisibleBuffer.StartIndex += scrollVector
-	cell.VisibleBuffer.EndIndex += scrollVector
+func (cell *Cell) ScrollWindow(scrollVector int) {
+	cell.Window.StartIndex += scrollVector
+	cell.Window.EndIndex += scrollVector
 }
 
 func (oc *Cell) Display(o io.Writer, env *Env) {
