@@ -39,10 +39,11 @@ func (e Env) DWriteS(s string) {
 	fmt.Fprintf(e.DebugWriter, "%s", s)
 }
 
-type DisplayBuffer struct {
-	Buffer []byte
-	Lines  [][]byte
-	Size   int
+type DisplayBuffer struct { // This represents the full backing buffer to any window view
+	RawBuf     []byte
+	Lines      [][]byte
+	Size       int
+	ActiveLine int
 }
 
 func (db *DisplayBuffer) GetSize() int {
@@ -58,16 +59,16 @@ func (db *DisplayBuffer) AllocateLines(size int) {
 }
 
 func (db *DisplayBuffer) Write(p []byte) (int, error) {
-	db.Buffer = append(db.Buffer, p...)
+	db.RawBuf = append(db.RawBuf, p...)
 	return len(p), nil
 }
 
 func (db *DisplayBuffer) Reset() {
-	if cap(db.Buffer) > 4096 {
-		db.Buffer = make([]byte, 0, 4096)
+	if cap(db.RawBuf) > 4096 {
+		db.RawBuf = make([]byte, 0, 4096)
 	} else {
-		clear(db.Buffer)
-		db.Buffer = db.Buffer[:0]
+		clear(db.RawBuf)
+		db.RawBuf = db.RawBuf[:0]
 	}
 }
 
@@ -107,41 +108,44 @@ type FormatInfo struct {
 	TermLength     int      // how many lines long including headers and footers the ouput is
 }
 
-type WindowBuffer [][]byte
-
-type Window struct {
-	StartIndex    int
-	StartLine     int
-	Buf           *WindowBuffer
-	Height        int
-	Width         int
-	StartCol      int
-	EndIndex      int
-	RawStartIndex int
-	RawEndIndex   int
-}
-
-func (vb Window) Size() int {
-	return vb.EndIndex - vb.StartIndex
-}
-
-func NewWindow(line int, column int, height int, width int) (w *Window) {
-	w = &Window{}
-	w.StartLine = line
-	w.StartCol = column
-	w.Height = height
-	w.Width = width
-	w.Buf = &WindowBuffer{}
-	return w
-}
-
-func (vb Window) Render(cell *Cell) {
-	fmt.Fprintf(cell.Out, "\x1b[%d;0H", vb.RawStartIndex)
-	displaySlice := cell.DisplayBuffer.Lines[vb.StartIndex : vb.EndIndex+1]
-	for i := 0; i <= vb.RawEndIndex-vb.RawStartIndex; i++ {
-		fmt.Fprintf(cell.Out, "%s\r\n", displaySlice[i])
-	}
-}
+//type WindowBuffer struct {
+//	Lines  [][]byte
+//	Length int
+//}
+//
+//type Window struct { // Represents a sliding into its backing buffer of Window.Buf as well as the space it takes up in the terminal window
+//	StartIndex    int
+//	StartLine     int
+//	Buf           *DisplayBuffer
+//	Height        int
+//	Width         int
+//	StartCol      int
+//	EndIndex      int
+//	RawStartIndex int
+//	RawEndIndex   int
+//}
+//
+//func (w Window) Size() int {
+//	return w.Height
+//}
+//
+//func NewWindow(line int, column int, height int, width int) (w *Window) {
+//	w = &Window{}
+//	w.StartLine = line
+//	w.StartCol = column
+//	w.Height = height
+//	w.Width = width
+//	w.Buf = &DisplayBuffer{}
+//	return w
+//}
+//
+//func (w Window) Render(cell *Cell) {
+//	fmt.Fprintf(cell.Out, "\x1b[%d;0H", w.RawStartIndex)
+//	displaySlice := cell.DisplayBuffer.Lines[w.StartIndex : w.EndIndex+1]
+//	for i := 0; i <= w.RawEndIndex-w.RawStartIndex; i++ {
+//		fmt.Fprintf(cell.Out, "%s\r\n", displaySlice[i])
+//	}
+//}
 
 type VirtualBuffer struct {
 	Buf [][]byte
@@ -205,8 +209,8 @@ func BufCmp(a []byte, b []byte) bool {
 	return eq
 }
 
-func (cell *Cell) VirtualRender(vb *Window) [][]byte {
-	v := cell.DisplayBuffer.Lines[vb.StartIndex : vb.EndIndex+1]
+func (cell *Cell) VirtualRender(w *Window) [][]byte {
+	v := cell.DisplayBuffer.Lines[w.StartIndex : w.EndIndex+1]
 	return v
 }
 
@@ -353,6 +357,13 @@ func (cell *Cell) DisplayLoop(env *Env) {
 			// cell.DisplayActiveLine()
 			// DisplayDebugInfo(cell, "Main Loop", debug)
 		}
+	}
+}
+
+func (cell *Cell) DisplayWindow() {
+	fmt.Fprintf(cell.Out, "\x1b[%d;0H", cell.Window.StartLine)
+	for i := 0; i < cell.Window.Height; i++ {
+		cell.Out.Write(append(cell.Window.Buf.Lines[i], '\n'))
 	}
 }
 
