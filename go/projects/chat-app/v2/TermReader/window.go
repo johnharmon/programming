@@ -88,27 +88,37 @@ func (w Window) Render(out io.Writer) {
 	}
 }
 
+func (w *Window) Listen() {
+	input := []byte{}
+	for {
+		input = <-w.RawEventChan
+		w.Buf.Write(input)
+	}
+}
+
 func (w *Window) Scroll(scrollVector int) {
 }
 
-func (cell *Cell) ScrollWindowLine(scrollVector int) {
-	currentLength := cell.ActiveLineLength
-	cell.Log("=========INPUT BREAK========")
-	cell.Log("Called ScrollLIne with a scrollVector of %d", scrollVector)
-	cell.Log("Current line index: %d", cell.ActiveLineIdx)
-	cell.Log("Current line length: %d", currentLength)
-	nextLineIndex := cell.GetIncrActiveLine(scrollVector)
-	cell.Log("Next line index: %d", nextLineIndex)
-	nextLineLength := cell.GetLineLen(nextLineIndex)
-	cell.Log("Next line length: %d", nextLineLength)
+/*
+func (w *Window) ScrollWindowLine(scrollVector int) {
+	currentLength := w.ActiveLineLength
+	w.Log("=========INPUT BREAK========")
+	w.Log("Called ScrollLIne with a scrollVector of %d", scrollVector)
+	w.Log("Current line index: %d", w.ActiveLineIdx)
+	w.Log("Current line length: %d", currentLength)
+	nextLineIndex := w.GetIncrActiveLine(scrollVector)
+	w.Log("Next line index: %d", nextLineIndex)
+	nextLineLength := w.GetLineLen(nextLineIndex)
+	w.Log("Next line length: %d", nextLineLength)
 	if currentLength <= 0 && nextLineLength <= 0 {
-		cell.Log("Line state not compabible with scrolling, ignoring...")
+		w.Log("Line state not compabible with scrolling, ignoring...")
 		return
 	} else {
-		cell.Log("Scrolling %d", scrollVector)
-		cell.IncrActiveLine(scrollVector)
+		w.Log("Scrolling %d", scrollVector)
+		w.IncrActiveLine(scrollVector)
 	}
 }
+*/
 
 func Cleanup(closer chan interface{}, fd int, oldState *term.State, logConfig *LogConfig) {
 	<-closer
@@ -148,6 +158,52 @@ func (mc *MainConfig) CoerceInput(b byte) (inputSeq []byte) { // Will coerce inp
 	return []byte{}
 }
 
+func CoerceInputToAction(b []byte) *KeyAction {
+	return &KeyAction{}
+}
+
+func MakeByteHandler(ch chan interface{}, in io.Reader) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
+	res := make([]byte, 1, 8)
+	return func(b byte) *KeyAction {
+		if b == 3 {
+			ch <- struct{}{}
+		} else if b == 13 {
+			os.Exit(0)
+		} else {
+			res[0] = b
+			res = ParseByte(b, res, in)
+		}
+		defer clear(res)
+		return CoerceInputToAction(res)
+	}
+}
+
+func ParseByte(b byte, result []byte, in io.Reader) []byte {
+	result[0] = b
+	if b == 0x1b {
+		n, _ := ReadMultiByteSequence(result, in, time.Millisecond*25)
+		result = result[:1+n]
+	}
+	return result
+}
+
+func ReadMultiByteSequence(buf []byte, input io.Reader, timeout time.Duration) (n int, err error) { // will read a multi-byte sequence into buf, respecting any existing elements
+	bufLen := len(buf)
+	bufCap := cap(buf)
+	deadline := time.Now().Add(timeout)
+	if f, ok := input.(*os.File); ok {
+		f.SetReadDeadline(deadline)
+	}
+	defer ClearReadDeadline(input)
+	n, err = input.Read(buf[bufLen:bufCap])
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func HandleEscapeSequence() {}
+
 func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 	res = make([]byte, 1, 8)
 	if b == 3 {
@@ -158,35 +214,8 @@ func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 		//		cell.DisplayActiveLine()
 	} else {
 		res[0] = b
-		res = ParseByte(b, in)
+		ParseByte(b, res, in)
+
 	}
 	return res
-}
-
-func HandleEscapeSequence() {}
-
-func ParseByte(b byte, in io.Reader) (result []byte) {
-	result = make([]byte, 1, 8)
-	result[0] = b
-	if b == 0x1b {
-		_ = ReadMultiByteSequence(result, in, time.Millisecond*25)
-	}
-	return result
-}
-
-func ReadMultiByteSequence(buf []byte, input io.Reader, timeout time.Duration) (err error) { // will read a multi-byte sequence into buf, respecting any existing elements
-	bufLen := len(buf)
-	bufCap := cap(buf)
-	deadline := time.Now().Add(timeout)
-	if f, ok := input.(*os.File); ok {
-		f.SetReadDeadline(deadline)
-	}
-	defer ClearReadDeadline(input)
-	n, err := input.Read(buf[bufLen:bufCap])
-	if err != nil {
-		return err
-	} else if n > 0 {
-		buf = buf[:bufLen+n]
-	}
-	return nil
 }
