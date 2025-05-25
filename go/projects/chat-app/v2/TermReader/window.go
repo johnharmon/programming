@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/term"
@@ -28,7 +29,7 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	RawStartIndex int
 	RawEndIndex   int
 	Out           io.Writer
-	EventChan     chan InputSequence
+	EventChan     chan *SequenceNode
 	RawEventChan  chan []byte
 }
 
@@ -131,7 +132,10 @@ func Cleanup(closer chan interface{}, fd int, oldState *term.State, logConfig *L
 }
 
 func MainEventHandler(mc *MainConfig) {
-	var res []byte
+	var (
+		res []byte
+		ka  *SequenceNode
+	)
 	fd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
@@ -140,6 +144,7 @@ func MainEventHandler(mc *MainConfig) {
 	closer := make(chan interface{})
 	go Cleanup(closer, fd, oldState, mc.LogConfig)
 	buf := make([]byte, 1)
+	byteHandler := MakeByteHandler(closer, mc.In)
 	for {
 		nb, err := mc.In.Read(buf)
 		if err != nil {
@@ -147,8 +152,10 @@ func MainEventHandler(mc *MainConfig) {
 		}
 		if nb > 0 {
 			b := buf[0]
-			res = HandleByte(b, closer, mc.In) // this should return the final coerced byte or []byte that the window will be responsible for processing
-			mc.State.ActiveWindow.RawEventChan <- res
+			// res = HandleByte(b, closer, mc.In) // this should return the final coerced byte or []byte that the window will be responsible for processing
+			ka = byteHandler(b)
+			mc.State.ActiveWindow.EventChan <- ka
+			// mc.State.ActiveWindow.RawEventChan <- res
 		}
 	}
 }
@@ -158,27 +165,43 @@ func (mc *MainConfig) CoerceInput(b byte) (inputSeq []byte) { // Will coerce inp
 	return []byte{}
 }
 
-func CoerceInputToAction(b []byte) *KeyAction {
-	return &KeyAction{}
+func MakeSequencePool() *sync.Pool {
+	return &sync.Pool{
+		New: func() any {
+			return NewSequenceNode(0x00, true, "Print", true)
+		},
+	}
 }
 
-func MakeByteHandler(ch chan interface{}, in io.Reader) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
+func CoerceInputToAction(b []byte) *SequenceNode {
+	if len(b) == 1 {
+		return KeyActionTree[b[0]]
+	}
+	return ValidateSequence(b)
+}
+
+func MakeByteHandler(ch chan interface{}, in io.Reader) func(byte) *SequenceNode { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
 	res := make([]byte, 1, 8)
-	return func(b byte) *KeyAction {
+	var seqN *SequenceNode
+	sp := MakeSequencePool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
+	return func(b byte) *SequenceNode {
 		if b == 3 {
 			ch <- struct{}{}
 		} else if b == 13 {
 			os.Exit(0)
-		} else {
-			res[0] = b
-			res = ParseByte(b, res, in)
+		} else if b >= 0x20 && b <= 0x7E {
+			seqN = sp.Get().(*SequenceNode)
+			seqN.Value = b
+			return seqN
 		}
+		res[0] = b
+		res = ParseByte(b, res, in)
 		defer clear(res)
 		return CoerceInputToAction(res)
 	}
 }
 
-func ParseByte(b byte, result []byte, in io.Reader) []byte {
+func ParseByte(b byte, result []byte, in io.Reader) []byte { // Should handle initial detection for multi-byte sequences, if a single byte sequence then just return the byte as a slide
 	result[0] = b
 	if b == 0x1b {
 		n, _ := ReadMultiByteSequence(result, in, time.Millisecond*25)
@@ -201,8 +224,6 @@ func ReadMultiByteSequence(buf []byte, input io.Reader, timeout time.Duration) (
 	}
 	return n, nil
 }
-
-func HandleEscapeSequence() {}
 
 func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 	res = make([]byte, 1, 8)
