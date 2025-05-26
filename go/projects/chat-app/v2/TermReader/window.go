@@ -29,7 +29,7 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	RawStartIndex int
 	RawEndIndex   int
 	Out           io.Writer
-	EventChan     chan *SequenceNode
+	EventChan     chan *KeyAction
 	RawEventChan  chan []byte
 }
 
@@ -68,15 +68,6 @@ type MainConfig struct {
 	State     State
 }
 
-type KeyAction struct {
-	None int
-}
-
-type InputSequence struct {
-	Bytes  []byte
-	Action *KeyAction
-}
-
 func (w Window) Render(out io.Writer) {
 	fmt.Fprintf(out, "\x1b[%d;0H", w.TermTopLine)
 	for i := 0; i <= w.Height; i++ {
@@ -89,11 +80,38 @@ func (w Window) Render(out io.Writer) {
 	}
 }
 
+func (w *Window) WriteRaw(b []byte) {
+	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol)
+}
+
+func (w *Window) IncrCursorCol(incr int) {
+	newPos := w.CursorCol + incr
+	if newPos < 0 {
+		newPos = 0
+	} else if newPos > len(w.Buf.Lines[w.Buf.ActiveLine]) {
+		newPos = len(w.Buf.Lines[w.Buf.ActiveLine])
+	}
+	w.CursorCol = newPos
+}
+
 func (w *Window) Listen() {
-	input := []byte{}
+	var ka *KeyAction
 	for {
-		input = <-w.RawEventChan
-		w.Buf.Write(input)
+		ka = <-w.EventChan
+		if ka.PrintRaw && len(ka.Value) == 1 {
+			w.Buf.Write(ka.Value)
+			w.WriteRaw(ka.Value)
+		} else {
+			switch ka.Action {
+			case "Backspace":
+				w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol)
+				w.IncrCursorCol(-1)
+			case "LeftArrow":
+				w.IncrCursorCol(-1)
+			case "RightArrow":
+				w.IncrCursorCol(1)
+			}
+		}
 	}
 }
 
@@ -132,10 +150,7 @@ func Cleanup(closer chan interface{}, fd int, oldState *term.State, logConfig *L
 }
 
 func MainEventHandler(mc *MainConfig) {
-	var (
-		res []byte
-		ka  *SequenceNode
-	)
+	var ka *KeyAction
 	fd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
@@ -154,7 +169,9 @@ func MainEventHandler(mc *MainConfig) {
 			b := buf[0]
 			// res = HandleByte(b, closer, mc.In) // this should return the final coerced byte or []byte that the window will be responsible for processing
 			ka = byteHandler(b)
-			mc.State.ActiveWindow.EventChan <- ka
+			if ka != nil {
+				mc.State.ActiveWindow.EventChan <- ka
+			}
 			// mc.State.ActiveWindow.RawEventChan <- res
 		}
 	}
@@ -168,30 +185,31 @@ func (mc *MainConfig) CoerceInput(b byte) (inputSeq []byte) { // Will coerce inp
 func MakeSequencePool() *sync.Pool {
 	return &sync.Pool{
 		New: func() any {
-			return NewSequenceNode(0x00, true, "Print", true)
+			return NewKeyAction(true, "Print", true, 0x00)
 		},
 	}
 }
 
-func CoerceInputToAction(b []byte) *SequenceNode {
+func CoerceInputToAction(b []byte) *KeyAction {
 	if len(b) == 1 {
 		return KeyActionTree[b[0]]
 	}
 	return ValidateSequence(b)
 }
 
-func MakeByteHandler(ch chan interface{}, in io.Reader) func(byte) *SequenceNode { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
+func MakeByteHandler(ch chan interface{}, in io.Reader) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
 	res := make([]byte, 1, 8)
-	var seqN *SequenceNode
+	var seqN *KeyAction
 	sp := MakeSequencePool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
-	return func(b byte) *SequenceNode {
+	return func(b byte) *KeyAction {
 		if b == 3 {
 			ch <- struct{}{}
 		} else if b == 13 {
 			os.Exit(0)
 		} else if b >= 0x20 && b <= 0x7E {
-			seqN = sp.Get().(*SequenceNode)
-			seqN.Value = b
+			seqN = sp.Get().(*KeyAction)
+			seqN.Value[0] = b
+			seqN.Value = seqN.Value[0:1]
 			return seqN
 		}
 		res[0] = b
