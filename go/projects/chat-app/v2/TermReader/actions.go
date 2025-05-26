@@ -5,18 +5,18 @@ import (
 	"log"
 )
 
-type SequenceNode struct {
-	Children   map[byte]*SequenceNode
-	Value      byte
+type KeyAction struct {
+	Children   map[byte]*KeyAction
+	Value      []byte
 	IsTerminal bool
 	Action     string
 	PrintRaw   bool
 }
 
-var KeyActionTree map[byte]*SequenceNode
+var KeyActionTree map[byte]*KeyAction
 
-func NewSequenceNode(value byte, terminal bool, action string, raw bool) (sq *SequenceNode) {
-	sq = &SequenceNode{Children: make(map[byte]*SequenceNode), Value: value, IsTerminal: terminal, Action: action, PrintRaw: raw}
+func NewKeyAction(terminal bool, action string, raw bool, value ...byte) (sq *KeyAction) {
+	sq = &KeyAction{Children: make(map[byte]*KeyAction), Value: value, IsTerminal: terminal, Action: action, PrintRaw: raw}
 	return sq
 }
 
@@ -25,12 +25,12 @@ func InitializeArrowKeys() error {
 		return fmt.Errorf("error initializing the arrow keys; start of escape sequence not set")
 	}
 	escapeSequences := KeyActionTree[0x1b]
-	escapeSequences.Children[0x5b] = NewSequenceNode(0x5b, false, "ArrowKeyPrefix", false)
+	escapeSequences.Children[0x5b] = NewKeyAction(false, "ArrowKeyPrefix", false, 0x5b)
 	arrowKeyParent := escapeSequences.Children[0x5b]
-	arrowKeyParent.Children[0x41] = NewSequenceNode(0x41, true, "ArrowUp", true)
-	arrowKeyParent.Children[0x42] = NewSequenceNode(0x42, true, "ArroDown", true)
-	arrowKeyParent.Children[0x43] = NewSequenceNode(0x43, true, "ArrowRight", true)
-	arrowKeyParent.Children[0x44] = NewSequenceNode(0x44, true, "ArrowLeft", true)
+	arrowKeyParent.Children[0x41] = NewKeyAction(true, "ArrowUp", true, 0x41)
+	arrowKeyParent.Children[0x42] = NewKeyAction(true, "ArrowUp", true, 0x42)
+	arrowKeyParent.Children[0x43] = NewKeyAction(true, "ArrowUp", true, 0x43)
+	arrowKeyParent.Children[0x44] = NewKeyAction(true, "ArrowUp", true, 0x44)
 	return nil
 }
 
@@ -38,15 +38,15 @@ func InitializeControlCodes() error {
 	if _, ok := KeyActionTree[0x1b]; !ok {
 		return fmt.Errorf("error initializing the arrow keys; start of escape sequence not set")
 	}
-	KeyActionTree[0x7F] = NewSequenceNode(0x7F, true, "Delete", false)
-	KeyActionTree[0x08] = NewSequenceNode(0x08, true, "Backspace", false)
-	KeyActionTree[0x0A] = NewSequenceNode(0x0A, true, "Enter", false)
+	KeyActionTree[0x7F] = NewKeyAction(true, "Delete", false, 0x7F)
+	KeyActionTree[0x08] = NewKeyAction(true, "Backspace", false, 0x08)
+	KeyActionTree[0x0A] = NewKeyAction(true, "Enter", false, 0x0A)
 	return nil
 }
 
 func init() {
-	KeyActionTree = make(map[byte]*SequenceNode)
-	KeyActionTree[0x1b] = NewSequenceNode(0x1b, false, "TerminalEscape", false)
+	KeyActionTree = make(map[byte]*KeyAction)
+	KeyActionTree[0x1b] = NewKeyAction(false, "TerminalEscape", false, 0x1b)
 	err := InitializeArrowKeys()
 	if err != nil {
 		log.Fatal(err.Error())
@@ -57,7 +57,7 @@ func init() {
 	}
 }
 
-func ValidateSequence(seq []byte) (sq *SequenceNode) {
+func ValidateSequence(seq []byte) (sq *KeyAction) {
 	seqLen := len(seq)
 	if seqLen == 0 {
 		return nil
