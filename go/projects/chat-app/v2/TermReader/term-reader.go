@@ -40,10 +40,13 @@ func (e Env) DWriteS(s string) {
 }
 
 type DisplayBuffer struct { // This represents the full backing buffer to any window view
-	RawBuf     []byte
-	Lines      [][]byte
-	Size       int
-	ActiveLine int
+	RawBuf         []byte
+	Lines          [][]byte
+	DisplayedLines [][]byte
+	Size           int
+	ActiveLine     int
+	TopLine        int
+	Height         int
 }
 
 func (db *DisplayBuffer) GetSize() int {
@@ -910,6 +913,36 @@ func InsertAt(a []byte, b []byte, startIdx int) []byte {
 		return a
 	}
 	tmp := make([]byte, 0, (al+bl)*2)
+	tmp = append(tmp, a[0:startIdx]...)
+	tmp = append(tmp, b...)
+	tmp = append(tmp, a[startIdx:]...)
+	return tmp
+}
+
+func InsertLineAt(a [][]byte, b [][]byte, startIdx int) [][]byte {
+	al := len(a)
+	bl := len(b)
+	if startIdx >= len(a) {
+		return append(a, b...)
+	} else if cap(a) >= len(a)+len(b)+1 {
+		a = a[0 : al+bl]
+		if bl == 1 {
+			for i := al - 1; i >= startIdx; i-- {
+				if i == startIdx {
+					a[i] = b[0]
+				} else {
+					a[i+1] = a[i]
+				}
+			}
+		} else {
+			for i := al - 1 - bl; i >= startIdx; i-- {
+				a[i+bl] = a[i]
+			}
+		}
+		copy(a[startIdx:startIdx+bl], b)
+		return a
+	}
+	tmp := make([][]byte, 0, (al+bl)*2)
 	tmp = append(tmp, a[0:startIdx]...)
 	tmp = append(tmp, b...)
 	tmp = append(tmp, a[startIdx:]...)

@@ -38,6 +38,11 @@ type LogConfig struct {
 	Link *os.File
 }
 
+type PooledKeyAction struct {
+	KA       *KeyAction
+	FromPool bool
+}
+
 func (w Window) Size() int {
 	return w.Height
 }
@@ -85,59 +90,106 @@ func (w *Window) WriteRaw(b []byte) {
 }
 
 func (w *Window) IncrCursorCol(incr int) {
+	lLen := len(w.Buf.Lines[w.Buf.ActiveLine])
 	newPos := w.CursorCol + incr
 	if newPos < 0 {
 		newPos = 0
-	} else if newPos > len(w.Buf.Lines[w.Buf.ActiveLine]) {
-		newPos = len(w.Buf.Lines[w.Buf.ActiveLine])
+	} else if newPos > lLen {
+		newPos = lLen
 	}
 	w.CursorCol = newPos
 }
 
+func (w *Window) IncrCursorLine(vec int) {
+	nextLine := w.Buf.ActiveLine + vec
+	if nextLine > 0 && nextLine < len(w.Buf.Lines) {
+		w.Buf.ActiveLine = nextLine
+	}
+}
+
+func (w *Window) MakeNewLines(count int) [][]byte {
+	newLines := make([][]byte, count, count)
+	for i := range newLines {
+		newLines[i] = make([]byte, 0, 4096)
+	}
+	return newLines
+}
+
 func (w *Window) Listen() {
+	redrawHandler := w.MakeRedrawHandler()
 	var ka *KeyAction
 	for {
 		ka = <-w.EventChan
 		if ka.PrintRaw && len(ka.Value) == 1 {
-			w.Buf.Write(ka.Value)
 			w.WriteRaw(ka.Value)
 		} else {
 			switch ka.Action {
 			case "Backspace":
+				w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol-1)
+				w.IncrCursorCol(-1)
+			case "Delete":
 				w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol)
 				w.IncrCursorCol(-1)
-			case "LeftArrow":
-				w.IncrCursorCol(-1)
+				w.Buf.Write(ka.Value)
 			case "RightArrow":
 				w.IncrCursorCol(1)
+				w.Buf.Write(ka.Value)
+			case "UpArrow":
+				w.IncrCursorLine(-1)
+				w.Buf.Write(ka.Value)
+			case "DownArrow":
+				w.IncrCursorLine(1)
+				w.Buf.Write(ka.Value)
+			case "Enter":
+				newLine := w.MakeNewLines(1)
+				w.WriteRaw([]byte("\r\n"))
+				w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine)
+				w.Redraw(redrawHandler)
 			}
 		}
+
+	}
+}
+
+func (w *Window) Redraw(handler func() []int) {
+	linesToRedraw := handler()
+	lastIndex := 0
+	w.MoveCursorToPosition(w.TermTopLine, 0)
+	for _, lineNum := range linesToRedraw {
+		w.MoveCursorToPosition(w.TermTopLine+lineNum, 0)
+		RedrawLine(w.Buf.Lines[lineNum+w.Buf.TopLine])
+		lastIndex++
+	}
+}
+
+func (w *Window) MakeRedrawHandler() func() []int {
+	redrawIndicies := make([]int, 0, w.Height)
+	return func() []int {
+		clear(redrawIndicies)
+		redrawIndicies = redrawIndicies[:0]
+		for i := w.Buf.TopLine; i <= w.Buf.TopLine+w.Buf.Height; i++ {
+			if !BufCmp(w.Buf.Lines[i], w.Buf.DisplayedLines[i-w.Buf.TopLine]) {
+				redrawIndicies = append(redrawIndicies, i-w.Buf.TopLine)
+			}
+		}
+		return redrawIndicies
+	}
+}
+
+func (w *Window) MarkForReddraw() {
+	for i := w.Buf.TopLine; i <= w.Buf.TopLine+w.Buf.Height; i++ {
+	}
+}
+
+func (db *DisplayBuffer) UpdateDisplayedLines(start int, end int) {
+	db.DisplayedLines = db.DisplayedLines[:0]
+	for i := start; i <= end; i++ {
+		db.DisplayedLines = append(db.DisplayedLines, db.Lines[i])
 	}
 }
 
 func (w *Window) Scroll(scrollVector int) {
 }
-
-/*
-func (w *Window) ScrollWindowLine(scrollVector int) {
-	currentLength := w.ActiveLineLength
-	w.Log("=========INPUT BREAK========")
-	w.Log("Called ScrollLIne with a scrollVector of %d", scrollVector)
-	w.Log("Current line index: %d", w.ActiveLineIdx)
-	w.Log("Current line length: %d", currentLength)
-	nextLineIndex := w.GetIncrActiveLine(scrollVector)
-	w.Log("Next line index: %d", nextLineIndex)
-	nextLineLength := w.GetLineLen(nextLineIndex)
-	w.Log("Next line length: %d", nextLineLength)
-	if currentLength <= 0 && nextLineLength <= 0 {
-		w.Log("Line state not compabible with scrolling, ignoring...")
-		return
-	} else {
-		w.Log("Scrolling %d", scrollVector)
-		w.IncrActiveLine(scrollVector)
-	}
-}
-*/
 
 func Cleanup(closer chan interface{}, fd int, oldState *term.State, logConfig *LogConfig) {
 	<-closer
@@ -159,7 +211,8 @@ func MainEventHandler(mc *MainConfig) {
 	closer := make(chan interface{})
 	go Cleanup(closer, fd, oldState, mc.LogConfig)
 	buf := make([]byte, 1)
-	byteHandler := MakeByteHandler(closer, mc.In)
+	sp := MakeSequencePool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
+	byteHandler := MakeByteHandler(closer, mc.In, sp)
 	for {
 		nb, err := mc.In.Read(buf)
 		if err != nil {
@@ -185,7 +238,7 @@ func (mc *MainConfig) CoerceInput(b byte) (inputSeq []byte) { // Will coerce inp
 func MakeSequencePool() *sync.Pool {
 	return &sync.Pool{
 		New: func() any {
-			return NewKeyAction(true, "Print", true, 0x00)
+			return NewKeyActionFromPool(true, "Print", true, 0x00)
 		},
 	}
 }
@@ -197,7 +250,7 @@ func CoerceInputToAction(b []byte) *KeyAction {
 	return ValidateSequence(b)
 }
 
-func MakeByteHandler(ch chan interface{}, in io.Reader) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
+func MakeByteHandler(ch chan interface{}, in io.Reader, sp *sync.Pool) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
 	res := make([]byte, 1, 8)
 	var seqN *KeyAction
 	sp := MakeSequencePool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible

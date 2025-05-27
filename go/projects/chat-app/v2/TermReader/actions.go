@@ -11,12 +11,18 @@ type KeyAction struct {
 	IsTerminal bool
 	Action     string
 	PrintRaw   bool
+	FromPool   bool
 }
 
 var KeyActionTree map[byte]*KeyAction
 
 func NewKeyAction(terminal bool, action string, raw bool, value ...byte) (sq *KeyAction) {
-	sq = &KeyAction{Children: make(map[byte]*KeyAction), Value: value, IsTerminal: terminal, Action: action, PrintRaw: raw}
+	sq = &KeyAction{Children: make(map[byte]*KeyAction), Value: value, IsTerminal: terminal, Action: action, PrintRaw: raw, FromPool: false}
+	return sq
+}
+
+func NewKeyActionFromPool(terminal bool, action string, raw bool, value ...byte) (sq *KeyAction) {
+	sq = &KeyAction{Children: make(map[byte]*KeyAction), Value: value, IsTerminal: terminal, Action: action, PrintRaw: raw, FromPool: true}
 	return sq
 }
 
