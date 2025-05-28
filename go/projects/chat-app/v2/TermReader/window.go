@@ -14,23 +14,29 @@ import (
 	"golang.org/x/term"
 )
 
+var (
+	TERM_CLEAR_LINE   = []byte{0x1b, '[', '2', 'K'}
+	TERM_CLEAR_SCREEN = []byte{0x1b, '[', '2', 'J'}
+)
+
 type Window struct { // Represents a sliding into its backing buffer of Window.Buf as well as the space it takes up in the terminal window
-	TermTopLine   int
-	BufTopLine    int
-	StartIndex    int
-	StartLine     int
-	Buf           *DisplayBuffer
-	Height        int
-	Width         int
-	StartCol      int
-	CursorLine    int
-	CursorCol     int
-	EndIndex      int
-	RawStartIndex int
-	RawEndIndex   int
-	Out           io.Writer
-	EventChan     chan *KeyAction
-	RawEventChan  chan []byte
+	TermTopLine       int
+	BufTopLine        int
+	StartIndex        int
+	StartLine         int
+	Buf               *DisplayBuffer
+	Height            int
+	Width             int
+	StartCol          int
+	CursorLine        int
+	CursorCol         int
+	EndIndex          int
+	RawStartIndex     int
+	RawEndIndex       int
+	Out               io.Writer
+	EventChan         chan *KeyAction
+	RawEventChan      chan []byte
+	KeyActionReturner chan *KeyAction
 }
 
 type LogConfig struct {
@@ -45,6 +51,10 @@ type PooledKeyAction struct {
 
 func (w Window) Size() int {
 	return w.Height
+}
+
+func (w Window) GetCursorScreenLine() int {
+	return w.CursorLine - w.BufTopLine + w.TermTopLine
 }
 
 func NewWindow(line int, column int, height int, width int) (w *Window) {
@@ -104,6 +114,7 @@ func (w *Window) IncrCursorLine(vec int) {
 	nextLine := w.Buf.ActiveLine + vec
 	if nextLine > 0 && nextLine < len(w.Buf.Lines) {
 		w.Buf.ActiveLine = nextLine
+		w.CursorLine = nextLine
 	}
 }
 
@@ -113,6 +124,15 @@ func (w *Window) MakeNewLines(count int) [][]byte {
 		newLines[i] = make([]byte, 0, 4096)
 	}
 	return newLines
+}
+
+func (w *Window) RedrawLine(ln int) {
+	screenLine := ln - w.BufTopLine
+	if screenLine > 0 && screenLine < w.BufTopLine+w.Height {
+		w.MoveCursorToPosition(screenLine+w.TermTopLine, 0)
+		w.Out.Write(TERM_CLEAR_LINE)
+		w.Out.Write(w.Buf.Lines[ln])
+	}
 }
 
 func (w *Window) Listen() {
@@ -126,9 +146,11 @@ func (w *Window) Listen() {
 			switch ka.Action {
 			case "Backspace":
 				w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol-1)
+				w.RedrawLine(w.CursorLine)
 				w.IncrCursorCol(-1)
 			case "Delete":
 				w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol)
+				w.RedrawLine(w.CursorLine)
 				w.IncrCursorCol(-1)
 				w.Buf.Write(ka.Value)
 			case "RightArrow":
@@ -147,7 +169,7 @@ func (w *Window) Listen() {
 				w.Redraw(redrawHandler)
 			}
 		}
-
+		w.KeyActionReturner <- ka
 	}
 }
 
@@ -201,6 +223,16 @@ func Cleanup(closer chan interface{}, fd int, oldState *term.State, logConfig *L
 	os.Exit(0)
 }
 
+func ReturnKeyActionsToPool(p *sync.Pool, returner chan *KeyAction) {
+	var ka *KeyAction
+	for {
+		ka = <-returner
+		if ka.FromPool {
+			p.Put(ka)
+		}
+	}
+}
+
 func MainEventHandler(mc *MainConfig) {
 	var ka *KeyAction
 	fd := int(os.Stdin.Fd())
@@ -209,9 +241,11 @@ func MainEventHandler(mc *MainConfig) {
 		panic(err)
 	}
 	closer := make(chan interface{})
+	sp := MakeSequencePool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
+	keyActionReturner := make(chan *KeyAction, 1000)
+	go ReturnKeyActionsToPool(sp, keyActionReturner)
 	go Cleanup(closer, fd, oldState, mc.LogConfig)
 	buf := make([]byte, 1)
-	sp := MakeSequencePool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
 	byteHandler := MakeByteHandler(closer, mc.In, sp)
 	for {
 		nb, err := mc.In.Read(buf)
@@ -222,9 +256,10 @@ func MainEventHandler(mc *MainConfig) {
 			b := buf[0]
 			// res = HandleByte(b, closer, mc.In) // this should return the final coerced byte or []byte that the window will be responsible for processing
 			ka = byteHandler(b)
-			if ka != nil {
-				mc.State.ActiveWindow.EventChan <- ka
+			if ka == nil {
+				ka = sp.Get().(*KeyAction)
 			}
+			mc.State.ActiveWindow.EventChan <- ka
 			// mc.State.ActiveWindow.RawEventChan <- res
 		}
 	}
