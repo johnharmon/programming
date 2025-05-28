@@ -34,9 +34,9 @@ func InitializeArrowKeys() error {
 	escapeSequences.Children[0x5b] = NewKeyAction(false, "ArrowKeyPrefix", false, 0x5b)
 	arrowKeyParent := escapeSequences.Children[0x5b]
 	arrowKeyParent.Children[0x41] = NewKeyAction(true, "ArrowUp", true, 0x41)
-	arrowKeyParent.Children[0x42] = NewKeyAction(true, "ArrowUp", true, 0x42)
-	arrowKeyParent.Children[0x43] = NewKeyAction(true, "ArrowUp", true, 0x43)
-	arrowKeyParent.Children[0x44] = NewKeyAction(true, "ArrowUp", true, 0x44)
+	arrowKeyParent.Children[0x42] = NewKeyAction(true, "ArrowDown", true, 0x42)
+	arrowKeyParent.Children[0x43] = NewKeyAction(true, "ArrowRight", true, 0x43)
+	arrowKeyParent.Children[0x44] = NewKeyAction(true, "ArrowLeft", true, 0x44)
 	return nil
 }
 
