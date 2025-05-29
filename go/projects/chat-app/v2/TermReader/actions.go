@@ -5,15 +5,6 @@ import (
 	"log"
 )
 
-type KeyAction struct {
-	Children   map[byte]*KeyAction
-	Value      []byte
-	IsTerminal bool
-	Action     string
-	PrintRaw   bool
-	FromPool   bool
-}
-
 var KeyActionTree map[byte]*KeyAction
 
 func NewKeyAction(terminal bool, action string, raw bool, value ...byte) (sq *KeyAction) {
@@ -36,7 +27,7 @@ func InitializeArrowKeys() error {
 	arrowKeyParent.Children[0x41] = NewKeyAction(true, "ArrowUp", true, 0x41)
 	arrowKeyParent.Children[0x42] = NewKeyAction(true, "ArrowDown", true, 0x42)
 	arrowKeyParent.Children[0x43] = NewKeyAction(true, "ArrowRight", true, 0x43)
-	arrowKeyParent.Children[0x44] = NewKeyAction(true, "ArrowLeft", true, 0x44)
+	arrowKeyParent.Children[0x44] = NewKeyAction(true, "ArrowUp", true, 0x44)
 	return nil
 }
 
@@ -79,4 +70,8 @@ func ValidateSequence(seq []byte) (sq *KeyAction) {
 		return tmpNode
 	}
 	return nil
+}
+
+func (ka *KeyAction) String() string {
+	return fmt.Sprintf("KeyAction: { \"Value\": %b, \"FromPool\": %b, \"Action\": \"%s\"}", ka.Value, ka.FromPool, ka.Action)
 }
