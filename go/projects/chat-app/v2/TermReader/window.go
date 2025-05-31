@@ -37,13 +37,23 @@ func NewWindow(line int, column int, height int, width int) (w *Window) {
 	w.StartCol = column
 	w.Height = height
 	w.Width = width
+	w.BufTopLine = 0
+	w.TermTopLine = 1
+	w.Out = os.Stdout
 	w.EventChan = make(chan *KeyAction, 10)
+	w.KeyActionReturner = make(chan *KeyAction, 10)
 	w.Buf = NewEmptyDisplayBuffer()
 	return w
 }
 
 func (w Window) MoveCursorToPosition(line int, col int) {
 	fmt.Fprintf(w.Out, "\x1b[%d;%dH", line, col)
+}
+
+func (w *Window) RunKeyActionReturner(sp *sync.Pool) {
+	for {
+		sp.Put(<-w.KeyActionReturner)
+	}
 }
 
 func (w Window) Render(out io.Writer) {
@@ -59,7 +69,9 @@ func (w Window) Render(out io.Writer) {
 }
 
 func (w *Window) WriteRaw(b []byte) {
+	w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
 	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol)
+	w.IncrCursorCol(1)
 }
 
 func (w *Window) IncrCursorCol(incr int) {
@@ -93,6 +105,8 @@ func (w *Window) RedrawLine(ln int) {
 	screenLine := ln - w.BufTopLine
 	if screenLine >= 0 && screenLine < w.BufTopLine+w.Height {
 		w.MoveCursorToPosition(screenLine+w.TermTopLine, 0)
+		w.Logger.Logln("Writing content to line #%d:", screenLine)
+		w.Logger.Logln("%s", w.Buf.Lines[ln])
 		w.Out.Write(TERM_CLEAR_LINE)
 		w.Out.Write(w.Buf.Lines[ln])
 	}
@@ -113,11 +127,16 @@ func (w *Window) NewBuffer() {
 
 func (w *Window) Listen() {
 	redrawHandler := w.MakeRedrawHandler()
+	gl := GlobalLogger
+	w.Logger = gl
 	var ka *KeyAction
 	for {
 		ka = <-w.EventChan
+		gl.Logln("Window received *KeyAction: %s", ka.String())
 		if ka.PrintRaw && len(ka.Value) == 1 {
+			gl.Logln("Raw write triggered for %s", ka.String())
 			w.WriteRaw(ka.Value)
+			w.RedrawLine(w.Buf.ActiveLine)
 			w.KeyActionReturner <- ka
 		} else {
 			switch ka.Action {
@@ -221,7 +240,6 @@ func MainEventHandler(mc *MainConfig) {
 	var ka *KeyAction
 	fd := int(os.Stdin.Fd())
 	gl.Logln("Setting terminal to raw mode")
-	gl.Logln("")
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
 		panic(err)
@@ -230,11 +248,12 @@ func MainEventHandler(mc *MainConfig) {
 	closer := make(chan interface{})
 	gl.Logln("Making *KeyAction pool")
 	sp := MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
+	go mc.State.ActiveWindow.RunKeyActionReturner(sp)
 	gl.Logln("Making *KeyAction return channel for the pool")
 	keyActionReturner := make(chan *KeyAction, 1000)
 	gl.Logln("Spinning off goroutine for returning *KeyActions to the pool")
 	go ReturnKeyActionsToPool(sp, keyActionReturner)
-	gl.Logln("Spinning off goroutine for restoring the  terminal state")
+	gl.Logln("Spinning off cleanup goroutine")
 	go Cleanup(closer, fd, oldState, mc.LogConfig)
 	buf := make([]byte, 1)
 	gl.Logln("Creating byte handler from closure")
@@ -285,6 +304,7 @@ func MakeByteHandler(ch chan interface{}, in io.Reader, sp *sync.Pool) func(byte
 	var seqN *KeyAction
 	sp = MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
 	return func(b byte) *KeyAction {
+		res = res[:1]
 		if b == 3 {
 			ch <- struct{}{}
 		} else if b == 13 {
@@ -379,11 +399,13 @@ func (cl *ConcreteLogger) Init() {
 			fmt.Printf("Error creating logger symlink: %s\n", err)
 		}
 		cl.Out = f
+		go cl.Start()
 		cl.Log("Opened New logger at %s", f.Name())
 	}
 }
 
-func NewConcreteLogger(cl *ConcreteLogger) {
+func NewConcreteLogger() (cl *ConcreteLogger) {
 	cl = &ConcreteLogger{}
 	cl.Init()
+	return cl
 }
