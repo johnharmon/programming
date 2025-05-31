@@ -137,7 +137,7 @@ func (w *Window) Listen() {
 			w.WriteRaw(ka.Value)
 			w.IncrCursorCol(1)
 			w.RedrawLine(w.Buf.ActiveLine)
-			w.MoveCursorToPosition(w.CursorLine, w.CursorCol)
+			w.MoveCursorToPosition(w.CursorLine+1, w.CursorCol)
 			w.KeyActionReturner <- ka
 		} else {
 			switch ka.Action {
@@ -168,19 +168,24 @@ func (w *Window) Listen() {
 				w.Out.Write(ka.Value)
 			case "Enter":
 				newLine := w.MakeNewLines(1)
-				w.WriteRaw([]byte("\r\n"))
+				w.Logger.Logln("Enter detected")
+				// w.WriteRaw([]byte("\r\n"))
+				w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
+				w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
+				w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
 				w.IncrCursorLine(1)
 				w.CursorCol = 0
-				w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine)
 				w.Redraw(redrawHandler)
-				w.MoveCursorToPosition(w.CursorLine, w.CursorCol)
+				w.MoveCursorToPosition(w.CursorLine+1, w.CursorCol)
 			}
 		}
 	}
 }
 
 func (w *Window) Redraw(handler func() []int) {
+	w.Logger.Logln("Redrawing window")
 	linesToRedraw := handler()
+	w.Logger.Logln("Lines to redraw: %s", linesToRedraw)
 	lastIndex := 0
 	w.MoveCursorToPosition(w.TermTopLine, 0)
 	for _, lineNum := range linesToRedraw {
@@ -197,12 +202,23 @@ func (w *Window) RedrawAllLines() {
 func (w *Window) MakeRedrawHandler() func() []int { // makes a handler that will track indicies to redraw (reuses slice)
 	redrawIndicies := make([]int, 0, w.Height)
 	return func() []int {
+		GlobalLogger.Logln("Redraw Handler invoked")
 		clear(redrawIndicies)
-		redrawIndicies = redrawIndicies[:0]
-		for i := w.Buf.TopLine; i <= w.Buf.TopLine+w.Buf.Height; i++ {
-			if !BufCmp(w.Buf.Lines[i], w.Buf.DisplayedLines[i-w.Buf.TopLine]) {
-				redrawIndicies = append(redrawIndicies, i-w.Buf.TopLine)
-			}
+		GlobalLogger.Logln("Redraw Indicies slice cleared")
+		redrawIndicies = redrawIndicies[:]
+		GlobalLogger.Logln("Redraw Indicies slice zeroed")
+		var loopUpperBound int
+		remainingBufLen := len(w.Buf.Lines) - w.BufTopLine
+		if remainingBufLen > w.Height {
+			loopUpperBound = w.Height
+		} else {
+			loopUpperBound = remainingBufLen
+		}
+		for i := w.BufTopLine; i < loopUpperBound; i++ {
+			GlobalLogger.Logln("Redraw Handler loop: Iteration: %d", i)
+			// if !BufCmp(w.Buf.Lines[i], w.Buf.DisplayedLines[i-w.Buf.TopLine]) {
+			redrawIndicies = append(redrawIndicies, i-w.BufTopLine)
+			//}
 		}
 		return redrawIndicies
 	}
@@ -270,6 +286,7 @@ func MainEventHandler(mc *MainConfig) {
 	for {
 		nb, err := mc.In.Read(buf)
 		if err != nil {
+			gl.Logln("error encountered while reading from stdin")
 			panic(err)
 		}
 		if nb > 0 {
@@ -282,6 +299,7 @@ func MainEventHandler(mc *MainConfig) {
 			}
 			gl.Logln("Generated *KeyAction: %s", ka.String())
 			mc.State.ActiveWindow.EventChan <- ka
+			gl.Logln("*KeyAction Passed to active window")
 			// mc.State.ActiveWindow.RawEventChan <- res
 		}
 	}
@@ -313,10 +331,11 @@ func MakeByteHandler(ch chan interface{}, in io.Reader, sp *sync.Pool) func(byte
 	sp = MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
 	return func(b byte) *KeyAction {
 		res = res[:1]
+		GlobalLogger.Logln("Byte Handler result buffer: %b", res)
 		if b == 3 {
 			ch <- struct{}{}
-		} else if b == 13 {
-			os.Exit(0)
+			//		} else if b == 13 {
+			// os.Exit(0)
 		} else if b >= 0x20 && b <= 0x7E {
 			seqN = sp.Get().(*KeyAction)
 			seqN.Value[0] = b
@@ -393,8 +412,27 @@ func (cl *ConcreteLogger) Stop() {
 	cl.RunCh <- struct{}{}
 }
 
-func (cl *ConcreteLogger) Init() {
+func (cl *ConcreteLogger) InitWithBuffer() {
 	cl.LogCh = make(chan string, 1000)
+	cl.RunCh = make(chan interface{})
+	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
+	if err != nil {
+		fmt.Printf("Error opening tmp file: %s\n", err)
+		cl.Out = io.Discard
+	} else {
+		os.Remove("term-reader-logger.txt")
+		err := os.Symlink(f.Name(), "term-reader-logger.txt")
+		if err != nil {
+			fmt.Printf("Error creating logger symlink: %s\n", err)
+		}
+		cl.Out = f
+		go cl.Start()
+		cl.Log("Opened New logger at %s", f.Name())
+	}
+}
+
+func (cl *ConcreteLogger) Init() {
+	cl.LogCh = make(chan string)
 	cl.RunCh = make(chan interface{})
 	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
 	if err != nil {
