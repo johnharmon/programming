@@ -24,10 +24,10 @@ func InitializeArrowKeys() error {
 	escapeSequences := KeyActionTree[0x1b]
 	escapeSequences.Children[0x5b] = NewKeyAction(false, "ArrowKeyPrefix", false, 0x5b)
 	arrowKeyParent := escapeSequences.Children[0x5b]
-	arrowKeyParent.Children[0x41] = NewKeyAction(true, "ArrowUp", false, 0x41)
-	arrowKeyParent.Children[0x42] = NewKeyAction(true, "ArrowDown", false, 0x42)
-	arrowKeyParent.Children[0x43] = NewKeyAction(true, "ArrowRight", false, 0x43)
-	arrowKeyParent.Children[0x44] = NewKeyAction(true, "ArrowLeft", false, 0x44)
+	arrowKeyParent.Children[0x41] = NewKeyAction(true, "ArrowUp", false, []byte{0x1b, 0x5b, 0x41}...)
+	arrowKeyParent.Children[0x42] = NewKeyAction(true, "ArrowDown", false, []byte{0x1b, 0x5b, 0x42}...)
+	arrowKeyParent.Children[0x43] = NewKeyAction(true, "ArrowRight", false, []byte{0x1b, 0x5b, 0x43}...)
+	arrowKeyParent.Children[0x44] = NewKeyAction(true, "ArrowLeft", false, []byte{0x1b, 0x5b, 0x44}...)
 	return nil
 }
 
