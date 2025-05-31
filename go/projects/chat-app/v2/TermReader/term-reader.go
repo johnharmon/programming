@@ -738,7 +738,6 @@ func (cell *Cell) WriteDisplayBytes(b []byte) {
 		fmt.Fprintf(cell.Out, "%s", b)
 		DisplayDebugInfo(cell, "DisplayCursorPosition = end of display content", extra)
 	} else {
-		// temp := append([]byte{}, cell.DisplayContent.Bytes()...)
 		temp := cell.DisplayContent.Bytes()
 		clone := make([]byte, len(temp))
 		copy(clone, temp)
@@ -1157,6 +1156,7 @@ func ParseFlags() (config *FlagConfig) {
 	config = &FlagConfig{}
 	flag.BoolVar(&config.Debug, "d", false, "use debug mode (boolean toggle)")
 	flag.BoolVar(&config.Terminal, "t", false, "use terminal mode (boolean toggle)")
+	flag.BoolVar(&config.Window, "w", false, "use window mode (boolean toggle)")
 	flag.BoolVar(&config.Verbose, "verbose", false, "use verbose mode (boolean toggle)")
 	flag.BoolVar(&config.Verbosity1, "v", false, "use verbose mode (boolean toggle)")
 	flag.BoolVar(&config.Verbosity2, "vv", false, "use verbose mode (boolean toggle)")

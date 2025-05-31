@@ -56,6 +56,7 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	EventChan         chan *KeyAction
 	RawEventChan      chan []byte
 	KeyActionReturner chan *KeyAction
+	Logger            EphemeralLogger
 }
 
 type LogConfig struct {
