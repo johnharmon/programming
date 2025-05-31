@@ -37,7 +37,7 @@ func InitializeControlCodes() error {
 	}
 	KeyActionTree[0x7F] = NewKeyAction(true, "Delete", false, 0x7F)
 	KeyActionTree[0x08] = NewKeyAction(true, "Backspace", false, 0x08)
-	KeyActionTree[0x0A] = NewKeyAction(true, "Enter", false, 0x0A)
+	KeyActionTree[0x0D] = NewKeyAction(true, "Enter", false, 0x0D)
 	return nil
 }
 
