@@ -71,7 +71,6 @@ func (w Window) Render(out io.Writer) {
 func (w *Window) WriteRaw(b []byte) {
 	w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
 	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol)
-	w.IncrCursorCol(1)
 }
 
 func (w *Window) IncrCursorCol(incr int) {
@@ -136,7 +135,9 @@ func (w *Window) Listen() {
 		if ka.PrintRaw && len(ka.Value) == 1 {
 			gl.Logln("Raw write triggered for %s", ka.String())
 			w.WriteRaw(ka.Value)
+			w.IncrCursorCol(1)
 			w.RedrawLine(w.Buf.ActiveLine)
+			w.MoveCursorToPosition(w.CursorLine, w.CursorCol)
 			w.KeyActionReturner <- ka
 		} else {
 			switch ka.Action {
@@ -149,15 +150,22 @@ func (w *Window) Listen() {
 				w.RedrawLine(w.CursorLine)
 				w.IncrCursorCol(-1)
 				w.Buf.Write(ka.Value)
-			case "RightArrow":
+			case "ArrowRight":
 				w.IncrCursorCol(1)
-				w.Buf.Write(ka.Value)
-			case "UpArrow":
+				// w.WriteRaw(ka.Value)
+				w.Out.Write(ka.Value)
+			case "ArrowLeft":
+				w.IncrCursorCol(-1)
+				// w.WriteRaw(ka.Value)
+				w.Out.Write(ka.Value)
+			case "ArrowUp":
 				w.IncrCursorLine(-1)
-				w.Buf.Write(ka.Value)
-			case "DownArrow":
+				// w.WriteRaw(ka.Value)
+				w.Out.Write(ka.Value)
+			case "ArrowDown":
 				w.IncrCursorLine(1)
-				w.Buf.Write(ka.Value)
+				// w.WriteRaw(ka.Value)
+				w.Out.Write(ka.Value)
 			case "Enter":
 				newLine := w.MakeNewLines(1)
 				w.WriteRaw([]byte("\r\n"))
