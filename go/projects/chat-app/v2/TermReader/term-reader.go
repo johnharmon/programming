@@ -449,7 +449,7 @@ func GetTermSize() (height int, width int) {
 		width = 50
 		fmt.Printf("Error getting term size: %s\n", err)
 	}
-	return width, height
+	return height, width
 }
 
 func MakeRawTerm(config *FlagConfig) {
@@ -1114,6 +1114,8 @@ func RunWindow(env *Env) {
 	height, width := GetTermSize()
 	GlobalLogger.Logln("Creating active window")
 	win := NewWindow(1, 0, height/2, width)
+	// win := NewWindow(1, 0, height/2, width)
+	GlobalLogger.Logln("Created new window: %+v", win)
 	mc := &MainConfig{}
 	mc.In = os.Stdin
 	mc.Out = os.Stdout

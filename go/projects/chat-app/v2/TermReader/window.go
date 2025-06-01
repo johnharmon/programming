@@ -85,8 +85,8 @@ func (w *Window) IncrCursorCol(incr int) {
 }
 
 func (w *Window) IncrCursorLine(vec int) {
-	nextLine := w.Buf.ActiveLine + vec
-	if nextLine > 0 && nextLine < len(w.Buf.Lines) {
+	nextLine := w.CursorLine + vec
+	if nextLine >= 0 && nextLine < len(w.Buf.Lines) {
 		w.Buf.ActiveLine = nextLine
 		w.CursorLine = nextLine
 	}
@@ -125,7 +125,7 @@ func (w *Window) NewBuffer() {
 }
 
 func (w *Window) Listen() {
-	redrawHandler := w.MakeRedrawHandler()
+	// redrawHandler := w.MakeRedrawHandler()
 	gl := GlobalLogger
 	w.Logger = gl
 	var ka *KeyAction
@@ -137,7 +137,7 @@ func (w *Window) Listen() {
 			w.WriteRaw(ka.Value)
 			w.IncrCursorCol(1)
 			w.RedrawLine(w.Buf.ActiveLine)
-			w.MoveCursorToPosition(w.CursorLine+1, w.CursorCol)
+			w.MoveCursorToDisplayPosition()
 			w.KeyActionReturner <- ka
 		} else {
 			switch ka.Action {
@@ -175,11 +175,19 @@ func (w *Window) Listen() {
 				w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
 				w.IncrCursorLine(1)
 				w.CursorCol = 0
-				w.Redraw(redrawHandler)
-				w.MoveCursorToPosition(w.CursorLine+1, w.CursorCol)
+				// w.Redraw(redrawHandler)
+				w.RedrawAllLines()
+				w.MoveCursorToDisplayPosition()
 			}
 		}
+		w.DisplayStatusLine()
+		w.MoveCursorToDisplayPosition()
 	}
+}
+
+func (w *Window) MoveCursorToDisplayPosition() {
+	cursorDisplayLine := (w.CursorLine - w.BufTopLine) + 1
+	w.MoveCursorToPosition(cursorDisplayLine, w.CursorCol)
 }
 
 func (w *Window) Redraw(handler func() []int) {
@@ -193,10 +201,36 @@ func (w *Window) Redraw(handler func() []int) {
 		w.RedrawLine(lineNum + w.BufTopLine)
 		lastIndex++
 	}
+	// w.DisplayStatusLine()
 }
 
 func (w *Window) RedrawAllLines() {
+	w.Logger.Logln("Forcing full redraw of all lines")
 	w.MoveCursorToPosition(w.TermTopLine, 0)
+	var lineLimit int
+	linesLeftInBuffer := len(w.Buf.Lines) - w.BufTopLine - 1
+	if linesLeftInBuffer < w.Height {
+		lineLimit = linesLeftInBuffer
+	} else {
+		lineLimit = w.Height
+	}
+	for i := w.BufTopLine; i < w.BufTopLine+lineLimit; i++ {
+		w.RedrawLine(i)
+	}
+}
+
+func (w *Window) DisplayStatusLine() {
+	termStatusLineNum := w.TermTopLine + w.Height + 1
+	w.MoveCursorToPosition(termStatusLineNum, 0)
+	w.Out.Write(TERM_CLEAR_LINE)
+	fmt.Fprintf(
+		w.Out,
+		"CursorLine: %d | CursorColumn: %d | TermLine: %d | BufferLength: %d | WindowHeight: %d",
+		w.CursorLine,
+		w.CursorCol,
+		w.TermTopLine+(w.CursorLine-w.BufTopLine),
+		len(w.Buf.Lines),
+		w.Height)
 }
 
 func (w *Window) MakeRedrawHandler() func() []int { // makes a handler that will track indicies to redraw (reuses slice)
