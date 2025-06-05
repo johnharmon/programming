@@ -89,25 +89,12 @@ func (w *Window) IncrCursorCol(incr int) {
 		w.DesiredCursorCol = newPos
 	} else if newPos > lLen+1 {
 		newPos = lLen + 1
-		//		if incr < 0 {
-		//			w.CursorCol = lLen - 1
-		//			w.DesiredCursorCol = lLen - 1
-		//		} else if newPos > lLen && incr > 0 {
-		//			w.CursorCol = lLen + 1
-		//			w.DesiredCursorCol = lLen + 1
-		//		} else {
-		//			w.CursorCol = lLen
-		//			w.DesiredCursorCol = lLen
-		//		}
-		//	} else if newPos > lLen && incr > 0 {
-		//		w.CursorCol = lLen + 1
-		//		w.DesiredCursorCol = lLen + 1
 	} else {
 		w.CursorCol = lLen
 	}
 }
 
-func (w *Window) GetDisplayCursorPosition() int {
+func (w *Window) GetDisplayCursorCol() int {
 	if len(w.Buf.Lines[w.Buf.ActiveLine])+1 < w.DesiredCursorCol {
 		w.Logger.Logln("Setting cursor display position to: %d", len(w.Buf.Lines[w.Buf.ActiveLine]))
 		return len(w.Buf.Lines[w.Buf.ActiveLine])
@@ -121,7 +108,7 @@ func (w *Window) GetDisplayCursorPosition() int {
 
 func (w *Window) HandleArrowDown() (col int) {
 	w.IncrCursorLine(1)
-	col = w.GetDisplayCursorPosition()
+	col = w.GetDisplayCursorCol()
 	return col
 }
 
@@ -159,7 +146,7 @@ func (w *Window) RedrawLine(ln int) {
 }
 
 func (w *Window) GetActiveLine() []byte {
-	return w.Buf.Lines[w.Buf.ActiveLine]
+	return w.Buf.Lines[w.CursorLine]
 }
 
 func (w *Window) NewBuffer() {
@@ -203,42 +190,53 @@ func (w *Window) Listen() {
 				w.IncrCursorCol(-1)
 			case "Delete":
 				w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
-				w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol-1)
-				w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
-				w.RedrawLine(w.CursorLine)
-				w.IncrCursorCol(-1)
+				if len(w.GetActiveLine()) == 0 {
+					w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, 1)
+					w.RedrawAllLines()
+					w.IncrCursorLine(-1)
+					w.IncrCursorCol(len(w.GetActiveLine()))
 
-				// w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol)
-				// w.RedrawLine(w.CursorLine)
-				// w.IncrCursorCol(-1)
-				// w.Buf.Write(ka.Value)
+				} else {
+					w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.GetActiveLine(), w.CursorCol-1)
+					w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
+					w.RedrawLine(w.CursorLine)
+					w.IncrCursorCol(-1)
+				}
+
 			case "ArrowRight":
 				w.IncrCursorCol(1)
-				// w.WriteRaw(ka.Value)
 				w.Out.Write(ka.Value)
 			case "ArrowLeft":
 				w.IncrCursorCol(-1)
-				// w.WriteRaw(ka.Value)
 				w.Out.Write(ka.Value)
 			case "ArrowUp":
 				w.IncrCursorLine(-1)
-				// w.SetCursorCol()
-				// w.WriteRaw(ka.Value)
+				if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
+					w.BufTopLine--
+					w.RedrawAllLines()
+				}
+				w.MoveCursorToDisplayPosition()
 				w.Out.Write(ka.Value)
 			case "ArrowDown":
-				col := w.HandleArrowDown()
-				// w.WriteRaw(ka.Value)
-				w.MoveCursorToPosition(w.CursorLine+1, col)
+				// col := w.HandleArrowDown()
+				w.IncrCursorLine(1)
+				if w.CursorLine > w.BufTopLine+w.Height {
+					w.BufTopLine++
+					w.RedrawAllLines()
+				}
+				w.MoveCursorToDisplayPosition()
+				// w.MoveCursorToPosition(w.CursorLine+1, col)
 			case "Enter":
 				newLine := w.MakeNewLines(1)
 				w.Logger.Logln("Enter detected")
-				// w.WriteRaw([]byte("\r\n"))
 				w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
 				w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
-				w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
+				// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
 				w.IncrCursorLine(1)
 				w.CursorCol = 1
-				// w.Redraw(redrawHandler)
+				if w.CursorLine-w.BufTopLine > w.Height {
+					w.BufTopLine++
+				}
 				w.RedrawAllLines()
 				w.MoveCursorToDisplayPosition()
 			}
@@ -250,7 +248,7 @@ func (w *Window) Listen() {
 
 func (w *Window) MoveCursorToDisplayPosition() {
 	cursorDisplayLine := (w.CursorLine - w.BufTopLine) + 1
-	cursorCol := w.GetDisplayCursorPosition()
+	cursorCol := w.GetDisplayCursorCol()
 	w.MoveCursorToPosition(cursorDisplayLine, cursorCol)
 }
 
@@ -278,6 +276,7 @@ func (w *Window) RedrawAllLines() {
 	} else {
 		lineLimit = w.Height
 	}
+	w.Logger.Logln("Line limit calculated: %d", lineLimit)
 	for i := w.BufTopLine; i < w.BufTopLine+lineLimit; i++ {
 		w.RedrawLine(i)
 	}
@@ -501,12 +500,20 @@ func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 }
 
 func (cl *ConcreteLogger) Start() {
+	// cl.Mu.Lock()
 	for {
 		select {
 		case msg := <-cl.LogCh:
 			fmt.Fprintf(cl.Out, msg)
-		case <-cl.RunCh:
-			return
+		default:
+			select {
+			case <-cl.RunCh:
+				// ch.Mu.Unlock()
+				return
+			default:
+				time.Sleep(1 * time.Millisecond)
+
+			}
 		}
 	}
 }
@@ -535,7 +542,8 @@ func (cl *ConcreteLogger) InitWithBuffer() {
 }
 
 func (cl *ConcreteLogger) Init() {
-	cl.LogCh = make(chan string)
+	// cl.LogCh = make(chan string)
+	cl.LogCh = make(chan string, 1000)
 	cl.RunCh = make(chan interface{})
 	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
 	if err != nil {
