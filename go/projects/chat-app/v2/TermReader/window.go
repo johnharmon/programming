@@ -38,6 +38,7 @@ func NewWindow(line int, column int, height int, width int) (w *Window) {
 	w.Height = height
 	w.Width = width
 	w.BufTopLine = 0
+	w.CursorCol = 1
 	w.TermTopLine = 1
 	w.Out = os.Stdout
 	w.EventChan = make(chan *KeyAction, 10)
@@ -71,14 +72,14 @@ func (w Window) Render(out io.Writer) {
 
 func (w *Window) WriteRaw(b []byte) {
 	w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
-	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol)
+	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol-1)
 }
 
 func (w *Window) IncrCursorCol(incr int) {
 	lLen := len(w.Buf.Lines[w.Buf.ActiveLine])
 	newPos := w.CursorCol + incr
-	if newPos < 0 {
-		newPos = 0
+	if newPos < 1 {
+		newPos = 1
 		w.CursorCol = newPos
 		w.DesiredCursorCol = newPos
 	} else if newPos < lLen {
@@ -210,7 +211,7 @@ func (w *Window) Listen() {
 				w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
 				w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
 				w.IncrCursorLine(1)
-				w.CursorCol = 0
+				w.CursorCol = 1
 				// w.Redraw(redrawHandler)
 				w.RedrawAllLines()
 				w.MoveCursorToDisplayPosition()
