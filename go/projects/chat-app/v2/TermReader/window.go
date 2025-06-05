@@ -47,6 +47,7 @@ func NewWindow(line int, column int, height int, width int) (w *Window) {
 }
 
 func (w Window) MoveCursorToPosition(line int, col int) {
+	w.Logger.Logln("Moving Cursor to: %d,%d", line, col)
 	fmt.Fprintf(w.Out, "\x1b[%d;%dH", line, col)
 }
 
@@ -78,10 +79,38 @@ func (w *Window) IncrCursorCol(incr int) {
 	newPos := w.CursorCol + incr
 	if newPos < 0 {
 		newPos = 0
-	} else if newPos > lLen {
-		newPos = lLen
+		w.CursorCol = newPos
+		w.DesiredCursorCol = newPos
+	} else if newPos < lLen {
+		w.CursorCol = newPos
+		w.DesiredCursorCol = newPos
+	} else if newPos >= -lLen && incr < 0 {
+		w.CursorCol = lLen - 1
+		w.DesiredCursorCol = lLen - 1
+	} else if newPos >= lLen && incr > 0 {
+		w.CursorCol = lLen
+		w.DesiredCursorCol = lLen
+	} else {
+		w.CursorCol = lLen
 	}
-	w.CursorCol = newPos
+}
+
+func (w *Window) GetDisplayCursorPosition() int {
+	if len(w.Buf.Lines[w.Buf.ActiveLine]) < w.DesiredCursorCol {
+		w.Logger.Logln("Setting cursor display position to: %d", len(w.Buf.Lines[w.Buf.ActiveLine]))
+		return len(w.Buf.Lines[w.Buf.ActiveLine])
+	} else {
+		w.Logger.Logln("Desired Cursor position is compatible with the active line")
+		return w.DesiredCursorCol
+	}
+}
+
+// func (w *Window) GetPosition
+
+func (w *Window) HandleArrowDown() (col int) {
+	w.IncrCursorLine(1)
+	col = w.GetDisplayCursorPosition()
+	return col
 }
 
 func (w *Window) IncrCursorLine(vec int) {
@@ -91,6 +120,12 @@ func (w *Window) IncrCursorLine(vec int) {
 		w.CursorLine = nextLine
 	}
 }
+
+/*
+func (w *Window) SetCursorCol() {
+	if w.DesiredCursorCol < len(w.Buf.Lines(w.
+}
+*/
 
 func (w *Window) MakeNewLines(count int) [][]byte {
 	newLines := make([][]byte, count, count)
@@ -160,12 +195,13 @@ func (w *Window) Listen() {
 				w.Out.Write(ka.Value)
 			case "ArrowUp":
 				w.IncrCursorLine(-1)
+				// w.SetCursorCol()
 				// w.WriteRaw(ka.Value)
 				w.Out.Write(ka.Value)
 			case "ArrowDown":
-				w.IncrCursorLine(1)
+				col := w.HandleArrowDown()
 				// w.WriteRaw(ka.Value)
-				w.Out.Write(ka.Value)
+				w.MoveCursorToPosition(w.CursorLine+1, col)
 			case "Enter":
 				newLine := w.MakeNewLines(1)
 				w.Logger.Logln("Enter detected")
@@ -187,7 +223,8 @@ func (w *Window) Listen() {
 
 func (w *Window) MoveCursorToDisplayPosition() {
 	cursorDisplayLine := (w.CursorLine - w.BufTopLine) + 1
-	w.MoveCursorToPosition(cursorDisplayLine, w.CursorCol)
+	cursorCol := w.GetDisplayCursorPosition()
+	w.MoveCursorToPosition(cursorDisplayLine, cursorCol)
 }
 
 func (w *Window) Redraw(handler func() []int) {
@@ -225,10 +262,12 @@ func (w *Window) DisplayStatusLine() {
 	w.Out.Write(TERM_CLEAR_LINE)
 	fmt.Fprintf(
 		w.Out,
-		"CursorLine: %d | CursorColumn: %d | TermLine: %d | BufferLength: %d | WindowHeight: %d",
+		"CursorLine: %d | CursorColumn: %d | DesiredCursorColumn: %d | TermLine: %d | LineLength: %d | BufferLength: %d | WindowHeight: %d",
 		w.CursorLine,
 		w.CursorCol,
+		w.DesiredCursorCol,
 		w.TermTopLine+(w.CursorLine-w.BufTopLine),
+		len(w.Buf.Lines[w.Buf.ActiveLine]),
 		len(w.Buf.Lines),
 		w.Height)
 }

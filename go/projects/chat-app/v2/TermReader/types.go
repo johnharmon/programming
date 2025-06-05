@@ -49,6 +49,7 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	StartCol          int
 	CursorLine        int
 	CursorCol         int
+	DesiredCursorCol  int
 	EndIndex          int
 	RawStartIndex     int
 	RawEndIndex       int
