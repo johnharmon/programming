@@ -91,7 +91,7 @@ func InsertLineAt(a [][]byte, b [][]byte, startIdx int) [][]byte {
 
 func DeleteLineAt(a [][]byte, startIdx int, count int) [][]byte {
 	al := len(a)
-	if al == 0 || startIdx < 0 {
+	if al == 0 || startIdx < 0 || al == 1 {
 		return a
 	} else {
 		if startIdx == al-1 {
