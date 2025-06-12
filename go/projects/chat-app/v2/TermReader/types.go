@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"sync"
 )
 
 type EphemeralLogger interface {
@@ -13,6 +14,7 @@ type EphemeralLogger interface {
 
 type ConcreteLogger struct {
 	Out   io.Writer
+	Mu    *sync.Mutex
 	LogCh chan string
 	RunCh chan interface{}
 }
