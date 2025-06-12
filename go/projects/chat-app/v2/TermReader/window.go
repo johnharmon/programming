@@ -194,66 +194,86 @@ func (w *Window) Listen() {
 				w.RedrawLine(w.CursorLine)
 				w.IncrCursorCol(-1)
 			case "Delete":
-				w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
-				if len(w.GetActiveLine()) == 0 {
-					w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, 1)
-					w.IncrCursorLine(-1)
-					numDisplayedLines := len(w.Buf.Lines) - w.BufTopLine
-					if numDisplayedLines < w.Height && w.BufTopLine > 0 {
-						w.BufTopLine--
-					}
-					w.RedrawAllLines()
-					w.IncrCursorCol(len(w.GetActiveLine()))
-
-				} else {
-					w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.GetActiveLine(), w.CursorCol-1)
-					w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
-					w.RedrawLine(w.CursorLine)
-					w.IncrCursorCol(-1)
-				}
-
+				HandleDelete(w)
 			case "ArrowRight":
-				w.IncrCursorCol(1)
-				w.Out.Write(ka.Value)
+				HandleArrowRight(w)
 			case "ArrowLeft":
-				w.IncrCursorCol(-1)
-				w.Out.Write(ka.Value)
+				HandleArrowLeft(w)
 			case "ArrowUp":
-				w.IncrCursorLine(-1)
-				if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
-					w.BufTopLine--
-					w.RedrawAllLines()
-				}
-				w.MoveCursorToDisplayPosition()
-				w.Out.Write(ka.Value)
+				HandleArrowUp(w)
 			case "ArrowDown":
-				// col := w.HandleArrowDown()
-				oldLine := w.CursorLine
-				w.IncrCursorLine(1)
-				if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
-					w.BufTopLine++
-					w.RedrawAllLines()
-				}
-				w.MoveCursorToDisplayPosition()
-				// w.MoveCursorToPosition(w.CursorLine+1, col)
+				HandleArrowDown(w)
 			case "Enter":
-				newLine := w.MakeNewLines(1)
-				w.Logger.Logln("Enter detected")
-				w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
-				w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
-				// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
-				w.IncrCursorLine(1)
-				w.CursorCol = 1
-				if w.CursorLine-w.BufTopLine > w.Height {
-					w.BufTopLine++
-				}
-				w.RedrawAllLines()
-				w.MoveCursorToDisplayPosition()
+				HandleEnter(w)
 			}
 		}
 		w.DisplayStatusLine()
 		w.MoveCursorToDisplayPosition()
 	}
+}
+
+func HandleDelete(w *Window) {
+	w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
+	if len(w.GetActiveLine()) == 0 {
+		w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, 1)
+		w.IncrCursorLine(-1)
+		numDisplayedLines := len(w.Buf.Lines) - w.BufTopLine
+		if numDisplayedLines < w.Height && w.BufTopLine > 0 {
+			w.BufTopLine--
+		}
+		w.RedrawAllLines()
+		w.IncrCursorCol(len(w.GetActiveLine()))
+
+	} else {
+		w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.GetActiveLine(), w.CursorCol-1)
+		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
+		w.RedrawLine(w.CursorLine)
+		w.IncrCursorCol(-1)
+	}
+}
+
+func HandleEnter(w *Window) {
+	newLine := w.MakeNewLines(1)
+	w.Logger.Logln("Enter detected")
+	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
+	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
+	// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
+	w.IncrCursorLine(1)
+	w.CursorCol = 1
+	if w.CursorLine-w.BufTopLine > w.Height {
+		w.BufTopLine++
+	}
+	w.RedrawAllLines()
+	w.MoveCursorToDisplayPosition()
+}
+
+func HandleArrowRight(w *Window) {
+	w.IncrCursorCol(1)
+	w.MoveCursorToDisplayPosition()
+}
+
+func HandleArrowLeft(w *Window) {
+	w.IncrCursorCol(-1)
+	w.MoveCursorToDisplayPosition()
+}
+
+func HandleArrowUp(w *Window) {
+	w.IncrCursorLine(-1)
+	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
+		w.BufTopLine--
+		w.RedrawAllLines()
+	}
+	w.MoveCursorToDisplayPosition()
+}
+
+func HandleArrowDown(w *Window) {
+	oldLine := w.CursorLine
+	w.IncrCursorLine(1)
+	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
+		w.BufTopLine++
+		w.RedrawAllLines()
+	}
+	w.MoveCursorToDisplayPosition()
 }
 
 func (w *Window) MoveCursorToDisplayPosition() {
@@ -357,6 +377,13 @@ func (w *Window) Scroll(scrollVector int) {
 
 func Cleanup(closer chan interface{}, fd int, oldState *term.State, logConfig *LogConfig) {
 	<-closer
+	gl, ok := GlobalLogger.(*ConcreteLogger)
+	if !ok {
+		GlobalLogger.Logln("Type asserting GlobalLogger to *ConcreteLogger failed, continuing without mutex locking")
+	} else {
+		gl.Mu.Lock()
+		defer gl.Mu.Unlock()
+	}
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
 	logConfig.File.Close()
@@ -514,7 +541,7 @@ func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 }
 
 func (cl *ConcreteLogger) Start() {
-	// cl.Mu.Lock()
+	cl.Mu.Lock()
 	for {
 		select {
 		case msg := <-cl.LogCh:
@@ -522,7 +549,7 @@ func (cl *ConcreteLogger) Start() {
 		default:
 			select {
 			case <-cl.RunCh:
-				// ch.Mu.Unlock()
+				cl.Mu.Unlock()
 				return
 			default:
 				time.Sleep(1 * time.Millisecond)
