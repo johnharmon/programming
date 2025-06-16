@@ -10,13 +10,15 @@ import (
 type EphemeralLogger interface {
 	Log(string, ...any)
 	Logln(string, ...any)
+	Cleanup()
 }
 
 type ConcreteLogger struct {
 	Out   io.Writer
 	Mu    *sync.Mutex
 	LogCh chan string
-	RunCh chan interface{}
+	RunCh chan *sync.WaitGroup
+	Done  chan struct{}
 }
 
 type KeyAction struct {
@@ -38,6 +40,16 @@ type MainConfig struct {
 	In        io.Reader
 	Out       io.Writer
 	State     State
+}
+
+type CleanupTask struct {
+	Closer chan *sync.WaitGroup
+	Name   string
+	Func   func()
+	Start  bool
+	// A CleanupTask represents a task to run that will wait to receive a waitgroup from the closer channel
+	// All cleanup tasks are run via a simple func() call, often requiring some sort of wrapper/closure for the real logic
+	// They are also backgrounded as long running tasks and notified via a channel carrying the main cleanup orchestrator WaitGroup which it only needs to call wg.Done()
 }
 
 type Window struct { // Represents a sliding into its backing buffer of Window.Buf as well as the space it takes up in the terminal window
