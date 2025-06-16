@@ -11,6 +11,45 @@ import (
 	"golang.org/x/term"
 )
 
+func CreateCleanupKeyGenerator(cleanupTaskMap map[string]*CleanupTask) func(string) string {
+	return func(name string) string {
+		iterator := 1
+		iterName := name
+		for {
+			_, ok := cleanupTaskMap[iterName]
+			if !ok {
+				return iterName
+			} else {
+				iterName = fmt.Sprintf("%s-%d", name, iterator)
+				iterator++
+			}
+		}
+	}
+}
+
+func CreateCleanupKeyInserter(cleanupTaskMap map[string]*CleanupTask) func(string, *CleanupTask) {
+	return func(key string, ct *CleanupTask) {
+		cleanupTaskMap[key] = ct
+	}
+}
+
+func CreateCleanupTaskStarter(cleanupTaskMap map[string]*CleanupTask) func() {
+	return func() {
+		for name, task := range cleanupTaskMap {
+			if task.Start {
+				GlobalLogger.Logln("Starting cleanup task %s", name)
+				task.Func()
+			}
+		}
+	}
+}
+
+func RegisterCleanupTask(name string, closer chan *sync.WaitGroup, Func func(), start bool) {
+	ct := &CleanupTask{Closer: closer, Name: name, Func: Func, Start: start}
+	cleanupKey := GenCleanupKey(ct.Name)
+	InsertCleanupKey(cleanupKey, ct)
+}
+
 var (
 	TERM_CLEAR_LINE   = []byte{0x1b, '[', '2', 'K'}
 	TERM_CLEAR_SCREEN = []byte{0x1b, '[', '2', 'J'}
@@ -375,20 +414,37 @@ func (db *DisplayBuffer) UpdateDisplayedLines(start int, end int) {
 func (w *Window) Scroll(scrollVector int) {
 }
 
-func Cleanup(closer chan interface{}, fd int, oldState *term.State, logConfig *LogConfig) {
+func (cl *ConcreteLogger) Cleanup() {
+	wg := <-cl.RunCh
+	defer wg.Done()
+	fmt.Fprintln(cl.Out, "Closing the logging channel")
+	close(ch.Done)
+	close(cl.LogCh)
+	cl.Mu.Lock()
+	return
+}
+
+func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[string]*CleanupTask) {
+	wg1 := &sync.WaitGroup{}
+	wg2 := &sync.WaitGroup{}
 	<-closer
-	gl, ok := GlobalLogger.(*ConcreteLogger)
-	if !ok {
-		GlobalLogger.Logln("Type asserting GlobalLogger to *ConcreteLogger failed, continuing without mutex locking")
-	} else {
-		gl.Mu.Lock()
-		defer gl.Mu.Unlock()
+	GlobalLogger.Logln("Caught termination signal")
+	for key, task := range taskMap {
+		if key != LOGGER_CLEANUP_UNIQUE_KEY {
+			GlobalLogger.Logln("Sending termination signal to task: %s", key)
+			wg1.Add(1)
+			task.Closer <- wg1
+		}
+	}
+	GlobalLogger.Logln("Waiting for cleanup tasks to finsh...")
+	wg1.Wait()
+	if task, ok := taskMap[LOGGER_CLEANUP_UNIQUE_KEY]; ok {
+		wg2.Add(1)
+		task.Closer <- wg2
+		wg2.Wait()
 	}
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
-	logConfig.File.Close()
-	os.Remove(logConfig.File.Name())
-	os.Remove(logConfig.Link.Name())
 	os.Exit(0)
 }
 
@@ -403,9 +459,10 @@ func ReturnKeyActionsToPool(p *sync.Pool, returner chan *KeyAction) {
 }
 
 func MainEventHandler(mc *MainConfig) {
-	gl := GlobalLogger
+	gl := GlobalLogger.(*ConcreteLogger)
 	var ka *KeyAction
 	fd := int(os.Stdin.Fd())
+	// fd := *fdp
 	gl.Logln("Setting terminal to raw mode")
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
@@ -413,6 +470,7 @@ func MainEventHandler(mc *MainConfig) {
 	}
 	gl.Logln("Making closer channel")
 	closer := make(chan interface{})
+	RegisterCleanupTask("Logger", gl.RunCh, gl.Start, false)
 	gl.Logln("Making *KeyAction pool")
 	sp := MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
 	go mc.State.ActiveWindow.RunKeyActionReturner(sp)
@@ -479,6 +537,8 @@ func MakeByteHandler(ch chan interface{}, in io.Reader, sp *sync.Pool) func(byte
 			ch <- struct{}{}
 			//		} else if b == 13 {
 			// os.Exit(0)
+			select {}
+			// return nil
 		} else if b >= 0x20 && b <= 0x7E {
 			seqN = sp.Get().(*KeyAction)
 			seqN.Value[0] = b
@@ -537,35 +597,50 @@ func (cl *ConcreteLogger) Log(message string, vars ...any) {
 }
 
 func (cl *ConcreteLogger) Logln(message string, vars ...any) {
-	cl.LogCh <- fmt.Sprintf(message+"\n", vars...)
+	timestamp := time.Now().Format(time.StampMicro)
+	vars = append(vars, timestamp)
+	message = message + " TIMESTAMP: %s\n"
+	select {
+	case cl.LogCh <- fmt.Sprintf(message, vars...):
+	case <-cl.Done:
+		fmt.Fprintf(os.Stdout, message, vars...)
+	}
 }
 
 func (cl *ConcreteLogger) Start() {
 	cl.Mu.Lock()
 	for {
 		select {
-		case msg := <-cl.LogCh:
-			fmt.Fprintf(cl.Out, msg)
-		default:
-			select {
-			case <-cl.RunCh:
+		case msg, ok := <-cl.LogCh:
+			if ok {
+				fmt.Fprint(cl.Out, msg)
+			} else {
 				cl.Mu.Unlock()
 				return
-			default:
-				time.Sleep(1 * time.Millisecond)
-
 			}
+			//		case wg := <-cl.RunCh:
+			//			defer wg.Done()
+			//			cl.Logln("Logger caught termination signal, unlocking the mutex")
+			//			close(cl.LogCh)
+			//			for msg := range cl.LogCh {
+			//				fmt.Fprint(cl.Out, msg)
+			//			}
+			//			cl.Mu.Unlock()
+			//			return
+			//		default:
+			//			time.Sleep(1 * time.Millisecond)
+			//
 		}
 	}
 }
 
 func (cl *ConcreteLogger) Stop() {
-	cl.RunCh <- struct{}{}
+	cl.RunCh <- &sync.WaitGroup{}
 }
 
 func (cl *ConcreteLogger) InitWithBuffer() {
 	cl.LogCh = make(chan string, 1000)
-	cl.RunCh = make(chan interface{})
+	cl.RunCh = make(chan *sync.WaitGroup)
 	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
@@ -584,8 +659,10 @@ func (cl *ConcreteLogger) InitWithBuffer() {
 
 func (cl *ConcreteLogger) Init() {
 	// cl.LogCh = make(chan string)
+	cl.Mu = &sync.Mutex{}
 	cl.LogCh = make(chan string, 1000)
-	cl.RunCh = make(chan interface{})
+	cl.RunCh = make(chan *sync.WaitGroup)
+	cl.Done = make(chan struct{})
 	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
