@@ -21,8 +21,13 @@ const (
 )
 
 var (
-	TermHeight, TermWidth = GetTermSize()
-	GlobalLogger          EphemeralLogger
+	TermHeight, TermWidth     = GetTermSize()
+	GlobalLogger              EphemeralLogger
+	CleanupTaskMap            = map[string]*CleanupTask{}
+	GenCleanupKey             = CreateCleanupKeyGenerator(CleanupTaskMap)
+	InsertCleanupKey          = CreateCleanupKeyInserter(CleanupTaskMap)
+	StartCleanupTasks         = CreateCleanupTaskStarter(CleanupTaskMap)
+	LOGGER_CLEANUP_UNIQUE_KEY = "LOGGER_CLEANUP"
 )
 
 func (e Env) DWrite(b []byte) {
@@ -295,9 +300,9 @@ func (cell *Cell) Cleanup(closer chan interface{}, fd int, oldState *term.State)
 	<-closer
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
-	cell.LogFile.Close()
-	os.Remove(cell.LogFile.Name())
-	os.Remove(cell.LogLink)
+	if cell.LogFile != nil {
+		cell.LogFile.Close()
+	}
 	os.Exit(0)
 }
 
