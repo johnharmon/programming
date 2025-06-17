@@ -27,6 +27,7 @@ var (
 	GenCleanupKey             = CreateCleanupKeyGenerator(CleanupTaskMap)
 	InsertCleanupKey          = CreateCleanupKeyInserter(CleanupTaskMap)
 	StartCleanupTasks         = CreateCleanupTaskStarter(CleanupTaskMap)
+	RegisterCleanupTask       = CreateCleanupTaskRegistrar(CleanupTaskMap)
 	LOGGER_CLEANUP_UNIQUE_KEY = "LOGGER_CLEANUP"
 )
 

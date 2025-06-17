@@ -44,11 +44,19 @@ func CreateCleanupTaskStarter(cleanupTaskMap map[string]*CleanupTask) func() {
 	}
 }
 
-func RegisterCleanupTask(name string, closer chan *sync.WaitGroup, Func func(), start bool) {
-	ct := &CleanupTask{Closer: closer, Name: name, Func: Func, Start: start}
-	cleanupKey := GenCleanupKey(ct.Name)
-	InsertCleanupKey(cleanupKey, ct)
+func CreateCleanupTaskRegistrar(cleanupTaskMap map[string]*CleanupTask) func(chan *sync.WaitGroup, func(), string, bool) {
+	return func(closer chan *sync.WaitGroup, Func func(), name string, start bool) {
+		ct := &CleanupTask{Closer: closer, Name: name, Func: Func, Start: start}
+		cleanupKey := GenCleanupKey(ct.Name)
+		InsertCleanupKey(cleanupKey, ct)
+	}
 }
+
+//func RegisterCleanupTask(name string, closer chan *sync.WaitGroup, Func func(), start bool) {
+//	ct := &CleanupTask{Closer: closer, Name: name, Func: Func, Start: start}
+//	cleanupKey := GenCleanupKey(ct.Name)
+//	InsertCleanupKey(cleanupKey, ct)
+//}
 
 var (
 	TERM_CLEAR_LINE   = []byte{0x1b, '[', '2', 'K'}
@@ -418,7 +426,7 @@ func (cl *ConcreteLogger) Cleanup() {
 	wg := <-cl.RunCh
 	defer wg.Done()
 	fmt.Fprintln(cl.Out, "Closing the logging channel")
-	close(ch.Done)
+	close(cl.Done)
 	close(cl.LogCh)
 	cl.Mu.Lock()
 	return
@@ -460,6 +468,8 @@ func ReturnKeyActionsToPool(p *sync.Pool, returner chan *KeyAction) {
 
 func MainEventHandler(mc *MainConfig) {
 	gl := GlobalLogger.(*ConcreteLogger)
+	RegisterCleanupTask(gl.RunCh, gl.Cleanup, LOGGER_CLEANUP_UNIQUE_KEY, false)
+
 	var ka *KeyAction
 	fd := int(os.Stdin.Fd())
 	// fd := *fdp
@@ -469,8 +479,8 @@ func MainEventHandler(mc *MainConfig) {
 		panic(err)
 	}
 	gl.Logln("Making closer channel")
-	closer := make(chan interface{})
-	RegisterCleanupTask("Logger", gl.RunCh, gl.Start, false)
+	closer := make(chan struct{})
+	// RegisterCleanupTask("Logger", gl.RunCh, gl.Start, false)
 	gl.Logln("Making *KeyAction pool")
 	sp := MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
 	go mc.State.ActiveWindow.RunKeyActionReturner(sp)
@@ -479,7 +489,8 @@ func MainEventHandler(mc *MainConfig) {
 	gl.Logln("Spinning off goroutine for returning *KeyActions to the pool")
 	go ReturnKeyActionsToPool(sp, keyActionReturner)
 	gl.Logln("Spinning off cleanup goroutine")
-	go Cleanup(closer, fd, oldState, mc.LogConfig)
+
+	go Cleanup(closer, fd, oldState, CleanupTaskMap)
 	buf := make([]byte, 1)
 	gl.Logln("Creating byte handler from closure")
 	byteHandler := MakeByteHandler(closer, mc.In, sp)
@@ -526,7 +537,7 @@ func CoerceInputToAction(b []byte) *KeyAction {
 	return ValidateSequence(b)
 }
 
-func MakeByteHandler(ch chan interface{}, in io.Reader, sp *sync.Pool) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
+func MakeByteHandler(ch chan struct{}, in io.Reader, sp *sync.Pool) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
 	res := make([]byte, 1, 8)
 	var seqN *KeyAction
 	sp = MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
