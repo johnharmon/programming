@@ -49,6 +49,9 @@ func CreateCleanupTaskRegistrar(cleanupTaskMap map[string]*CleanupTask) func(cha
 		ct := &CleanupTask{Closer: closer, Name: name, Func: Func, Start: start}
 		cleanupKey := GenCleanupKey(ct.Name)
 		InsertCleanupKey(cleanupKey, ct)
+		if ct.Start {
+			go ct.Func()
+		}
 	}
 }
 
@@ -424,19 +427,19 @@ func (w *Window) Scroll(scrollVector int) {
 
 func (cl *ConcreteLogger) Cleanup() {
 	wg := <-cl.RunCh
+	fmt.Fprintf(os.Stderr, "\n\n\n\n\n\n\n\n\nreceived the logging shutdown waitgroup")
 	defer wg.Done()
-	fmt.Fprintln(cl.Out, "Closing the logging channel")
+	cl.Logln("Closing the logging channel")
 	close(cl.Done)
 	close(cl.LogCh)
 	cl.Mu.Lock()
-	return
 }
 
 func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[string]*CleanupTask) {
 	wg1 := &sync.WaitGroup{}
 	wg2 := &sync.WaitGroup{}
 	<-closer
-	GlobalLogger.Logln("Caught termination signal")
+	GlobalLogger.Logln("Caught Main Cleanup termination signal")
 	for key, task := range taskMap {
 		if key != LOGGER_CLEANUP_UNIQUE_KEY {
 			GlobalLogger.Logln("Sending termination signal to task: %s", key)
@@ -446,9 +449,14 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 	}
 	GlobalLogger.Logln("Waiting for cleanup tasks to finsh...")
 	wg1.Wait()
+	GlobalLogger.Logln("Cleanup tasks finished, shutting down logger")
 	if task, ok := taskMap[LOGGER_CLEANUP_UNIQUE_KEY]; ok {
 		wg2.Add(1)
+		GlobalLogger.Logln("wg2 added")
+		fmt.Fprintf(os.Stderr, "\n\n\n\n\n\n\n\n\nREEEEEEEEEEEEEEEEEEEEEEEEEEE\n")
 		task.Closer <- wg2
+		fmt.Fprintf(os.Stderr, "wg2 put on logger closer channel")
+		GlobalLogger.Logln("wg2 put on logger closer channel")
 		wg2.Wait()
 	}
 	fmt.Println("\n\rRestoring old state")
@@ -468,11 +476,9 @@ func ReturnKeyActionsToPool(p *sync.Pool, returner chan *KeyAction) {
 
 func MainEventHandler(mc *MainConfig) {
 	gl := GlobalLogger.(*ConcreteLogger)
-	RegisterCleanupTask(gl.RunCh, gl.Cleanup, LOGGER_CLEANUP_UNIQUE_KEY, false)
-
+	RegisterCleanupTask(gl.RunCh, gl.Cleanup, LOGGER_CLEANUP_UNIQUE_KEY, true)
 	var ka *KeyAction
 	fd := int(os.Stdin.Fd())
-	// fd := *fdp
 	gl.Logln("Setting terminal to raw mode")
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
@@ -480,7 +486,6 @@ func MainEventHandler(mc *MainConfig) {
 	}
 	gl.Logln("Making closer channel")
 	closer := make(chan struct{})
-	// RegisterCleanupTask("Logger", gl.RunCh, gl.Start, false)
 	gl.Logln("Making *KeyAction pool")
 	sp := MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
 	go mc.State.ActiveWindow.RunKeyActionReturner(sp)
@@ -489,7 +494,6 @@ func MainEventHandler(mc *MainConfig) {
 	gl.Logln("Spinning off goroutine for returning *KeyActions to the pool")
 	go ReturnKeyActionsToPool(sp, keyActionReturner)
 	gl.Logln("Spinning off cleanup goroutine")
-
 	go Cleanup(closer, fd, oldState, CleanupTaskMap)
 	buf := make([]byte, 1)
 	gl.Logln("Creating byte handler from closure")
@@ -545,6 +549,7 @@ func MakeByteHandler(ch chan struct{}, in io.Reader, sp *sync.Pool) func(byte) *
 		res = res[:1]
 		GlobalLogger.Logln("Byte Handler result buffer: %b", res)
 		if b == 3 {
+			GlobalLogger.Logln("Interrupt caught, sending shutdown signal to global cleanup")
 			ch <- struct{}{}
 			//		} else if b == 13 {
 			// os.Exit(0)
