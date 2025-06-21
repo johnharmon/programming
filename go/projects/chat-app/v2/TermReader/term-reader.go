@@ -617,19 +617,19 @@ func NewDefaultCellWithFileLogger() (cell *Cell) {
 	cell.DisplayBuffer.AllocateLines(4096)
 	cell.BufferLen = len(cell.DisplayBuffer.Lines)
 	cell.LogCh = make(chan string, 1000)
-	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
+	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
 		cell.Logger = io.Discard
 		cell.LogFile = nil
 	} else {
-		os.Remove("term-reader-logger.txt")
-		err := os.Symlink(f.Name(), "term-reader-logger.txt")
+		os.Remove("term-reader-logger.json")
+		err := os.Symlink(f.Name(), "term-reader-logger.json")
 		if err != nil {
 			fmt.Printf("Error creating logger symlink: %s\n", err)
 		}
 		cell.Logger, cell.LogFile = f, f
-		cell.LogLink = "term-reader-logger.txt"
+		cell.LogLink = "term-reader-logger.json"
 		cell.Log("\x1b[2J==========LOG START=========")
 		cell.Log("Opened New logger at %s", f.Name())
 	}
