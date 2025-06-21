@@ -13,12 +13,19 @@ type EphemeralLogger interface {
 	Cleanup()
 }
 
+type LogEntry struct {
+	Message   string `json:"message"`
+	Timestamp any    `json:"timestamp"`
+}
+
 type ConcreteLogger struct {
-	Out   io.Writer
-	Mu    *sync.Mutex
-	LogCh chan string
-	RunCh chan *sync.WaitGroup
-	Done  chan struct{}
+	Out          io.Writer
+	Mu           *sync.Mutex
+	LogCh        chan string
+	RunCh        chan *sync.WaitGroup
+	Done         chan struct{}
+	LogFileName  string
+	LogEntryPool *sync.Pool
 }
 
 type KeyAction struct {
