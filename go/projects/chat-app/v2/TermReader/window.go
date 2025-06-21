@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -154,8 +156,6 @@ func (w *Window) GetDisplayCursorCol() int {
 	}
 }
 
-// func (w *Window) GetPosition
-
 func (w *Window) HandleArrowDown() (col int) {
 	w.IncrCursorLine(1)
 	col = w.GetDisplayCursorCol()
@@ -169,12 +169,6 @@ func (w *Window) IncrCursorLine(vec int) {
 		w.CursorLine = nextLine
 	}
 }
-
-/*
-func (w *Window) SetCursorCol() {
-	if w.DesiredCursorCol < len(w.Buf.Lines(w.
-}
-*/
 
 func (w *Window) MakeNewLines(count int) [][]byte {
 	newLines := make([][]byte, count, count)
@@ -427,7 +421,6 @@ func (w *Window) Scroll(scrollVector int) {
 
 func (cl *ConcreteLogger) Cleanup() {
 	wg := <-cl.RunCh
-	fmt.Fprintf(os.Stderr, "\n\n\n\n\n\n\n\n\nreceived the logging shutdown waitgroup")
 	defer wg.Done()
 	cl.Logln("Closing the logging channel")
 	close(cl.Done)
@@ -453,15 +446,29 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 	if task, ok := taskMap[LOGGER_CLEANUP_UNIQUE_KEY]; ok {
 		wg2.Add(1)
 		GlobalLogger.Logln("wg2 added")
-		fmt.Fprintf(os.Stderr, "\n\n\n\n\n\n\n\n\nREEEEEEEEEEEEEEEEEEEEEEEEEEE\n")
 		task.Closer <- wg2
-		fmt.Fprintf(os.Stderr, "wg2 put on logger closer channel")
-		GlobalLogger.Logln("wg2 put on logger closer channel")
 		wg2.Wait()
 	}
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
 	os.Exit(0)
+}
+
+func CleanLogFiles(currentFile string) {
+	// assume files are in cwd for now
+	entries, err := os.ReadDir("./")
+	entryRegex, _ := regexp.Compile(`\.term-reader-logger\.json.*`)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Could not open ./")
+	}
+	for _, entry := range entries {
+		if entry.Name() != currentFile && entryRegex.Match([]byte(entry.Name())) {
+			err = os.Remove(entry.Name())
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Could not open ./")
+			}
+		}
+	}
 }
 
 func ReturnKeyActionsToPool(p *sync.Pool, returner chan *KeyAction) {
@@ -613,41 +620,29 @@ func (cl *ConcreteLogger) Log(message string, vars ...any) {
 }
 
 func (cl *ConcreteLogger) Logln(message string, vars ...any) {
-	timestamp := time.Now().Format(time.StampMicro)
-	vars = append(vars, timestamp)
-	message = message + " TIMESTAMP: %s\n"
-	select {
-	case cl.LogCh <- fmt.Sprintf(message, vars...):
-	case <-cl.Done:
-		fmt.Fprintf(os.Stdout, message, vars...)
-	}
+	go func() {
+		timestamp := time.Now().Format(time.StampMicro)
+		entry := cl.LogEntryPool.Get().(*LogEntry)
+		entry.Message = fmt.Sprintf(message, vars...)
+		entry.Timestamp = timestamp
+		msg, err := json.Marshal(entry)
+		if err != nil {
+			os.Exit(1)
+		}
+		select {
+		case cl.LogCh <- string(msg) + "\n":
+		case <-cl.Done:
+			fmt.Fprint(cl.Out, message)
+		}
+	}()
 }
 
 func (cl *ConcreteLogger) Start() {
 	cl.Mu.Lock()
-	for {
-		select {
-		case msg, ok := <-cl.LogCh:
-			if ok {
-				fmt.Fprint(cl.Out, msg)
-			} else {
-				cl.Mu.Unlock()
-				return
-			}
-			//		case wg := <-cl.RunCh:
-			//			defer wg.Done()
-			//			cl.Logln("Logger caught termination signal, unlocking the mutex")
-			//			close(cl.LogCh)
-			//			for msg := range cl.LogCh {
-			//				fmt.Fprint(cl.Out, msg)
-			//			}
-			//			cl.Mu.Unlock()
-			//			return
-			//		default:
-			//			time.Sleep(1 * time.Millisecond)
-			//
-		}
+	for msg := range cl.LogCh {
+		fmt.Fprint(cl.Out, msg)
 	}
+	cl.Mu.Unlock()
 }
 
 func (cl *ConcreteLogger) Stop() {
@@ -657,13 +652,13 @@ func (cl *ConcreteLogger) Stop() {
 func (cl *ConcreteLogger) InitWithBuffer() {
 	cl.LogCh = make(chan string, 1000)
 	cl.RunCh = make(chan *sync.WaitGroup)
-	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
+	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
 		cl.Out = io.Discard
 	} else {
-		os.Remove("term-reader-logger.txt")
-		err := os.Symlink(f.Name(), "term-reader-logger.txt")
+		os.Remove("term-reader-logger.json")
+		err := os.Symlink(f.Name(), "term-reader-logger.json")
 		if err != nil {
 			fmt.Printf("Error creating logger symlink: %s\n", err)
 		}
@@ -679,19 +674,24 @@ func (cl *ConcreteLogger) Init() {
 	cl.LogCh = make(chan string, 1000)
 	cl.RunCh = make(chan *sync.WaitGroup)
 	cl.Done = make(chan struct{})
-	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
+	cl.LogEntryPool = &sync.Pool{}
+	cl.LogEntryPool.New = func() any {
+		return &LogEntry{}
+	}
+
+	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
 		cl.Out = io.Discard
 	} else {
-		os.Remove("term-reader-logger.txt")
-		err := os.Symlink(f.Name(), "term-reader-logger.txt")
+		os.Remove("term-reader-logger.json")
+		err := os.Symlink(f.Name(), "term-reader-logger.json")
 		if err != nil {
 			fmt.Printf("Error creating logger symlink: %s\n", err)
 		}
 		cl.Out = f
 		go cl.Start()
-		cl.Log("Opened New logger at %s", f.Name())
+		cl.Logln("Opened New logger at %s", f.Name())
 	}
 }
 
