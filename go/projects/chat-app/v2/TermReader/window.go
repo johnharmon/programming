@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -449,9 +450,10 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 		task.Closer <- wg2
 		wg2.Wait()
 	}
-	fmt.Println("\n\rRestoring old state")
-	term.Restore(fd, oldState)
-	os.Exit(0)
+	CleanupLogFiles(
+		fmt.Println("\n\rRestoring old state"),
+		term.Restore(fd, oldState),
+		os.Exit(0))
 }
 
 func CleanLogFiles(currentFile string) {
@@ -639,8 +641,38 @@ func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 
 func (cl *ConcreteLogger) Start() {
 	cl.Mu.Lock()
-	for msg := range cl.LogCh {
-		fmt.Fprint(cl.Out, msg)
+	bufFlushSize := 1024
+	flushBuffer := &bytes.Buffer{}
+	activeBuffer := &bytes.Buffer{}
+	ticker := time.NewTicker(time.Millisecond * 100)
+listenLoop:
+	for {
+		select {
+		case msg := <-cl.LogCh:
+			activeBuffer.Write([]byte(msg))
+			if activeBuffer.Len() >= bufFlushSize {
+				cl.Out.Write(activeBuffer.Bytes())
+				activeBuffer.Reset()
+				tmp := activeBuffer
+				activeBuffer = flushBuffer
+				flushBuffer = tmp
+			}
+		case <-ticker.C:
+			if activeBuffer.Len() > 0 {
+				cl.Out.Write(activeBuffer.Bytes())
+				activeBuffer.Reset()
+				tmp := activeBuffer
+				activeBuffer = flushBuffer
+				flushBuffer = tmp
+
+			}
+		case <-cl.Done:
+			for msg := range cl.LogCh {
+				activeBuffer.Write([]byte(msg))
+			}
+			cl.Out.Write(activeBuffer.Bytes())
+			break listenLoop
+		}
 	}
 	cl.Mu.Unlock()
 }
