@@ -18,14 +18,21 @@ type LogEntry struct {
 	Timestamp any    `json:"timestamp"`
 }
 
+type RawLogArgs struct {
+	FormatMessage string
+	FormatArgs    []any
+}
+
 type ConcreteLogger struct {
-	Out          io.Writer
-	Mu           *sync.Mutex
-	LogCh        chan string
-	RunCh        chan *sync.WaitGroup
-	Done         chan struct{}
-	LogFileName  string
-	LogEntryPool *sync.Pool
+	Out   io.Writer
+	Mu    *sync.Mutex
+	LogCh chan string
+	RawLogCh
+	RunCh         chan *sync.WaitGroup
+	Done          chan struct{}
+	LogFileName   string
+	LogEntryPool  *sync.Pool
+	RawLogArgPool *sync.Pool
 }
 
 type KeyAction struct {
