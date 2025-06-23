@@ -639,6 +639,28 @@ func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 	}()
 }
 
+func (cl *ConcreteLogger) ChannelLogln(message string, vars ...any) {
+	rawLogArgs := cl.RawLogArgPool.New().(*RawLogArgs)
+	rawLogArgs.FormatMessage = message
+	rawLogArgs.FormatArgs = vars
+	cl.RawLogCh <- rawLogArgs
+	//	go func() {
+	//		timestamp := time.Now().Format(time.StampMicro)
+	//		entry := cl.LogEntryPool.Get().(*LogEntry)
+	//		entry.Message = fmt.Sprintf(message, vars...)
+	//		entry.Timestamp = timestamp
+	//		msg, err := json.Marshal(entry)
+	//		if err != nil {
+	//			os.Exit(1)
+	//		}
+	//		select {
+	//		case cl.LogCh <- string(msg) + "\n":
+	//		case <-cl.Done:
+	//			fmt.Fprint(cl.Out, message)
+	//		}
+	//	}()
+}
+
 func (cl *ConcreteLogger) Start() {
 	cl.Mu.Lock()
 	bufFlushSize := 1024
@@ -653,17 +675,13 @@ listenLoop:
 			if activeBuffer.Len() >= bufFlushSize {
 				cl.Out.Write(activeBuffer.Bytes())
 				activeBuffer.Reset()
-				tmp := activeBuffer
-				activeBuffer = flushBuffer
-				flushBuffer = tmp
+				activeBuffer, flushBuffer = flushBuffer, activeBuffer
 			}
 		case <-ticker.C:
 			if activeBuffer.Len() > 0 {
 				cl.Out.Write(activeBuffer.Bytes())
 				activeBuffer.Reset()
-				tmp := activeBuffer
-				activeBuffer = flushBuffer
-				flushBuffer = tmp
+				activeBuffer, flushBuffer = flushBuffer, activeBuffer
 
 			}
 		case <-cl.Done:
@@ -707,8 +725,12 @@ func (cl *ConcreteLogger) Init() {
 	cl.RunCh = make(chan *sync.WaitGroup)
 	cl.Done = make(chan struct{})
 	cl.LogEntryPool = &sync.Pool{}
+	cl.RawLogArgPool = &sync.Pool{}
 	cl.LogEntryPool.New = func() any {
 		return &LogEntry{}
+	}
+	cl.RawLogArgPool.New = func() any {
+		return &RawLogArgs{}
 	}
 
 	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
