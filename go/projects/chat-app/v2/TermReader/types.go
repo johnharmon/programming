@@ -24,10 +24,15 @@ type RawLogArgs struct {
 }
 
 type ConcreteLogger struct {
-	Out   io.Writer
-	Mu    *sync.Mutex
-	LogCh chan string
-	RawLogCh
+	ActiveBuffer  *bytes.Buffer
+	FlushBuffer   *bytes.Buffer
+	Out           io.Writer
+	Mu            *sync.Mutex
+	FlushMu       *sync.Mutex
+	SwapMu        *sync.Mutex
+	LogCh         chan []byte
+	JsonCh        chan *LogEntry
+	RawLogCh      chan *RawLogArgs
 	RunCh         chan *sync.WaitGroup
 	Done          chan struct{}
 	LogFileName   string

@@ -450,7 +450,7 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 		task.Closer <- wg2
 		wg2.Wait()
 	}
-	CleanupLogFiles(
+	CleanLogFiles()
 		fmt.Println("\n\rRestoring old state"),
 		term.Restore(fd, oldState),
 		os.Exit(0))
@@ -618,47 +618,92 @@ func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 }
 
 func (cl *ConcreteLogger) Log(message string, vars ...any) {
-	cl.LogCh <- fmt.Sprintf(message, vars...)
+	cl.LogCh <- []byte(fmt.Sprintf(message, vars...))
 }
 
+//	func (cl *ConcreteLogger) Logln(message string, vars ...any) {
+//		go func() {
+//			timestamp := time.Now().Format(time.StampMicro)
+//			entry := cl.LogEntryPool.Get().(*LogEntry)
+//			entry.Message = fmt.Sprintf(message, vars...)
+//			entry.Timestamp = timestamp
+//			msg, err := json.Marshal(entry)
+//			if err != nil {
+//				os.Exit(1)
+//			}
+//			select {
+//			case cl.LogCh <- string(msg) + "\n":
+//			case <-cl.Done:
+//				fmt.Fprint(cl.Out, message)
+//			}
+//		}()
+//	}
 func (cl *ConcreteLogger) Logln(message string, vars ...any) {
-	go func() {
-		timestamp := time.Now().Format(time.StampMicro)
-		entry := cl.LogEntryPool.Get().(*LogEntry)
-		entry.Message = fmt.Sprintf(message, vars...)
-		entry.Timestamp = timestamp
-		msg, err := json.Marshal(entry)
-		if err != nil {
-			os.Exit(1)
-		}
-		select {
-		case cl.LogCh <- string(msg) + "\n":
-		case <-cl.Done:
-			fmt.Fprint(cl.Out, message)
-		}
-	}()
-}
-
-func (cl *ConcreteLogger) ChannelLogln(message string, vars ...any) {
-	rawLogArgs := cl.RawLogArgPool.New().(*RawLogArgs)
+	rawLogArgs := cl.RawLogArgPool.Get().(*RawLogArgs)
 	rawLogArgs.FormatMessage = message
 	rawLogArgs.FormatArgs = vars
 	cl.RawLogCh <- rawLogArgs
-	//	go func() {
-	//		timestamp := time.Now().Format(time.StampMicro)
-	//		entry := cl.LogEntryPool.Get().(*LogEntry)
-	//		entry.Message = fmt.Sprintf(message, vars...)
-	//		entry.Timestamp = timestamp
-	//		msg, err := json.Marshal(entry)
-	//		if err != nil {
-	//			os.Exit(1)
-	//		}
-	//		select {
-	//		case cl.LogCh <- string(msg) + "\n":
-	//		case <-cl.Done:
-	//			fmt.Fprint(cl.Out, message)
-	//		}
-	//	}()
+}
+
+func (cl *ConcreteLogger) RawLogHandler() {
+	for logArgs := range cl.RawLogCh {
+		entry := cl.LogEntryPool.Get().(*LogEntry)
+		entry.Message = fmt.Sprintf(logArgs.FormatMessage, logArgs.FormatArgs...)
+		entry.Timestamp = time.Now().Format(time.StampMicro)
+		cl.JsonCh <- entry
+		cl.RawLogArgPool.Put(logArgs)
+	}
+	close(cl.JsonCh)
+	return
+}
+
+func (cl *ConcreteLogger) JsonMarshaler() {
+	for rawLog := range cl.JsonCh {
+		jsonMessage, _ := json.Marshal(rawLog)
+		cl.LogCh <- jsonMessage
+		cl.LogEntryPool.Put(rawLog)
+	}
+	close(cl.LogCh)
+	return
+}
+
+func (cl *ConcreteLogger) JsonWriter() {
+	cl.Mu.Lock()
+	bufFlushSize := 1024
+	ticker := time.NewTicker(time.Millisecond * 100)
+	for {
+		select {
+		case msg, ok := <-cl.LogCh:
+			if !ok {
+				if cl.ActiveBuffer.Len() > 0 {
+					cl.Out.Write(cl.ActiveBuffer.Bytes())
+				}
+				cl.Mu.Unlock()
+				return
+			}
+			cl.ActiveBuffer.Write([]byte(msg))
+			if cl.ActiveBuffer.Len() >= bufFlushSize {
+				cl.FlushAndSwapActiveBuffer()
+			}
+		case <-ticker.C:
+			if cl.ActiveBuffer.Len() > 0 {
+				cl.FlushAndSwapActiveBuffer()
+			}
+		}
+	}
+}
+
+func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
+	cl.SwapMu.Lock()
+	cl.ActiveBuffer, cl.FlushBuffer = cl.FlushBuffer, cl.ActiveBuffer
+	flushBuf := cl.FlushBuffer
+	go func() {
+		bufCopy := make([]byte, flushBuf.Len())
+		copy(bufCopy, flushBuf.Bytes())
+		flushBuf.Reset()
+		cl.SwapMu.Unlock()
+		cl.Out.Write(bufCopy)
+	}()
 }
 
 func (cl *ConcreteLogger) Start() {
@@ -700,7 +745,7 @@ func (cl *ConcreteLogger) Stop() {
 }
 
 func (cl *ConcreteLogger) InitWithBuffer() {
-	cl.LogCh = make(chan string, 1000)
+	cl.LogCh = make(chan []byte, 1000)
 	cl.RunCh = make(chan *sync.WaitGroup)
 	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
 	if err != nil {
@@ -721,8 +766,11 @@ func (cl *ConcreteLogger) InitWithBuffer() {
 func (cl *ConcreteLogger) Init() {
 	// cl.LogCh = make(chan string)
 	cl.Mu = &sync.Mutex{}
-	cl.LogCh = make(chan string, 1000)
+	cl.FlushMu = &sync.Mutex{}
+	cl.SwapMu = &sync.Mutex{}
+	cl.LogCh = make(chan []byte, 1000)
 	cl.RunCh = make(chan *sync.WaitGroup)
+	cl.RawLogCh = make(chan *RawLogArgs, 1000)
 	cl.Done = make(chan struct{})
 	cl.LogEntryPool = &sync.Pool{}
 	cl.RawLogArgPool = &sync.Pool{}
