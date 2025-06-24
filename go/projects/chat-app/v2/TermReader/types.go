@@ -30,6 +30,7 @@ type ConcreteLogger struct {
 	Mu            *sync.Mutex
 	FlushMu       *sync.Mutex
 	SwapMu        *sync.Mutex
+	FlushCh       chan struct{}
 	LogCh         chan []byte
 	JsonCh        chan *LogEntry
 	RawLogCh      chan *RawLogArgs
