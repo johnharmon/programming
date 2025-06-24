@@ -451,9 +451,9 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 		wg2.Wait()
 	}
 	CleanLogFiles()
-		fmt.Println("\n\rRestoring old state"),
-		term.Restore(fd, oldState),
-		os.Exit(0))
+	fmt.Println("\n\rRestoring old state")
+	term.Restore(fd, oldState)
+	os.Exit(0)
 }
 
 func CleanLogFiles(currentFile string) {
@@ -676,33 +676,44 @@ func (cl *ConcreteLogger) JsonWriter() {
 		case msg, ok := <-cl.LogCh:
 			if !ok {
 				if cl.ActiveBuffer.Len() > 0 {
+					<-cl.FlushCh
 					cl.Out.Write(cl.ActiveBuffer.Bytes())
 				}
 				cl.Mu.Unlock()
 				return
 			}
-			cl.ActiveBuffer.Write([]byte(msg))
+			cl.SwapMu.Lock()
+			cl.ActiveBuffer.Write(msg)
+			cl.SwapMu.Unlock()
 			if cl.ActiveBuffer.Len() >= bufFlushSize {
-				cl.FlushAndSwapActiveBuffer()
+				select {
+				case <-cl.FlushCh:
+					cl.FlushAndSwapActiveBuffer()
+				default:
+					continue
+				}
 			}
 		case <-ticker.C:
 			if cl.ActiveBuffer.Len() > 0 {
-				cl.FlushAndSwapActiveBuffer()
+				select {
+				case <-cl.FlushCh:
+					cl.FlushAndSwapActiveBuffer()
+				default:
+					continue
+				}
 			}
 		}
 	}
 }
 
 func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
-	cl.SwapMu.Lock()
-	cl.ActiveBuffer, cl.FlushBuffer = cl.FlushBuffer, cl.ActiveBuffer
-	flushBuf := cl.FlushBuffer
 	go func() {
-		bufCopy := make([]byte, flushBuf.Len())
-		copy(bufCopy, flushBuf.Bytes())
-		flushBuf.Reset()
+		cl.SwapMu.Lock()
+		cl.ActiveBuffer, cl.FlushBuffer = cl.FlushBuffer, cl.ActiveBuffer
 		cl.SwapMu.Unlock()
-		cl.Out.Write(bufCopy)
+		cl.Out.Write(cl.FlushBuffer.Bytes())
+		cl.FlushBuffer.Reset()
+		cl.FlushCh <- struct{}{}
 	}()
 }
 
@@ -712,6 +723,7 @@ func (cl *ConcreteLogger) Start() {
 	flushBuffer := &bytes.Buffer{}
 	activeBuffer := &bytes.Buffer{}
 	ticker := time.NewTicker(time.Millisecond * 100)
+	cl.FlushCh <- struct{}{}
 listenLoop:
 	for {
 		select {
@@ -727,7 +739,6 @@ listenLoop:
 				cl.Out.Write(activeBuffer.Bytes())
 				activeBuffer.Reset()
 				activeBuffer, flushBuffer = flushBuffer, activeBuffer
-
 			}
 		case <-cl.Done:
 			for msg := range cl.LogCh {
@@ -768,6 +779,7 @@ func (cl *ConcreteLogger) Init() {
 	cl.Mu = &sync.Mutex{}
 	cl.FlushMu = &sync.Mutex{}
 	cl.SwapMu = &sync.Mutex{}
+	cl.FlushCh = make(chan struct{}, 1)
 	cl.LogCh = make(chan []byte, 1000)
 	cl.RunCh = make(chan *sync.WaitGroup)
 	cl.RawLogCh = make(chan *RawLogArgs, 1000)
