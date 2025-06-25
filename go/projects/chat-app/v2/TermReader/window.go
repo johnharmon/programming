@@ -658,9 +658,12 @@ func (cl *ConcreteLogger) RawLogHandler() {
 }
 
 func (cl *ConcreteLogger) JsonMarshaler() {
+	encodeBuffer := bytes.NewBuffer(make([]byte, 0, 2048))
+	encoder := json.NewEncoder(encodeBuffer)
 	for rawLog := range cl.JsonCh {
-		jsonMessage, _ := json.Marshal(rawLog)
-		cl.LogCh <- jsonMessage
+		encodeBuffer.Reset()
+		encoder.Encode(rawLog)
+		cl.LogCh <- encodeBuffer.Bytes()
 		cl.LogEntryPool.Put(rawLog)
 	}
 	close(cl.LogCh)
@@ -715,6 +718,22 @@ func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
 		cl.FlushBuffer.Reset()
 		cl.FlushCh <- struct{}{}
 	}()
+}
+
+func (cl *ConcreteLogger) StartAsync() {
+	cl.Mu.Lock()
+	cl.FlushCh <- struct{}{}
+	cl.RawLogHandler()
+	cl.JsonMarshaler()
+	cl.JsonWriter()
+	for {
+		select {
+		case _, ok := <-cl.Done:
+			if !ok {
+				close(cl.RawLogCh)
+			}
+		}
+	}
 }
 
 func (cl *ConcreteLogger) Start() {
