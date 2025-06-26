@@ -23,6 +23,11 @@ type RawLogArgs struct {
 	FormatArgs    []any
 }
 
+type FlushToken struct {
+	Iterations int
+	Values     map[string]any
+}
+
 type ConcreteLogger struct {
 	ActiveBuffer  *bytes.Buffer
 	FlushBuffer   *bytes.Buffer
@@ -30,7 +35,8 @@ type ConcreteLogger struct {
 	Mu            *sync.Mutex
 	FlushMu       *sync.Mutex
 	SwapMu        *sync.Mutex
-	FlushCh       chan struct{}
+	FlushSender   chan *FlushToken
+	FlushReceiver chan *FlushToken
 	LogCh         chan []byte
 	JsonCh        chan *LogEntry
 	RawLogCh      chan *RawLogArgs

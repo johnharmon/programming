@@ -672,6 +672,7 @@ func (cl *ConcreteLogger) JsonMarshaler() {
 
 func (cl *ConcreteLogger) JsonWriter() {
 	cl.Mu.Lock()
+	var flushToken *FlushToken
 	bufFlushSize := 1024
 	ticker := time.NewTicker(time.Millisecond * 100)
 	for {
@@ -679,7 +680,7 @@ func (cl *ConcreteLogger) JsonWriter() {
 		case msg, ok := <-cl.LogCh:
 			if !ok {
 				if cl.ActiveBuffer.Len() > 0 {
-					<-cl.FlushCh
+					flushToken = <-cl.FlushReceiver
 					cl.Out.Write(cl.ActiveBuffer.Bytes())
 				}
 				cl.Mu.Unlock()
@@ -690,8 +691,9 @@ func (cl *ConcreteLogger) JsonWriter() {
 			cl.SwapMu.Unlock()
 			if cl.ActiveBuffer.Len() >= bufFlushSize {
 				select {
-				case <-cl.FlushCh:
+				case flushToken = <-cl.FlushReceiver:
 					cl.FlushAndSwapActiveBuffer()
+					cl.FlushSender <- flushToken
 				default:
 					continue
 				}
@@ -699,8 +701,9 @@ func (cl *ConcreteLogger) JsonWriter() {
 		case <-ticker.C:
 			if cl.ActiveBuffer.Len() > 0 {
 				select {
-				case <-cl.FlushCh:
+				case flushToken = <-cl.FlushReceiver:
 					cl.FlushAndSwapActiveBuffer()
+					cl.FlushSender <- flushToken
 				default:
 					continue
 				}
@@ -714,15 +717,18 @@ func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
 		cl.SwapMu.Lock()
 		cl.ActiveBuffer, cl.FlushBuffer = cl.FlushBuffer, cl.ActiveBuffer
 		cl.SwapMu.Unlock()
+		flushToken := <-cl.FlushSender
+		flushToken.Iterations++
 		cl.Out.Write(cl.FlushBuffer.Bytes())
 		cl.FlushBuffer.Reset()
-		cl.FlushCh <- struct{}{}
+		cl.FlushReceiver <- flushToken
 	}()
 }
 
 func (cl *ConcreteLogger) StartAsync() {
 	cl.Mu.Lock()
-	cl.FlushCh <- struct{}{}
+	flushToken := &FlushToken{Iterations: 0}
+	cl.FlushCh <- flushToken
 	cl.RawLogHandler()
 	cl.JsonMarshaler()
 	cl.JsonWriter()
