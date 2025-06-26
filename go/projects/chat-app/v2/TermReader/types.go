@@ -8,7 +8,6 @@ import (
 )
 
 type EphemeralLogger interface {
-	Log(string, ...any)
 	Logln(string, ...any)
 	Cleanup()
 }
@@ -24,8 +23,9 @@ type RawLogArgs struct {
 }
 
 type FlushToken struct {
-	Iterations int
-	Values     map[string]any
+	Iteration int
+	HandledBy string
+	Values    map[string]any
 }
 
 type ConcreteLogger struct {
@@ -37,8 +37,8 @@ type ConcreteLogger struct {
 	SwapMu        *sync.Mutex
 	FlushSender   chan *FlushToken
 	FlushReceiver chan *FlushToken
-	LogCh         chan []byte
-	JsonCh        chan *LogEntry
+	LogOutput     chan []byte
+	LogEntryCh    chan *LogEntry
 	RawLogCh      chan *RawLogArgs
 	RunCh         chan *sync.WaitGroup
 	Done          chan struct{}
