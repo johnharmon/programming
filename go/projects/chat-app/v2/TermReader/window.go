@@ -377,6 +377,7 @@ func (w *Window) DisplayStatusLine() {
 		w.Height)
 	padding := strings.Repeat(" ", w.Width-len(statusLine))
 	fmt.Fprintf(w.Out, "%s%s", statusLine, padding)
+	// fmt.Fprintf(w.Out, "FlushToken: %s", GlobalLogger.(*ConcreteLogger).FlushBuffer.Bytes())
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
 }
 
@@ -425,7 +426,7 @@ func (cl *ConcreteLogger) Cleanup() {
 	defer wg.Done()
 	cl.Logln("Closing the logging channel")
 	close(cl.Done)
-	close(cl.LogOutput)
+	// close(cl.LogOutput)
 	cl.Mu.Lock()
 }
 
@@ -450,9 +451,9 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 		task.Closer <- wg2
 		wg2.Wait()
 	}
-	if gl, ok := GlobalLogger.(*ConcreteLogger); ok {
-		CleanLogFiles(gl.LogFileName)
-	}
+	//	if gl, ok := GlobalLogger.(*ConcreteLogger); ok {
+	//		CleanLogFiles(gl.LogFileName)
+	//	}
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
 	os.Exit(0)
@@ -641,6 +642,7 @@ func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 //		}()
 //	}
 func (cl *ConcreteLogger) Logln(message string, vars ...any) {
+	// fmt.Fprintf(os.Stderr, "Logln called\n")
 	rawLogArgs := cl.RawLogArgPool.Get().(*RawLogArgs)
 	rawLogArgs.FormatMessage = message
 	rawLogArgs.FormatArgs = vars
@@ -649,6 +651,7 @@ func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 
 func (cl *ConcreteLogger) RawLogHandler() {
 	for logArgs := range cl.RawLogCh {
+		// fmt.Fprintf(os.Stderr, "RawLogHandler received log: %s\n", logArgs.FormatMessage)
 		entry := cl.LogEntryPool.Get().(*LogEntry)
 		entry.Message = fmt.Sprintf(logArgs.FormatMessage, logArgs.FormatArgs...)
 		entry.Timestamp = time.Now().Format(time.StampMicro)
@@ -662,26 +665,34 @@ func (cl *ConcreteLogger) JsonMarshaler() {
 	encodeBuffer := bytes.NewBuffer(make([]byte, 0, 2048))
 	encoder := json.NewEncoder(encodeBuffer)
 	for rawLog := range cl.LogEntryCh {
+		encodeSlice := cl.MessageBufferPool.New().([]byte)
+		encodeSlice = encodeSlice[:0]
+		// fmt.Fprintf(os.Stderr, "JsonMarshaler received Log entry: +%v\n", rawLog)
 		encodeBuffer.Reset()
 		encoder.Encode(rawLog)
-		cl.LogOutput <- encodeBuffer.Bytes()
+		encodeSlice = append(encodeSlice, encodeBuffer.Bytes()...)
+		cl.LogOutput <- encodeSlice
+		os.Stderr.Write(encodeBuffer.Bytes())
 		cl.LogEntryPool.Put(rawLog)
 	}
 	close(cl.LogOutput)
 }
 
 func (cl *ConcreteLogger) JsonWriter() {
-	cl.Mu.Lock()
+	// cl.Mu.Lock()
 	var flushToken *FlushToken
 	bufFlushSize := 1024
 	ticker := time.NewTicker(time.Millisecond * 100)
+LogWriteLoop:
 	for {
 		select {
 		case msg, ok := <-cl.LogOutput:
+			// fmt.Fprintf(os.Stderr, "JsonWriter received Log: %s\n", msg)
 			if !ok {
 				if cl.ActiveBuffer.Len() > 0 {
 					flushToken = <-cl.FlushReceiver
 					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch; if !ok {<this>}"
+					flushToken.SentBy = "JsonWriter(): case msg, ok := <- cl.Logch; if !ok {<this>}"
 					cl.Out.Write(cl.ActiveBuffer.Bytes())
 				}
 				cl.Mu.Unlock()
@@ -689,15 +700,18 @@ func (cl *ConcreteLogger) JsonWriter() {
 			}
 			cl.SwapMu.Lock()
 			cl.ActiveBuffer.Write(msg)
+			os.Stderr.Write(msg)
 			cl.SwapMu.Unlock()
+			cl.MessageBufferPool.Put(msg)
 			if cl.ActiveBuffer.Len() >= bufFlushSize {
 				select {
 				case flushToken = <-cl.FlushReceiver:
 					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch"
+					flushToken.SentBy = "JsonWriter(): case msg, ok := <- cl.Logch"
 					cl.FlushAndSwapActiveBuffer()
 					cl.FlushSender <- flushToken
 				default:
-					continue
+					continue LogWriteLoop
 				}
 			}
 		case <-ticker.C:
@@ -705,10 +719,11 @@ func (cl *ConcreteLogger) JsonWriter() {
 				select {
 				case flushToken = <-cl.FlushReceiver:
 					flushToken.HandledBy = "JsonWriter(): case <- ticker.C:"
+					flushToken.SentBy = "JsonWriter(): case <- ticker.C:"
 					cl.FlushAndSwapActiveBuffer()
 					cl.FlushSender <- flushToken
 				default:
-					continue
+					continue LogWriteLoop
 				}
 			}
 		}
@@ -723,6 +738,7 @@ func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
 		flushToken := <-cl.FlushSender
 		flushToken.Iteration++
 		flushToken.HandledBy = "FlushAndSwapActiveBuffer()"
+		flushToken.ReceivedBy = "FlushAndSwapActiveBuffer()"
 		cl.Out.Write(cl.FlushBuffer.Bytes())
 		cl.FlushBuffer.Reset()
 		cl.FlushReceiver <- flushToken
@@ -739,6 +755,7 @@ func (cl *ConcreteLogger) StartAsync() {
 	for {
 		_, ok := <-cl.Done
 		if !ok {
+			// fmt.Fprintf(os.Stderr, "Logging close received, exiting")
 			close(cl.RawLogCh)
 		}
 	}
@@ -747,14 +764,18 @@ func (cl *ConcreteLogger) StartAsync() {
 func (cl *ConcreteLogger) Start() {
 	cl.Mu.Lock()
 	flushToken := &FlushToken{Iteration: 0}
+	go cl.RawLogHandler()
+	go cl.JsonMarshaler()
+	go cl.JsonWriter()
 	cl.FlushReceiver <- flushToken
-	cl.RawLogHandler()
-	cl.JsonMarshaler()
-	cl.JsonWriter()
 	for {
+		// fmt.Fprintf(os.Stderr, "Waiting on cl.Done to be closed\n")
 		_, ok := <-cl.Done
 		if !ok {
+			// fmt.Fprintf(os.Stderr, "cl.Done closed, closing cl.RawLogCh\n")
+			cl.RawLogCh <- &RawLogArgs{FormatMessage: "FlushToken{Iterations: %d HandledBy: %s, SentBy: %s", FormatArgs: []any{flushToken.Iteration, flushToken.HandledBy, flushToken.SentBy}}
 			close(cl.RawLogCh)
+			break
 		}
 	}
 }
@@ -821,8 +842,10 @@ func (cl *ConcreteLogger) Init() {
 	cl.Mu = &sync.Mutex{}
 	cl.FlushMu = &sync.Mutex{}
 	cl.SwapMu = &sync.Mutex{}
-	cl.FlushReceiver = make(chan *FlushToken, 1)
-	cl.FlushSender = make(chan *FlushToken, 1)
+	cl.ActiveBuffer = &bytes.Buffer{}
+	cl.FlushBuffer = &bytes.Buffer{}
+	cl.FlushReceiver = make(chan *FlushToken)
+	cl.FlushSender = make(chan *FlushToken)
 	cl.LogOutput = make(chan []byte, 1000)
 	cl.RawLogCh = make(chan *RawLogArgs, 1000)
 	cl.LogEntryCh = make(chan *LogEntry, 1000)
@@ -835,6 +858,10 @@ func (cl *ConcreteLogger) Init() {
 	cl.RawLogArgPool = &sync.Pool{}
 	cl.RawLogArgPool.New = func() any {
 		return &RawLogArgs{}
+	}
+	cl.MessageBufferPool = &sync.Pool{}
+	cl.MessageBufferPool.New = func() any {
+		return make([]byte, 2048)
 	}
 
 	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
