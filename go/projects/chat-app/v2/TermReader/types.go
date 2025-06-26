@@ -23,28 +23,31 @@ type RawLogArgs struct {
 }
 
 type FlushToken struct {
-	Iteration int
-	HandledBy string
-	Values    map[string]any
+	Iteration  int
+	HandledBy  string
+	SentBy     string
+	ReceivedBy string
+	Values     map[string]any
 }
 
 type ConcreteLogger struct {
-	ActiveBuffer  *bytes.Buffer
-	FlushBuffer   *bytes.Buffer
-	Out           io.Writer
-	Mu            *sync.Mutex
-	FlushMu       *sync.Mutex
-	SwapMu        *sync.Mutex
-	FlushSender   chan *FlushToken
-	FlushReceiver chan *FlushToken
-	LogOutput     chan []byte
-	LogEntryCh    chan *LogEntry
-	RawLogCh      chan *RawLogArgs
-	RunCh         chan *sync.WaitGroup
-	Done          chan struct{}
-	LogFileName   string
-	LogEntryPool  *sync.Pool
-	RawLogArgPool *sync.Pool
+	ActiveBuffer      *bytes.Buffer
+	FlushBuffer       *bytes.Buffer
+	Out               io.Writer
+	Mu                *sync.Mutex
+	FlushMu           *sync.Mutex
+	SwapMu            *sync.Mutex
+	FlushSender       chan *FlushToken
+	FlushReceiver     chan *FlushToken
+	LogOutput         chan []byte
+	LogEntryCh        chan *LogEntry
+	RawLogCh          chan *RawLogArgs
+	RunCh             chan *sync.WaitGroup
+	Done              chan struct{}
+	LogFileName       string
+	LogEntryPool      *sync.Pool
+	RawLogArgPool     *sync.Pool
+	MessageBufferPool *sync.Pool
 }
 
 type KeyAction struct {
