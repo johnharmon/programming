@@ -172,7 +172,7 @@ func (w *Window) IncrCursorLine(vec int) {
 }
 
 func (w *Window) MakeNewLines(count int) [][]byte {
-	newLines := make([][]byte, count, count)
+	newLines := make([][]byte, count)
 	for i := range newLines {
 		newLines[i] = make([]byte, 0, 4096)
 	}
@@ -425,7 +425,7 @@ func (cl *ConcreteLogger) Cleanup() {
 	defer wg.Done()
 	cl.Logln("Closing the logging channel")
 	close(cl.Done)
-	close(cl.LogCh)
+	close(cl.LogOutput)
 	cl.Mu.Lock()
 }
 
@@ -450,7 +450,9 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 		task.Closer <- wg2
 		wg2.Wait()
 	}
-	CleanLogFiles()
+	if gl, ok := GlobalLogger.(*ConcreteLogger); ok {
+		CleanLogFiles(gl.LogFileName)
+	}
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
 	os.Exit(0)
@@ -617,9 +619,9 @@ func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 	return res
 }
 
-func (cl *ConcreteLogger) Log(message string, vars ...any) {
-	cl.LogCh <- []byte(fmt.Sprintf(message, vars...))
-}
+//func (cl *ConcreteLogger) Log(message string, vars ...any) {
+//	cl.LogCh <- []byte(fmt.Sprintf(message, vars...))
+//}
 
 //	func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 //		go func() {
@@ -650,24 +652,22 @@ func (cl *ConcreteLogger) RawLogHandler() {
 		entry := cl.LogEntryPool.Get().(*LogEntry)
 		entry.Message = fmt.Sprintf(logArgs.FormatMessage, logArgs.FormatArgs...)
 		entry.Timestamp = time.Now().Format(time.StampMicro)
-		cl.JsonCh <- entry
+		cl.LogEntryCh <- entry
 		cl.RawLogArgPool.Put(logArgs)
 	}
-	close(cl.JsonCh)
-	return
+	close(cl.LogEntryCh)
 }
 
 func (cl *ConcreteLogger) JsonMarshaler() {
 	encodeBuffer := bytes.NewBuffer(make([]byte, 0, 2048))
 	encoder := json.NewEncoder(encodeBuffer)
-	for rawLog := range cl.JsonCh {
+	for rawLog := range cl.LogEntryCh {
 		encodeBuffer.Reset()
 		encoder.Encode(rawLog)
-		cl.LogCh <- encodeBuffer.Bytes()
+		cl.LogOutput <- encodeBuffer.Bytes()
 		cl.LogEntryPool.Put(rawLog)
 	}
-	close(cl.LogCh)
-	return
+	close(cl.LogOutput)
 }
 
 func (cl *ConcreteLogger) JsonWriter() {
@@ -677,10 +677,11 @@ func (cl *ConcreteLogger) JsonWriter() {
 	ticker := time.NewTicker(time.Millisecond * 100)
 	for {
 		select {
-		case msg, ok := <-cl.LogCh:
+		case msg, ok := <-cl.LogOutput:
 			if !ok {
 				if cl.ActiveBuffer.Len() > 0 {
 					flushToken = <-cl.FlushReceiver
+					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch; if !ok {<this>}"
 					cl.Out.Write(cl.ActiveBuffer.Bytes())
 				}
 				cl.Mu.Unlock()
@@ -692,6 +693,7 @@ func (cl *ConcreteLogger) JsonWriter() {
 			if cl.ActiveBuffer.Len() >= bufFlushSize {
 				select {
 				case flushToken = <-cl.FlushReceiver:
+					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch"
 					cl.FlushAndSwapActiveBuffer()
 					cl.FlushSender <- flushToken
 				default:
@@ -702,6 +704,7 @@ func (cl *ConcreteLogger) JsonWriter() {
 			if cl.ActiveBuffer.Len() > 0 {
 				select {
 				case flushToken = <-cl.FlushReceiver:
+					flushToken.HandledBy = "JsonWriter(): case <- ticker.C:"
 					cl.FlushAndSwapActiveBuffer()
 					cl.FlushSender <- flushToken
 				default:
@@ -718,7 +721,8 @@ func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
 		cl.ActiveBuffer, cl.FlushBuffer = cl.FlushBuffer, cl.ActiveBuffer
 		cl.SwapMu.Unlock()
 		flushToken := <-cl.FlushSender
-		flushToken.Iterations++
+		flushToken.Iteration++
+		flushToken.HandledBy = "FlushAndSwapActiveBuffer()"
 		cl.Out.Write(cl.FlushBuffer.Bytes())
 		cl.FlushBuffer.Reset()
 		cl.FlushReceiver <- flushToken
@@ -727,93 +731,108 @@ func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
 
 func (cl *ConcreteLogger) StartAsync() {
 	cl.Mu.Lock()
-	flushToken := &FlushToken{Iterations: 0}
-	cl.FlushCh <- flushToken
+	flushToken := &FlushToken{Iteration: 0}
+	cl.FlushReceiver <- flushToken
 	cl.RawLogHandler()
 	cl.JsonMarshaler()
 	cl.JsonWriter()
 	for {
-		select {
-		case _, ok := <-cl.Done:
-			if !ok {
-				close(cl.RawLogCh)
-			}
+		_, ok := <-cl.Done
+		if !ok {
+			close(cl.RawLogCh)
 		}
 	}
 }
 
 func (cl *ConcreteLogger) Start() {
 	cl.Mu.Lock()
-	bufFlushSize := 1024
-	flushBuffer := &bytes.Buffer{}
-	activeBuffer := &bytes.Buffer{}
-	ticker := time.NewTicker(time.Millisecond * 100)
-	cl.FlushCh <- struct{}{}
-listenLoop:
+	flushToken := &FlushToken{Iteration: 0}
+	cl.FlushReceiver <- flushToken
+	cl.RawLogHandler()
+	cl.JsonMarshaler()
+	cl.JsonWriter()
 	for {
-		select {
-		case msg := <-cl.LogCh:
-			activeBuffer.Write([]byte(msg))
-			if activeBuffer.Len() >= bufFlushSize {
-				cl.Out.Write(activeBuffer.Bytes())
-				activeBuffer.Reset()
-				activeBuffer, flushBuffer = flushBuffer, activeBuffer
-			}
-		case <-ticker.C:
-			if activeBuffer.Len() > 0 {
-				cl.Out.Write(activeBuffer.Bytes())
-				activeBuffer.Reset()
-				activeBuffer, flushBuffer = flushBuffer, activeBuffer
-			}
-		case <-cl.Done:
-			for msg := range cl.LogCh {
-				activeBuffer.Write([]byte(msg))
-			}
-			cl.Out.Write(activeBuffer.Bytes())
-			break listenLoop
+		_, ok := <-cl.Done
+		if !ok {
+			close(cl.RawLogCh)
 		}
 	}
-	cl.Mu.Unlock()
 }
+
+//func (cl *ConcreteLogger) Start() {
+//	cl.Mu.Lock()
+//	bufFlushSize := 1024
+//	flushBuffer := &bytes.Buffer{}
+//	activeBuffer := &bytes.Buffer{}
+//	ticker := time.NewTicker(time.Millisecond * 100)
+//	cl.FlushCh <- struct{}{}
+//listenLoop:
+//	for {
+//		select {
+//		case msg := <-cl.LogCh:
+//			activeBuffer.Write([]byte(msg))
+//			if activeBuffer.Len() >= bufFlushSize {
+//				cl.Out.Write(activeBuffer.Bytes())
+//				activeBuffer.Reset()
+//				activeBuffer, flushBuffer = flushBuffer, activeBuffer
+//			}
+//		case <-ticker.C:
+//			if activeBuffer.Len() > 0 {
+//				cl.Out.Write(activeBuffer.Bytes())
+//				activeBuffer.Reset()
+//				activeBuffer, flushBuffer = flushBuffer, activeBuffer
+//			}
+//		case <-cl.Done:
+//			for msg := range cl.LogCh {
+//				activeBuffer.Write([]byte(msg))
+//			}
+//			cl.Out.Write(activeBuffer.Bytes())
+//			break listenLoop
+//		}
+//	}
+//	cl.Mu.Unlock()
+//}
 
 func (cl *ConcreteLogger) Stop() {
 	cl.RunCh <- &sync.WaitGroup{}
 }
 
-func (cl *ConcreteLogger) InitWithBuffer() {
-	cl.LogCh = make(chan []byte, 1000)
-	cl.RunCh = make(chan *sync.WaitGroup)
-	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
-	if err != nil {
-		fmt.Printf("Error opening tmp file: %s\n", err)
-		cl.Out = io.Discard
-	} else {
-		os.Remove("term-reader-logger.json")
-		err := os.Symlink(f.Name(), "term-reader-logger.json")
-		if err != nil {
-			fmt.Printf("Error creating logger symlink: %s\n", err)
-		}
-		cl.Out = f
-		go cl.Start()
-		cl.Log("Opened New logger at %s", f.Name())
-	}
-}
+//func (cl *ConcreteLogger) InitWithBuffer() {
+//	cl.LogCh = make(chan []byte, 1000)
+//	cl.RunCh = make(chan *sync.WaitGroup)
+//	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
+//	if err != nil {
+//		fmt.Printf("Error opening tmp file: %s\n", err)
+//		cl.Out = io.Discard
+//	} else {
+//		os.Remove("term-reader-logger.json")
+//		err := os.Symlink(f.Name(), "term-reader-logger.json")
+//		if err != nil {
+//			fmt.Printf("Error creating logger symlink: %s\n", err)
+//		}
+//		cl.Out = f
+//		go cl.Start()
+//		cl.Log("Opened New logger at %s", f.Name())
+//	}
+//}
 
 func (cl *ConcreteLogger) Init() {
 	// cl.LogCh = make(chan string)
 	cl.Mu = &sync.Mutex{}
 	cl.FlushMu = &sync.Mutex{}
 	cl.SwapMu = &sync.Mutex{}
-	cl.FlushCh = make(chan struct{}, 1)
-	cl.LogCh = make(chan []byte, 1000)
-	cl.RunCh = make(chan *sync.WaitGroup)
+	cl.FlushReceiver = make(chan *FlushToken, 1)
+	cl.FlushSender = make(chan *FlushToken, 1)
+	cl.LogOutput = make(chan []byte, 1000)
 	cl.RawLogCh = make(chan *RawLogArgs, 1000)
+	cl.LogEntryCh = make(chan *LogEntry, 1000)
+	cl.RunCh = make(chan *sync.WaitGroup)
 	cl.Done = make(chan struct{})
 	cl.LogEntryPool = &sync.Pool{}
-	cl.RawLogArgPool = &sync.Pool{}
 	cl.LogEntryPool.New = func() any {
 		return &LogEntry{}
 	}
+	cl.RawLogArgPool = &sync.Pool{}
 	cl.RawLogArgPool.New = func() any {
 		return &RawLogArgs{}
 	}
@@ -824,6 +843,7 @@ func (cl *ConcreteLogger) Init() {
 		cl.Out = io.Discard
 	} else {
 		os.Remove("term-reader-logger.json")
+		cl.LogFileName = f.Name()
 		err := os.Symlink(f.Name(), "term-reader-logger.json")
 		if err != nil {
 			fmt.Printf("Error creating logger symlink: %s\n", err)
