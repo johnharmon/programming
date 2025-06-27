@@ -13,21 +13,16 @@ import (
 	"golang.org/x/term"
 )
 
-const (
-	MR = "\033[1C"
-	ML = "\033[1D"
-	MU = "\033[1A"
-	MD = "\033[1B"
+var (
+	TermHeight, TermWidth     = GetTermSize()
+	GlobalLogger              EphemeralLogger
+	CleanupTaskMap            = map[string]*CleanupTask{}
+	GenCleanupKey             = CreateCleanupKeyGenerator(CleanupTaskMap)
+	InsertCleanupKey          = CreateCleanupKeyInserter(CleanupTaskMap)
+	StartCleanupTasks         = CreateCleanupTaskStarter(CleanupTaskMap)
+	RegisterCleanupTask       = CreateCleanupTaskRegistrar(CleanupTaskMap)
+	LOGGER_CLEANUP_UNIQUE_KEY = "LOGGER_CLEANUP"
 )
-
-type Env struct {
-	Config       *FlagConfig
-	DebugWriter  io.Writer
-	OutputHeader string
-	OutputFooter string
-	OutputPrefix string
-	OutputSuffix string
-}
 
 func (e Env) DWrite(b []byte) {
 	fmt.Fprintf(e.DebugWriter, "%b", b)
@@ -35,12 +30,6 @@ func (e Env) DWrite(b []byte) {
 
 func (e Env) DWriteS(s string) {
 	fmt.Fprintf(e.DebugWriter, "%s", s)
-}
-
-type DisplayBuffer struct {
-	Buffer []byte
-	Lines  [][]byte
-	Size   int
 }
 
 func (db *DisplayBuffer) GetSize() int {
@@ -56,38 +45,17 @@ func (db *DisplayBuffer) AllocateLines(size int) {
 }
 
 func (db *DisplayBuffer) Write(p []byte) (int, error) {
-	db.Buffer = append(db.Buffer, p...)
+	db.RawBuf = append(db.RawBuf, p...)
 	return len(p), nil
 }
 
 func (db *DisplayBuffer) Reset() {
-	if cap(db.Buffer) > 4096 {
-		db.Buffer = make([]byte, 4096)
+	if cap(db.RawBuf) > 4096 {
+		db.RawBuf = make([]byte, 0, 4096)
 	} else {
-		clear(db.Buffer)
-		db.Buffer = db.Buffer[:0]
+		clear(db.RawBuf)
+		db.RawBuf = db.RawBuf[:0]
 	}
-}
-
-type InputScanner struct {
-	Remaining   []byte
-	LastMessage []byte
-	LastChunk   []byte
-	Input       io.Reader
-	Output      io.Writer
-	Delimiter   byte
-}
-
-type FlagConfig struct {
-	Debug      bool
-	Verbose    bool
-	Terminal   bool
-	Verbosity1 bool
-	Verbosity2 bool
-	Verbosity3 bool
-	Verbosity4 bool
-	Raw        bool
-	Logs       io.Writer
 }
 
 func (fc FlagConfig) IsVerbose() bool {
@@ -97,39 +65,92 @@ func (fc FlagConfig) IsVerbose() bool {
 	return false
 }
 
-type FormatInfo struct {
-	OutputRaw      []byte
-	OutputLines    [][]byte // raw bytes representing the output
-	WrappingLength int      // how long the output prefix and suffix combined is
-	TermWidth      int      // how many characters wide the terminal output is
-	TermLength     int      // how many lines long including headers and footers the ouput is
+//type WindowBuffer struct {
+//	Lines  [][]byte
+//	Length int
+//}
+//
+//type Window struct { // Represents a sliding into its backing buffer of Window.Buf as well as the space it takes up in the terminal window
+//	StartIndex    int
+//	StartLine     int
+//	Buf           *DisplayBuffer
+//	Height        int
+//	Width         int
+//	StartCol      int
+//	EndIndex      int
+//	RawStartIndex int
+//	RawEndIndex   int
+//}
+//
+//func (w Window) Size() int {
+//	return w.Height
+//}
+//
+//func NewWindow(line int, column int, height int, width int) (w *Window) {
+//	w = &Window{}
+//	w.StartLine = line
+//	w.StartCol = column
+//	w.Height = height
+//	w.Width = width
+//	w.Buf = &DisplayBuffer{}
+//	return w
+//}
+//
+//func (w Window) Render(cell *Cell) {
+//	fmt.Fprintf(cell.Out, "\x1b[%d;0H", w.RawStartIndex)
+//	displaySlice := cell.DisplayBuffer.Lines[w.StartIndex : w.EndIndex+1]
+//	for i := 0; i <= w.RawEndIndex-w.RawStartIndex; i++ {
+//		fmt.Fprintf(cell.Out, "%s\r\n", displaySlice[i])
+//	}
+//}
+
+func AllocateNestedBuffer(outerSize int, innerSize int) [][]byte {
+	outer := make([][]byte, 0, outerSize)
+	outer = AllocateBuffer(outer, innerSize)
+	return outer
 }
 
-type Cell struct {
-	formatInfo            *FormatInfo
-	RawContent            *bytes.Buffer
-	RawInput              *bytes.Buffer
-	ContentReader         *bytes.Reader
-	Out                   io.Writer
-	In                    io.Reader
-	DisplayContent        *bytes.Buffer
-	CursorPosition        int
-	LogicalCursorPosition int
-	DisplayCursorPosition int
-	CursorLine            int
-	CursorColumn          int
-	DisplayBuffer         *DisplayBuffer
-	DebugInfo             []string
-	CellHistory           []*Cell
-	ActiveLineIdx         int
-	ActiveLineLength      int
-	LogicalRowIdx         int
-	EffecitveRowIdx       int
-	LogCh                 chan string
-	BufferLen             int
-	Logger                io.Writer
-	LogFile               *os.File
-	LogLink               string
+func AllocateBuffer(b [][]byte, size int) [][]byte {
+	for i := range b {
+		b[i] = make([]byte, 0, size)
+	}
+	return b
+}
+
+func BufCmp(a []byte, b []byte) bool {
+	eq := true
+	if len(a) == len(b) {
+		for i := 0; i < len(a); i++ {
+			if a[i] != b[i] {
+				eq = false
+				break
+			}
+		}
+	} else {
+		eq = false
+	}
+	return eq
+}
+
+func (cell *Cell) VirtualRender(w *Window) [][]byte {
+	v := cell.DisplayBuffer.Lines[w.StartIndex : w.EndIndex+1]
+	return v
+}
+
+func (cell *Cell) MarkForRedraw(vBuf [][]byte) []int {
+	redrawLines := make([]int, cell.Window.Size())
+	vbuf := cell.VirtualRender(cell.Window)
+	for i, line := range vbuf {
+		if !BufCmp(line, cell.DisplayBuffer.Lines[i+cell.Window.StartIndex]) {
+			redrawLines = append(redrawLines, i)
+		}
+	}
+	return redrawLines
+}
+
+func (cell *Cell) ScrollWindow(scrollVector int) {
+	cell.Window.StartIndex += scrollVector
+	cell.Window.EndIndex += scrollVector
 }
 
 func (oc *Cell) Display(o io.Writer, env *Env) {
@@ -262,13 +283,20 @@ func (cell *Cell) DisplayLoop(env *Env) {
 	}
 }
 
+func (cell *Cell) DisplayWindow() {
+	fmt.Fprintf(cell.Out, "\x1b[%d;0H", cell.Window.StartLine)
+	for i := 0; i < cell.Window.Height; i++ {
+		cell.Out.Write(append(cell.Window.Buf.Lines[i], '\n'))
+	}
+}
+
 func (cell *Cell) Cleanup(closer chan interface{}, fd int, oldState *term.State) {
 	<-closer
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
-	cell.LogFile.Close()
-	os.Remove(cell.LogFile.Name())
-	os.Remove(cell.LogLink)
+	if cell.LogFile != nil {
+		cell.LogFile.Close()
+	}
 	os.Exit(0)
 }
 
@@ -283,41 +311,6 @@ func (cell *Cell) HandleByte(b byte, ch chan interface{}) (debug []string) {
 		isMod, modSeq := isModificationByte(b)
 		if isMod {
 			HandleModSequence(cell, modSeq)
-			// 		esc, _ := ReadModificationSequence(cell.In, (time.Millisecond * 25), modSeq)
-			//		if esc.Name == "Backspace" {
-			//			debug = cell.DeleteDisplayByteByBuffer(-1)
-			//			cell.DisplayActiveLine()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "Delete" {
-			//			debug = cell.DeleteDisplayByteByBuffer(0)
-			//			cell.DisplayActiveLine()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "LeftArrow" {
-			//			cell.IncrCursor(-1)
-			//			fmt.Fprint(cell.Out, "\x1b[1D")
-			//			//}
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "RightArrow" {
-			//			oldPos := cell.DisplayCursorPosition
-			//			cell.IncrCursor(1)
-			//			if oldPos < cell.DisplayCursorPosition {
-			//				fmt.Fprintf(cell.Out, "\x1b[1C")
-			//			}
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "UpArrow" {
-			//			cell.ScrollLine(-1)
-			//			// cell.IncrActiveLine(-1)
-			//			cell.DisplayActiveLine()
-			//			cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
-			//			cell.MoveCursorToEOL()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
-			//		} else if esc.Name == "DownArrow" {
-			//			cell.ScrollLine(1)
-			//			// cell.IncrActiveLine(1)
-			//			cell.DisplayActiveLine()
-			//			cell.IncrCursor(len(cell.DisplayBuffer.Lines[cell.ActiveLineIdx]))
-			//			cell.MoveCursorToEOL()
-			//			DisplayDebugInfo(cell, "HandleByte", debug)
 		} else {
 			debug = cell.WriteDisplayByteByBuffer(b)
 			cell.DisplayActiveLine()
@@ -444,29 +437,18 @@ func (cell *Cell) RedrawActiveLine() {
 	cell.RedrawLine(cell.ActiveLineIdx)
 }
 
-type CellHistory struct {
-	RawContent     []byte
-	DisplayContent []byte
-	CursorPosition int
-}
-
-type ModificationSequence struct {
-	Bytes       []byte
-	Name        string
-	Raw         string
-	ForceRedraw bool
-	IsMultiByte bool
-}
-
-type DisplayWrapper struct {
-	TopPattern    string
-	BottomPattern string
-	LinePrefix    string
-	LineSuffix    string
-}
-
 func (es ModificationSequence) String() string {
 	return es.Name
+}
+
+func GetTermSize() (height int, width int) {
+	width, height, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		height = 10
+		width = 50
+		fmt.Printf("Error getting term size: %s\n", err)
+	}
+	return height, width
 }
 
 func MakeRawTerm(config *FlagConfig) {
@@ -579,7 +561,7 @@ func Display(cell *Cell) {
 }
 
 func (cell Cell) FindCursorCoordFromPos() (row int, col int) {
-	lines := bytes.Split(cell.DisplayBuffer.Buffer, []byte("\n"))
+	lines := bytes.Split(cell.DisplayBuffer.RawBuf, []byte("\n"))
 	var cumulativeBytes int = 0
 	for idx, line := range lines {
 		ll := len(line)
@@ -609,7 +591,7 @@ func NewDefaultCell() (cell *Cell) {
 	cell.DisplayCursorPosition = 0
 	cell.RawInput = &bytes.Buffer{}
 	cell.ActiveLineIdx = 0
-	cell.DisplayBuffer = &DisplayBuffer{Buffer: make([]byte, 4096), Lines: make([][]byte, 100)}
+	cell.DisplayBuffer = &DisplayBuffer{RawBuf: make([]byte, 4096), Lines: make([][]byte, 100)}
 	cell.DisplayBuffer.AllocateLines(4096)
 	cell.Logger = io.Discard
 	return cell
@@ -624,23 +606,23 @@ func NewDefaultCellWithFileLogger() (cell *Cell) {
 	cell.DisplayCursorPosition = 0
 	cell.RawInput = &bytes.Buffer{}
 	cell.ActiveLineIdx = 0
-	cell.DisplayBuffer = &DisplayBuffer{Buffer: make([]byte, 4096), Lines: make([][]byte, 100)}
+	cell.DisplayBuffer = &DisplayBuffer{RawBuf: make([]byte, 4096), Lines: make([][]byte, 100)}
 	cell.DisplayBuffer.AllocateLines(4096)
 	cell.BufferLen = len(cell.DisplayBuffer.Lines)
 	cell.LogCh = make(chan string, 1000)
-	f, err := os.CreateTemp("./", ".term-reader-logger.txt.")
+	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
 		cell.Logger = io.Discard
 		cell.LogFile = nil
 	} else {
-		os.Remove("term-reader-logger.txt")
-		err := os.Symlink(f.Name(), "term-reader-logger.txt")
+		os.Remove("term-reader-logger.json")
+		err := os.Symlink(f.Name(), "term-reader-logger.json")
 		if err != nil {
 			fmt.Printf("Error creating logger symlink: %s\n", err)
 		}
 		cell.Logger, cell.LogFile = f, f
-		cell.LogLink = "term-reader-logger.txt"
+		cell.LogLink = "term-reader-logger.json"
 		cell.Log("\x1b[2J==========LOG START=========")
 		cell.Log("Opened New logger at %s", f.Name())
 	}
@@ -755,7 +737,6 @@ func (cell *Cell) WriteDisplayBytes(b []byte) {
 		fmt.Fprintf(cell.Out, "%s", b)
 		DisplayDebugInfo(cell, "DisplayCursorPosition = end of display content", extra)
 	} else {
-		// temp := append([]byte{}, cell.DisplayContent.Bytes()...)
 		temp := cell.DisplayContent.Bytes()
 		clone := make([]byte, len(temp))
 		copy(clone, temp)
@@ -773,90 +754,6 @@ func (cell *Cell) WriteDisplayBytes(b []byte) {
 		cell.Redraw()
 		DisplayDebugInfo(cell, "DisplayCursorPostition = inside display content", extra)
 	}
-}
-
-func InsertByteAt(a []byte, b byte, startIdx int) []byte {
-	al := len(a)
-	if startIdx >= len(a) {
-		// fmt.Printf("\r\x1b[2Kappending\n\r")
-		//		fmt.Printf("\r\x1b[2k%s\n\r", string(append(a, b)))
-		//	os.Exit(5)
-		return append(a, b)
-	} else if cap(a) >= len(a)+1 {
-		// fmt.Printf("\r\x1b[2Kgrowing a\n\r")
-		// os.Exit(6)
-		a = a[0 : al+1]
-		for i := al - 1; i >= startIdx; i-- {
-			if i == startIdx {
-				a[i] = b
-			} else {
-				a[i+1] = a[i]
-			}
-		}
-		//		fmt.Printf("\r\x1b[2k%s\n\r", string(a))
-		return a
-	}
-	// fmt.Printf("\r\x1b[2Kmaking new slice\n\r")
-	// os.Exit(7)
-	tmp := make([]byte, 0, (al+1)*2)
-	tmp = append(tmp, a[0:startIdx]...)
-	tmp = append(tmp, b)
-	tmp = append(tmp, a[startIdx:]...)
-	// fmt.Printf("\r\x1b[2k%s\n\r", string(tmp))
-	return tmp
-}
-
-func InsertAt(a []byte, b []byte, startIdx int) []byte {
-	al := len(a)
-	bl := len(b)
-	if startIdx >= len(a) {
-		return append(a, b...)
-	} else if cap(a) >= len(a)+len(b)+1 {
-		a = a[0 : al+bl]
-		if bl == 1 {
-			for i := al - 1; i >= startIdx; i-- {
-				if i == startIdx {
-					a[i] = b[0]
-				} else {
-					a[i+1] = a[i]
-				}
-			}
-		} else {
-			for i := al - 1 - bl; i >= startIdx; i-- {
-				a[i+bl] = a[i]
-			}
-		}
-		copy(a[startIdx:startIdx+bl], b)
-		return a
-	}
-	tmp := make([]byte, 0, (al+bl)*2)
-	tmp = append(tmp, a[0:startIdx]...)
-	tmp = append(tmp, b...)
-	tmp = append(tmp, a[startIdx:]...)
-	return tmp
-}
-
-func DeleteAt(a []byte, startIdx int, count int) []byte {
-	al := len(a)
-	if al == 0 || startIdx < 0 {
-		return a
-	} else {
-		if startIdx == al-1 {
-			return a[:al-1]
-		}
-		for i := startIdx; i < al-count; i++ {
-			a[i] = a[i+count]
-		}
-		return a[:al-count]
-	}
-}
-
-func DeleteByteAt(a []byte, startIdx int) []byte {
-	al := len(a)
-	for i := startIdx; i < al-1; i++ {
-		a[i] = a[i+1]
-	}
-	return a[:al-1]
 }
 
 func DisplayDebugInfo(cell *Cell, callingInfo string, extras []string) {
@@ -1097,6 +994,23 @@ func RunScanner(env *Env) {
 	}
 }
 
+func RunWindow(env *Env) {
+	GlobalLogger.Logln("Getting term size")
+	height, width := GetTermSize()
+	GlobalLogger.Logln("Creating active window")
+	win := NewWindow(1, 0, height/2, width)
+	// win := NewWindow(1, 0, height/2, width)
+	GlobalLogger.Logln("Created new window: %+v", win)
+	mc := &MainConfig{}
+	mc.In = os.Stdin
+	mc.Out = os.Stdout
+	GlobalLogger.Logln("Setting active window")
+	mc.State.ActiveWindow = win
+	go win.Listen()
+	GlobalLogger.Logln("Running an interactive window")
+	MainEventHandler(mc)
+}
+
 func DumpFlags(config *FlagConfig) {
 	values := reflect.ValueOf(config).Elem()
 	types := reflect.TypeOf(config).Elem()
@@ -1129,6 +1043,7 @@ func ParseFlags() (config *FlagConfig) {
 	config = &FlagConfig{}
 	flag.BoolVar(&config.Debug, "d", false, "use debug mode (boolean toggle)")
 	flag.BoolVar(&config.Terminal, "t", false, "use terminal mode (boolean toggle)")
+	flag.BoolVar(&config.Window, "w", false, "use window mode (boolean toggle)")
 	flag.BoolVar(&config.Verbose, "verbose", false, "use verbose mode (boolean toggle)")
 	flag.BoolVar(&config.Verbosity1, "v", false, "use verbose mode (boolean toggle)")
 	flag.BoolVar(&config.Verbosity2, "vv", false, "use verbose mode (boolean toggle)")
@@ -1149,6 +1064,7 @@ func ParseFlags() (config *FlagConfig) {
 func main() {
 	config := ParseFlags()
 	env := NewDefaultEnv(config)
+	GlobalLogger = NewConcreteLogger()
 	if config.Terminal {
 		MakeRawTerm(config)
 	} else if config.Debug {
@@ -1156,5 +1072,7 @@ func main() {
 		go cell.RunLogger()
 		cell.DisplayLoop(env)
 		// RunScanner(env)
+	} else if config.Window {
+		RunWindow(env)
 	}
 }
