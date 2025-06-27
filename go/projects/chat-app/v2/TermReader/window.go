@@ -91,6 +91,7 @@ func NewWindow(line int, column int, height int, width int) (w *Window) {
 	w.StartCol = column
 	w.Height = height
 	w.Width = width
+	w.Mode = MODE_INSERT
 	w.BufTopLine = 0
 	w.CursorCol = 1
 	w.DesiredCursorCol = 1
@@ -109,7 +110,10 @@ func (w Window) MoveCursorToPosition(line int, col int) {
 
 func (w *Window) RunKeyActionReturner(sp *sync.Pool) {
 	for {
-		sp.Put(<-w.KeyActionReturner)
+		ka := <-w.KeyActionReturner
+		if ka.FromPool {
+			sp.Put(ka)
+		}
 	}
 }
 
@@ -222,42 +226,88 @@ func (w *Window) Listen() {
 	for {
 		ka = <-w.EventChan
 		gl.Logln("Window received *KeyAction: %s", ka.String())
-		if ka.PrintRaw && len(ka.Value) == 1 {
-			gl.Logln("Raw write triggered for %s", ka.String())
-			w.WriteRaw(ka.Value)
-			w.IncrCursorCol(1)
-			w.RedrawLine(w.Buf.ActiveLine)
-			w.MoveCursorToDisplayPosition()
-			w.KeyActionReturner <- ka
-		} else {
-			switch ka.Action {
-			case "Backspace":
-				w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
-				w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol-1)
-				w.IncrCursorLine(-1)
-				w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
-				w.RedrawLine(w.CursorLine)
-				w.IncrCursorCol(-1)
-			case "Delete":
-				HandleDelete(w)
-			case "ArrowRight":
-				HandleArrowRight(w)
-			case "ArrowLeft":
-				HandleArrowLeft(w)
-			case "ArrowUp":
-				HandleArrowUp(w)
-			case "ArrowDown":
-				HandleArrowDown(w)
-			case "Enter":
-				HandleEnter(w)
+		switch w.Mode {
+		case MODE_INSERT:
+			if ka.PrintRaw && len(ka.Value) == 1 {
+				gl.Logln("Raw write triggered for %s", ka.String())
+				w.WriteRaw(ka.Value)
+				w.IncrCursorCol(1)
+				w.RedrawLine(w.Buf.ActiveLine)
+				w.MoveCursorToDisplayPosition()
+				w.KeyActionReturner <- ka
+			} else {
+				switch ka.Action {
+				case "Backspace":
+					w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
+					w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol-1)
+					w.IncrCursorLine(-1)
+					w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
+					w.RedrawLine(w.CursorLine)
+					w.IncrCursorCol(-1)
+				case "Delete":
+					InsertHandleDelete(w)
+				case "ArrowRight":
+					InsertHandleArrowRight(w)
+				case "ArrowLeft":
+					InsertHandleArrowLeft(w)
+				case "ArrowUp":
+					InsertHandleArrowUp(w)
+				case "ArrowDown":
+					InsertHandleArrowDown(w)
+				case "Enter":
+					InsertHandleEnter(w)
+				case "Escape":
+					w.Mode = MODE_NORMAL
+					GlobalLogger.Logln("Setting mode to normal")
+
+				}
 			}
+		case MODE_NORMAL:
+			if ka.Action == "Print" {
+				switch ka.Value[0] {
+				case CHAR_h:
+					NormalHandleLeftMove(w, 1)
+				case CHAR_j:
+					NormalHandleDownMove(w, 1)
+				case CHAR_k:
+					NormalHandleUpMove(w, 1)
+				case CHAR_l:
+					NormalHandleRightMove(w, 1)
+				case CHAR_i:
+					w.Mode = MODE_INSERT
+					// continue
+				}
+			}
+		case MODE_VISUAL:
+			continue
 		}
+
 		w.DisplayStatusLine()
 		w.MoveCursorToDisplayPosition()
 	}
 }
 
-func HandleDelete(w *Window) {
+func NormalHandleLeftMove(w *Window, count int) {
+	w.IncrCursorCol(-count)
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleRightMove(w *Window, count int) {
+	w.IncrCursorCol(count)
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleUpMove(w *Window, count int) {
+	w.IncrCursorLine(-count)
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleDownMove(w *Window, count int) {
+	w.IncrCursorLine(count)
+	w.MoveCursorToDisplayPosition()
+}
+
+func InsertHandleDelete(w *Window) {
 	w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
 	if len(w.GetActiveLine()) == 0 {
 		w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, 1)
@@ -277,7 +327,7 @@ func HandleDelete(w *Window) {
 	}
 }
 
-func HandleEnter(w *Window) {
+func InsertHandleEnter(w *Window) {
 	newLine := w.MakeNewLines(1)
 	w.Logger.Logln("Enter detected")
 	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
@@ -292,17 +342,17 @@ func HandleEnter(w *Window) {
 	w.MoveCursorToDisplayPosition()
 }
 
-func HandleArrowRight(w *Window) {
+func InsertHandleArrowRight(w *Window) {
 	w.IncrCursorCol(1)
 	w.MoveCursorToDisplayPosition()
 }
 
-func HandleArrowLeft(w *Window) {
+func InsertHandleArrowLeft(w *Window) {
 	w.IncrCursorCol(-1)
 	w.MoveCursorToDisplayPosition()
 }
 
-func HandleArrowUp(w *Window) {
+func InsertHandleArrowUp(w *Window) {
 	w.IncrCursorLine(-1)
 	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
 		w.BufTopLine--
@@ -311,7 +361,7 @@ func HandleArrowUp(w *Window) {
 	w.MoveCursorToDisplayPosition()
 }
 
-func HandleArrowDown(w *Window) {
+func InsertHandleArrowDown(w *Window) {
 	oldLine := w.CursorLine
 	w.IncrCursorLine(1)
 	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
@@ -377,8 +427,10 @@ func (w *Window) DisplayStatusLine() {
 		w.Height)
 	padding := strings.Repeat(" ", w.Width-len(statusLine))
 	fmt.Fprintf(w.Out, "%s%s", statusLine, padding)
-	// fmt.Fprintf(w.Out, "FlushToken: %s", GlobalLogger.(*ConcreteLogger).FlushBuffer.Bytes())
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
+	fmt.Fprintf(w.Out, "\nMode: %d", w.Mode)
+	fmt.Fprintf(w.Out, "\r\x1b[00m")
+	// fmt.Fprintf(w.Out, "FlushToken: %s", GlobalLogger.(*ConcreteLogger).FlushBuffer.Bytes())
 }
 
 func (w *Window) MakeRedrawHandler() func() []int { // makes a handler that will track indicies to redraw (reuses slice)
@@ -553,13 +605,17 @@ func CoerceInputToAction(b []byte) *KeyAction {
 	return ValidateSequence(b)
 }
 
-func MakeByteHandler(ch chan struct{}, in io.Reader, sp *sync.Pool) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
+func MakeByteHandler(ch chan struct{}, in io.Reader, kaPool *sync.Pool) func(byte) *KeyAction { // returns a byte handling function that will reuse an input buffer so re-allocation does not happen on every byte handled by the main loop
 	res := make([]byte, 1, 8)
 	var seqN *KeyAction
-	sp = MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
+	kaPool = MakeKeyActionPool() // Create a pool of *SequenceNode references for dispatching normal ascii printable characters on the event channel for the window (trying to avoid as much re-allocation as possible
 	return func(b byte) *KeyAction {
+		GlobalLogger.Logln("Byte Handler: len(res) = %d, cap(res) = %d", len(res), cap(res))
 		res = res[:1]
-		GlobalLogger.Logln("Byte Handler result buffer: %b", res)
+		res[0] = b
+		// GlobalLogger.Logln("Byte Handler: len(res) = %d, cap(res) = %d", len(res), cap(res))
+		// GlobalLogger.Logln("Byte passed to handler: %b", b)
+		// GlobalLogger.Logln("Byte Handler result buffer: %b", res)
 		if b == 3 {
 			GlobalLogger.Logln("Interrupt caught, sending shutdown signal to global cleanup")
 			ch <- struct{}{}
@@ -568,40 +624,53 @@ func MakeByteHandler(ch chan struct{}, in io.Reader, sp *sync.Pool) func(byte) *
 			select {}
 			// return nil
 		} else if b >= 0x20 && b <= 0x7E {
-			seqN = sp.Get().(*KeyAction)
+			GlobalLogger.Logln("Getting *KeyAction from pool")
+			seqN = kaPool.Get().(*KeyAction)
 			seqN.Value[0] = b
+			// seqN.Action = "Raw"
 			seqN.Value = seqN.Value[0:1]
 			return seqN
 		}
-		res[0] = b
+		// GlobalLogger.Logln("Result before byte Parsing: %b", res)
 		res = ParseByte(b, res, in)
+		// GlobalLogger.Logln("Result after byte Parsing: %b", res)
+		// time.Sleep(time.Millisecond * 100)
 		defer clear(res)
 		return CoerceInputToAction(res)
 	}
 }
 
-func ParseByte(b byte, result []byte, in io.Reader) []byte { // Should handle initial detection for multi-byte sequences, if a single byte sequence then just return the byte as a slide
+func ParseByte(b byte, result []byte, in io.Reader) []byte { // Should handle initial detection for multi-byte sequences, if a single byte sequence then just return the byte as a slice
 	result[0] = b
+	// GlobalLogger.Logln("Result before byte paring: %b", result)
 	if b == 0x1b {
 		n, _ := ReadMultiByteSequence(result, in, time.Millisecond*25)
-		result = result[:1+n]
+		// GlobalLogger.Logln("Number of bytes read into result: %d", n)
+		result = result[0 : 1+n]
 	}
+	// GlobalLogger.Logln("Result after byte paring: %b", result)
 	return result
 }
 
 func ReadMultiByteSequence(buf []byte, input io.Reader, timeout time.Duration) (n int, err error) { // will read a multi-byte sequence into buf, respecting any existing elements
 	bufLen := len(buf)
 	bufCap := cap(buf)
+	readBuf := make([]byte, 0, bufCap-bufLen)
+	// GlobalLogger.Logln("Result inside byte paring: %b", buf)
 	deadline := time.Now().Add(timeout)
 	if f, ok := input.(*os.File); ok {
 		f.SetReadDeadline(deadline)
+		defer ClearReadDeadline(input)
+		// GlobalLogger.Logln("Result right before byte read: %b | bufLen: %d | bufCap: %d", buf[0:bufCap], bufLen, bufCap)
+		n, err = input.Read(readBuf)
+		// GlobalLogger.Logln("Result right after byte read: %b | bufLen: %d | bufCap: %d", buf[0:bufCap], bufLen, bufCap)
+		// GlobalLogger.Logln("Number of bytes read: %d", n)
+		if err != nil {
+			return 0, err
+		}
+		return n, nil
 	}
-	defer ClearReadDeadline(input)
-	n, err = input.Read(buf[bufLen:bufCap])
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
+	return 0, nil
 }
 
 func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
@@ -646,6 +715,7 @@ func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 	rawLogArgs := cl.RawLogArgPool.Get().(*RawLogArgs)
 	rawLogArgs.FormatMessage = message
 	rawLogArgs.FormatArgs = vars
+	rawLogArgs.Timestamp = time.Now().Format(time.StampMicro)
 	cl.RawLogCh <- rawLogArgs
 }
 
@@ -654,7 +724,7 @@ func (cl *ConcreteLogger) RawLogHandler() {
 		// fmt.Fprintf(os.Stderr, "RawLogHandler received log: %s\n", logArgs.FormatMessage)
 		entry := cl.LogEntryPool.Get().(*LogEntry)
 		entry.Message = fmt.Sprintf(logArgs.FormatMessage, logArgs.FormatArgs...)
-		entry.Timestamp = time.Now().Format(time.StampMicro)
+		entry.Timestamp = logArgs.Timestamp
 		cl.LogEntryCh <- entry
 		cl.RawLogArgPool.Put(logArgs)
 	}
