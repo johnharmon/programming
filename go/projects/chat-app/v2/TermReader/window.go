@@ -496,6 +496,9 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 	}
 	GlobalLogger.Logln("Waiting for cleanup tasks to finsh...")
 	wg1.Wait()
+	if gl, ok := GlobalLogger.(*ConcreteLogger); ok {
+		CleanLogFiles(gl.LogFileName)
+	}
 	GlobalLogger.Logln("Cleanup tasks finished, shutting down logger")
 	if task, ok := taskMap[LOGGER_CLEANUP_UNIQUE_KEY]; ok {
 		wg2.Add(1)
@@ -503,9 +506,6 @@ func Cleanup(closer chan struct{}, fd int, oldState *term.State, taskMap map[str
 		task.Closer <- wg2
 		wg2.Wait()
 	}
-	//	if gl, ok := GlobalLogger.(*ConcreteLogger); ok {
-	//		CleanLogFiles(gl.LogFileName)
-	//	}
 	fmt.Println("\n\rRestoring old state")
 	term.Restore(fd, oldState)
 	os.Exit(0)
@@ -518,8 +518,12 @@ func CleanLogFiles(currentFile string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Could not open ./")
 	}
+	// GlobalLogger.Logln("Current log file: %s", currentFile)
+	fmt.Fprintf(os.Stderr, "Current log file: %s\n", currentFile)
 	for _, entry := range entries {
-		if entry.Name() != currentFile && entryRegex.Match([]byte(entry.Name())) {
+		// GlobalLogger.Logln("Processing log file: %s", entry.Name())
+		fmt.Fprintf(os.Stderr, "Pocessing log file; %s\n", "./"+entry.Name())
+		if "./"+entry.Name() != currentFile && entryRegex.Match([]byte(entry.Name())) {
 			err = os.Remove(entry.Name())
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Could not open ./")
@@ -937,7 +941,7 @@ func (cl *ConcreteLogger) Init() {
 	f, err := os.CreateTemp("./", ".term-reader-logger.json.")
 	if err != nil {
 		fmt.Printf("Error opening tmp file: %s\n", err)
-		cl.Out = io.Discard
+		cl.Out = os.Stderr
 	} else {
 		os.Remove("term-reader-logger.json")
 		cl.LogFileName = f.Name()
