@@ -58,11 +58,10 @@ func CreateCleanupTaskRegistrar(cleanupTaskMap map[string]*CleanupTask) func(cha
 	}
 }
 
-//func RegisterCleanupTask(name string, closer chan *sync.WaitGroup, Func func(), start bool) {
+// func RegisterCleanupTask(name string, closer chan *sync.WaitGroup, Func func(), start bool) {
 //	ct := &CleanupTask{Closer: closer, Name: name, Func: Func, Start: start}
 //	cleanupKey := GenCleanupKey(ct.Name)
 //	InsertCleanupKey(cleanupKey, ct)
-//}
 
 var (
 	TERM_CLEAR_LINE   = []byte{0x1b, '[', '2', 'K'}
@@ -299,6 +298,10 @@ func NormalHandleRightMove(w *Window, count int) {
 
 func NormalHandleUpMove(w *Window, count int) {
 	w.IncrCursorLine(-count)
+	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
+		w.BufTopLine -= count
+		w.RedrawAllLines()
+	}
 	w.MoveCursorToDisplayPosition()
 }
 
@@ -714,6 +717,10 @@ func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 //			}
 //		}()
 //	}
+
+func CopyVars(vars ...any) {
+}
+
 func (cl *ConcreteLogger) Logln(message string, vars ...any) {
 	// fmt.Fprintf(os.Stderr, "Logln called\n")
 	rawLogArgs := cl.RawLogArgPool.Get().(*RawLogArgs)
