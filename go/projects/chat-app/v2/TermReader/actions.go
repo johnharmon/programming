@@ -43,7 +43,7 @@ func InitializeControlCodes() error {
 
 func init() {
 	KeyActionTree = make(map[byte]*KeyAction)
-	KeyActionTree[0x1b] = NewKeyAction(false, "TerminalEscape", false, 0x1b)
+	KeyActionTree[0x1b] = NewKeyAction(false, "Escape", false, 0x1b)
 	err := InitializeArrowKeys()
 	if err != nil {
 		log.Fatal(err.Error())

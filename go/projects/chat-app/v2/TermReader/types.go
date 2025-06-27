@@ -20,6 +20,7 @@ type LogEntry struct {
 type RawLogArgs struct {
 	FormatMessage string
 	FormatArgs    []any
+	Timestamp     string
 }
 
 type FlushToken struct {
@@ -93,6 +94,7 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	CursorLine        int
 	CursorCol         int
 	DesiredCursorCol  int
+	Mode              int
 	EndIndex          int
 	RawStartIndex     int
 	RawEndIndex       int

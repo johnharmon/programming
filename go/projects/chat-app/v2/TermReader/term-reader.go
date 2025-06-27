@@ -13,13 +13,6 @@ import (
 	"golang.org/x/term"
 )
 
-const (
-	MR = "\033[1C"
-	ML = "\033[1D"
-	MU = "\033[1A"
-	MD = "\033[1B"
-)
-
 var (
 	TermHeight, TermWidth     = GetTermSize()
 	GlobalLogger              EphemeralLogger
