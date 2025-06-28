@@ -236,7 +236,7 @@ func (w *Window) Listen() {
 				w.IncrCursorCol(1)
 				w.RedrawLine(w.Buf.ActiveLine)
 				w.MoveCursorToDisplayPosition()
-				w.KeyActionReturner <- ka
+				// w.KeyActionReturner <- ka
 			} else {
 				switch ka.Action {
 				case "Backspace":
@@ -293,6 +293,9 @@ func (w *Window) Listen() {
 		GlobalLogger.Logln("Reached bottom of input loop")
 		w.DisplayStatusLine()
 		w.MoveCursorToDisplayPosition()
+		if ka.FromPool {
+			w.KeyActionReturner <- ka
+		}
 	}
 }
 
@@ -687,9 +690,7 @@ func ParseByte(b byte, result []byte, in io.Reader) []byte { // Should handle in
 func ReadMultiByteSequence(buf []byte, input io.Reader, timeout time.Duration) (n int, err error) { // will read a multi-byte sequence into buf, respecting any existing elements
 	bufLen := len(buf)
 	bufCap := cap(buf)
-	var numB *int
-	x := 0
-	numB = &x
+	numB := new(int)
 	// readBuf := make([]byte, 0, bufCap-bufLen)
 	// GlobalLogger.Logln("Result inside byte paring: %b", buf)
 	go func() {

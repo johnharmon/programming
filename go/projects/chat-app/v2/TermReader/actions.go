@@ -13,7 +13,8 @@ func NewKeyAction(terminal bool, action string, raw bool, value ...byte) (sq *Ke
 }
 
 func NewKeyActionFromPool(terminal bool, action string, raw bool, value ...byte) (sq *KeyAction) {
-	sq = &KeyAction{Children: make(map[byte]*KeyAction), Value: value, IsTerminal: terminal, Action: action, PrintRaw: raw, FromPool: true}
+	sq = &KeyAction{Children: make(map[byte]*KeyAction), Value: make([]byte, len(value), 8), IsTerminal: terminal, Action: action, PrintRaw: raw, FromPool: true}
+	copy(sq.Value, value)
 	return sq
 }
 
