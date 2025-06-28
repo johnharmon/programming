@@ -217,6 +217,8 @@ func (w *Window) NewBuffer() {
 func (w *Window) Listen() {
 	// redrawHandler := w.MakeRedrawHandler()
 	gl := GlobalLogger
+	expectingInput := false
+	var expectingInputFunc func(*Window, *KeyAction) bool
 	w.Logger = gl
 	w.Out.Write(TERM_CLEAR_SCREEN)
 	w.DisplayStatusLine()
@@ -225,6 +227,7 @@ func (w *Window) Listen() {
 	for {
 		ka = <-w.EventChan
 		gl.Logln("Window received *KeyAction: %s", ka.String())
+	ModeSwitch:
 		switch w.Mode {
 		case MODE_INSERT:
 			if ka.PrintRaw && len(ka.Value) == 1 {
@@ -258,11 +261,14 @@ func (w *Window) Listen() {
 				case "Escape":
 					w.Mode = MODE_NORMAL
 					GlobalLogger.Logln("Setting mode to normal")
+					break ModeSwitch
 
 				}
 			}
 		case MODE_NORMAL:
-			if ka.Action == "Print" {
+			if expectingInput {
+				expectingInput = expectingInputFunc(w, ka)
+			} else if ka.Action == "Print" {
 				switch ka.Value[0] {
 				case CHAR_h:
 					NormalHandleLeftMove(w, 1)
@@ -275,15 +281,33 @@ func (w *Window) Listen() {
 				case CHAR_i:
 					w.Mode = MODE_INSERT
 					// continue
+				case CHAR_f:
+					expectingInput = true
+					expectingInputFunc = NormalHandleForwardFind
+
 				}
 			}
 		case MODE_VISUAL:
 			continue
 		}
-
+		GlobalLogger.Logln("Reached bottom of input loop")
 		w.DisplayStatusLine()
 		w.MoveCursorToDisplayPosition()
 	}
+}
+
+func NormalHandleForwardFind(w *Window, ka *KeyAction) bool {
+	findBytes := ka.Value[0]
+	nextCursorCol := bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
+	// nextCursorCol := FindByteIndex(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
+	if nextCursorCol != -1 {
+		w.IncrCursorCol(nextCursorCol + 1)
+	}
+	return false
+}
+
+func FindByteIndex(searchBuf []byte, b byte) (idx int) {
+	return bytes.IndexByte(searchBuf, b)
 }
 
 func NormalHandleLeftMove(w *Window, count int) {
@@ -649,35 +673,41 @@ func MakeByteHandler(ch chan struct{}, in io.Reader, kaPool *sync.Pool) func(byt
 
 func ParseByte(b byte, result []byte, in io.Reader) []byte { // Should handle initial detection for multi-byte sequences, if a single byte sequence then just return the byte as a slice
 	result[0] = b
-	// GlobalLogger.Logln("Result before byte paring: %b", result)
+	// GlobalLogger.Logln("Result before byte parsing: %b", result)
 	if b == 0x1b {
+		GlobalLogger.Logln("Escape sequence detectet, entering read timeout")
 		n, _ := ReadMultiByteSequence(result, in, time.Millisecond*25)
 		// GlobalLogger.Logln("Number of bytes read into result: %d", n)
 		result = result[0 : 1+n]
 	}
-	// GlobalLogger.Logln("Result after byte paring: %b", result)
+	// GlobalLogger.Logln("Result after byte parsing: %b", result)
 	return result
 }
 
 func ReadMultiByteSequence(buf []byte, input io.Reader, timeout time.Duration) (n int, err error) { // will read a multi-byte sequence into buf, respecting any existing elements
 	bufLen := len(buf)
 	bufCap := cap(buf)
-	readBuf := make([]byte, 0, bufCap-bufLen)
+	// readBuf := make([]byte, 0, bufCap-bufLen)
 	// GlobalLogger.Logln("Result inside byte paring: %b", buf)
-	deadline := time.Now().Add(timeout)
-	if f, ok := input.(*os.File); ok {
-		f.SetReadDeadline(deadline)
-		defer ClearReadDeadline(input)
-		// GlobalLogger.Logln("Result right before byte read: %b | bufLen: %d | bufCap: %d", buf[0:bufCap], bufLen, bufCap)
-		n, err = input.Read(readBuf)
-		// GlobalLogger.Logln("Result right after byte read: %b | bufLen: %d | bufCap: %d", buf[0:bufCap], bufLen, bufCap)
-		// GlobalLogger.Logln("Number of bytes read: %d", n)
-		if err != nil {
-			return 0, err
-		}
-		return n, nil
-	}
-	return 0, nil
+	go func() {
+		n, err = input.Read(buf[bufLen:bufCap])
+	}()
+	<-time.After(timeout)
+	GlobalLogger.Logln(fmt.Sprintf("Result right after byte read: %b | bufLen: %d | bufCap: %d", buf[0:bufCap], len(buf), cap(buf)))
+	return (len(buf) - bufLen), nil
+	// deadline := time.Now().Add(timeout)
+	// if f, ok := input.(*os.File); ok {
+	// f.SetReadDeadline(deadline)
+	// defer ClearReadDeadline(f)
+	// GlobalLogger.Logln("Result right before byte read: %b | bufLen: %d | bufCap: %d", buf[0:bufCap], bufLen, bufCap)
+	// n, err = f.Read(buf[bufLen:bufCap])
+	// GlobalLogger.Logln("Number of bytes read: %d", n)
+	//		if err != nil {
+	//			return 0, err
+	//		}
+	//		return n, nil
+	//	}
+	//	return 0, nil
 }
 
 func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
