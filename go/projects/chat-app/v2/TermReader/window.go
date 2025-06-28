@@ -687,14 +687,18 @@ func ParseByte(b byte, result []byte, in io.Reader) []byte { // Should handle in
 func ReadMultiByteSequence(buf []byte, input io.Reader, timeout time.Duration) (n int, err error) { // will read a multi-byte sequence into buf, respecting any existing elements
 	bufLen := len(buf)
 	bufCap := cap(buf)
+	var numB *int
+	x := 0
+	numB = &x
 	// readBuf := make([]byte, 0, bufCap-bufLen)
 	// GlobalLogger.Logln("Result inside byte paring: %b", buf)
 	go func() {
 		n, err = input.Read(buf[bufLen:bufCap])
+		numB = &n
 	}()
 	<-time.After(timeout)
 	GlobalLogger.Logln(fmt.Sprintf("Result right after byte read: %b | bufLen: %d | bufCap: %d", buf[0:bufCap], len(buf), cap(buf)))
-	return (len(buf) - bufLen), nil
+	return (*numB), nil
 	// deadline := time.Now().Add(timeout)
 	// if f, ok := input.(*os.File); ok {
 	// f.SetReadDeadline(deadline)
