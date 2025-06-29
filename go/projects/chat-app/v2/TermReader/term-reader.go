@@ -1008,7 +1008,7 @@ func RunWindow(env *Env) {
 	mc.State.ActiveWindow = win
 	go win.Listen()
 	GlobalLogger.Logln("Running an interactive window")
-	MainEventHandler(mc)
+	MainEventHandler2(mc)
 }
 
 func DumpFlags(config *FlagConfig) {
