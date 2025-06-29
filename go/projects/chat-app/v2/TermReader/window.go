@@ -293,6 +293,7 @@ func (w *Window) Listen() {
 		GlobalLogger.Logln("Reached bottom of input loop")
 		w.DisplayStatusLine()
 		w.MoveCursorToDisplayPosition()
+		// w.RedrawAllLines()
 		if ka.FromPool {
 			w.KeyActionReturner <- ka
 		}

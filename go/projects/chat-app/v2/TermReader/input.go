@@ -18,6 +18,7 @@ func ReadInput(input io.Reader, out chan byte) {
 }
 
 func ReadWithTimeout(buf []byte, in chan byte, timeout time.Duration) (n int) {
+	// GlobalLogger.Logln("Reading with timeout")
 	timeChan := time.After(timeout)
 	var b byte = 0
 	bytesRead := 0
@@ -25,7 +26,8 @@ listenLoop:
 	for {
 		select {
 		case b = <-in:
-			if len(buf) < cap(buf) {
+			// GlobalLogger.Logln("Caught multi byte sequence")
+			if bytesRead < len(buf) {
 				buf[bytesRead] = b
 				bytesRead++
 			}
@@ -46,8 +48,10 @@ func InputParser(in chan (byte), out chan []byte, bufPool *sync.Pool, timeout ti
 		if buf[0] == '\x1b' {
 			clear(buf[1:8])
 			n := ReadWithTimeout(buf[1:8], in, timeout)
+			// GlobalLogger.Logln("Read %d bytes from timeout", n)
 			buf = buf[0 : 1+n]
 		}
+		// GlobalLogger.Logln("Sending %b to key action generator", buf)
 		out <- buf
 	}
 }
@@ -100,7 +104,7 @@ func MainEventHandler2(mc *MainConfig) {
 	GlobalLogger.Logln("Making inputParserPool pool")
 	inputParserPool := &sync.Pool{}
 	GlobalLogger.Logln("Making kaPool pool")
-	kaPool := &sync.Pool{}
+	kaPool := MakeKeyActionPool()
 	StartupListeners(mc.In, closer, directTerminalInput, terminalInputSequences, keyActions, inputParserPool, kaPool)
 	gl := GlobalLogger.(*ConcreteLogger)
 	RegisterCleanupTask(gl.RunCh, gl.Cleanup, LOGGER_CLEANUP_UNIQUE_KEY, true)
