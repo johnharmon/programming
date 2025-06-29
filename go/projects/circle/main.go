@@ -57,13 +57,18 @@ func main() {
 		}
 		fmt.Print("\n")
 	}
+	start := time.Now()
 	for {
 		coord := coords[rand.Uint32()%uint32(len(coords))]
 		// if coord.x != 0 && coord.y != 0 {
 		a := make([]byte, 2)
+		// timestamp := time.Now().Format(time.StampMilli)
+		timestamp := time.Since(start)
 		a[0] = uint8(rand.Uint32()%0x5E) + 0x21
 		a[1] = uint8(rand.Uint32()%0x5E) + 0x21
-		fmt.Printf("\x1b[%d;%dH%s", coord.y+1, coord.x*2+1, a)
+		color := uint8(rand.Uint32()%7) + 31
+		fmt.Printf("\x1b[%d;%dH\x1b[%dm%s;\x1b[00m", coord.y+1, coord.x*2+1, color, a)
+		fmt.Printf("\x1b[0;0H\x1b[0KUptime: %s\r", timestamp)
 		time.Sleep(time.Millisecond * 2)
 		//}
 
