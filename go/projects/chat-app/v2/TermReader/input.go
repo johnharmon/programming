@@ -46,7 +46,7 @@ func InputParser(in chan (byte), out chan []byte, bufPool *sync.Pool, timeout ti
 		buf := bufPool.Get().([]byte)[0:1]
 		buf[0] = b
 		if buf[0] == '\x1b' {
-			clear(buf[1:8])
+			// clear(buf[1:8])
 			n := ReadWithTimeout(buf[1:8], in, timeout)
 			// GlobalLogger.Logln("Read %d bytes from timeout", n)
 			buf = buf[0 : 1+n]
@@ -82,7 +82,7 @@ func KeyActionGenerator(in chan []byte, out chan *KeyAction, closer chan struct{
 			ka.Action = "Unknown"
 		}
 		out <- ka
-		bufPool.Put(b)
+		bufPool.Put(b[0:cap(b)])
 	}
 }
 
