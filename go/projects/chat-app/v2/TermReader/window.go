@@ -280,11 +280,24 @@ func (w *Window) Listen() {
 					NormalHandleRightMove(w, 1)
 				case CHAR_i:
 					w.Mode = MODE_INSERT
-					// continue
 				case CHAR_f:
 					expectingInput = true
 					expectingInputFunc = NormalHandleForwardFind
-
+				default:
+					break
+				}
+			} else {
+				switch ka.Action {
+				case "ArrowRight":
+					NormalHandleArrowRight(w)
+				case "ArrowLeft":
+					NormalHandleArrowLeft(w)
+				case "ArrowUp":
+					NormalHandleArrowUp(w)
+				case "ArrowDown":
+					NormalHandleArrowDown(w)
+				case "Enter":
+					NormalHandleEnter(w)
 				}
 			}
 		case MODE_VISUAL:
@@ -302,10 +315,12 @@ func (w *Window) Listen() {
 
 func NormalHandleForwardFind(w *Window, ka *KeyAction) bool {
 	findBytes := ka.Value[0]
-	nextCursorCol := bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
+	nextCursorCol := bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol-1:], findBytes)
 	// nextCursorCol := FindByteIndex(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
+	fmt.Fprintf(os.Stderr, "Next cursor Column := %d", nextCursorCol)
+
 	if nextCursorCol != -1 {
-		w.IncrCursorCol(nextCursorCol + 1)
+		w.IncrCursorCol(nextCursorCol)
 	}
 	return false
 }
@@ -373,6 +388,22 @@ func InsertHandleEnter(w *Window) {
 	w.MoveCursorToDisplayPosition()
 }
 
+func NormalHandleEnter(w *Window) {
+	newLine := w.MakeNewLines(1)
+	w.Logger.Logln("Enter detected")
+	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
+	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
+	// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
+	w.IncrCursorLine(1)
+	w.CursorCol = 1
+	if w.CursorLine-w.BufTopLine > w.Height {
+		w.BufTopLine++
+	}
+	w.Mode = MODE_INSERT
+	w.RedrawAllLines()
+	w.MoveCursorToDisplayPosition()
+}
+
 func InsertHandleArrowRight(w *Window) {
 	w.IncrCursorCol(1)
 	w.MoveCursorToDisplayPosition()
@@ -393,6 +424,35 @@ func InsertHandleArrowUp(w *Window) {
 }
 
 func InsertHandleArrowDown(w *Window) {
+	oldLine := w.CursorLine
+	w.IncrCursorLine(1)
+	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
+		w.BufTopLine++
+		w.RedrawAllLines()
+	}
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleArrowRight(w *Window) {
+	w.IncrCursorCol(1)
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleArrowLeft(w *Window) {
+	w.IncrCursorCol(-1)
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleArrowUp(w *Window) {
+	w.IncrCursorLine(-1)
+	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
+		w.BufTopLine--
+		w.RedrawAllLines()
+	}
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleArrowDown(w *Window) {
 	oldLine := w.CursorLine
 	w.IncrCursorLine(1)
 	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
