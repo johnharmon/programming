@@ -87,6 +87,8 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	BufTopLine        int
 	CmdBuf            []byte
 	StartIndex        int
+	FileName          string
+	NeedRedraw        bool
 	StartLine         int
 	Buf               *DisplayBuffer
 	Height            int

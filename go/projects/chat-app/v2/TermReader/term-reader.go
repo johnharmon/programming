@@ -13,17 +13,6 @@ import (
 	"golang.org/x/term"
 )
 
-var (
-	TermHeight, TermWidth     = GetTermSize()
-	GlobalLogger              EphemeralLogger
-	CleanupTaskMap            = map[string]*CleanupTask{}
-	GenCleanupKey             = CreateCleanupKeyGenerator(CleanupTaskMap)
-	InsertCleanupKey          = CreateCleanupKeyInserter(CleanupTaskMap)
-	StartCleanupTasks         = CreateCleanupTaskStarter(CleanupTaskMap)
-	RegisterCleanupTask       = CreateCleanupTaskRegistrar(CleanupTaskMap)
-	LOGGER_CLEANUP_UNIQUE_KEY = "LOGGER_CLEANUP"
-)
-
 func (e Env) DWrite(b []byte) {
 	fmt.Fprintf(e.DebugWriter, "%b", b)
 }
@@ -1064,8 +1053,7 @@ func ParseFlags() (config *FlagConfig) {
 func main() {
 	config := ParseFlags()
 	env := NewDefaultEnv(config)
-	GlobalLogger = NewConcreteLogger()
-	InitCommands()
+	InitGlobalVars()
 	if config.Terminal {
 		MakeRawTerm(config)
 	} else if config.Debug {
