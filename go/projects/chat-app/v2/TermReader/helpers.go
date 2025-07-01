@@ -1,5 +1,10 @@
 package main
 
+import (
+	//"bytes"
+	"strings"
+)
+
 func InsertByteAt(a []byte, b byte, startIdx int) []byte {
 	al := len(a)
 	if startIdx >= len(a) {
@@ -147,4 +152,38 @@ func DeleteByteAt(a []byte, startIdx int) []byte {
 		}
 		return a[:al-1]
 	}
+}
+
+func Squeeze(s byte, buf []byte) []byte {
+	newBuf := make([]byte, len(buf))
+	bytesCopied := 0
+	previousByteWasS := false
+	for _, b := range buf {
+		if b == s {
+			if previousByteWasS {
+				continue
+			} else {
+				previousByteWasS = true
+				newBuf[bytesCopied] = b
+				bytesCopied++
+			}
+		} else {
+			previousByteWasS = false
+			newBuf[bytesCopied] = b
+			bytesCopied++
+		}
+	}
+	return newBuf[0:bytesCopied]
+}
+
+func ProcessCmdArgs(cmdRaw []byte) (cmd string, cmdArgs []string) {
+	cmdRaw = Squeeze(' ', cmdRaw)
+	cmdString := string(cmdRaw)
+	cmdStrings := strings.Split(cmdString, " ")
+	cmd = cmdStrings[0]
+
+	if len(cmdStrings) > 1 {
+		cmdArgs = cmdStrings[1:]
+	}
+	return cmd, cmdArgs
 }
