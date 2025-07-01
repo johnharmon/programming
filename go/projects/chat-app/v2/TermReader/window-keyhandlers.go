@@ -83,7 +83,6 @@ func InsertHandleEnter(w *Window) {
 	w.Logger.Logln("Enter detected")
 	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
 	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
-	// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
 	w.IncrCursorLine(1)
 	w.CursorCol = 1
 	if w.CursorLine-w.BufTopLine > w.Height {
@@ -99,7 +98,6 @@ func NormalHandleEnter(w *Window) {
 	w.Logger.Logln("Enter detected")
 	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
 	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
-	// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
 	w.IncrCursorLine(1)
 	w.CursorCol = 1
 	if w.CursorLine-w.BufTopLine > w.Height {
