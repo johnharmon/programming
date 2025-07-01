@@ -85,6 +85,7 @@ type CleanupTask struct {
 type Window struct { // Represents a sliding into its backing buffer of Window.Buf as well as the space it takes up in the terminal window
 	TermTopLine       int
 	BufTopLine        int
+	CmdBuf            []byte
 	StartIndex        int
 	StartLine         int
 	Buf               *DisplayBuffer
@@ -217,4 +218,8 @@ type Cell struct {
 	Logger                io.Writer
 	LogFile               *os.File
 	LogLink               string
+}
+
+type Cmd struct {
+	ExecFunc func(*Window) error
 }

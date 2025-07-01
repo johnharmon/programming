@@ -8,6 +8,7 @@ const (
 	MODE_NORMAL     = 0
 	MODE_INSERT     = 1
 	MODE_VISUAL     = 2
+	MODE_CMD        = 3
 	CHAR_SPACE      = ' '
 	CHAR_EXCLAM     = '!'
 	CHAR_QUOTE      = '"'
