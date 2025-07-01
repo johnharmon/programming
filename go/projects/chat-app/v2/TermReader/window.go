@@ -174,10 +174,10 @@ func (w *Window) IncrCursorLine(vec int) {
 	}
 }
 
-func (w *Window) MakeNewLines(count int) [][]byte {
-	newLines := make([][]byte, count)
+func MakeNewLines(lines int, lineSize int) [][]byte {
+	newLines := make([][]byte, lines)
 	for i := range newLines {
-		newLines[i] = make([]byte, 0, 4096)
+		newLines[i] = make([]byte, 0, lineSize)
 	}
 	return newLines
 }
@@ -283,6 +283,8 @@ func (w *Window) Listen() {
 				case CHAR_f:
 					expectingInput = true
 					expectingInputFunc = NormalHandleForwardFind
+				case CHAR_COLON:
+					w.Mode = MODE_CMD
 				default:
 					break
 				}
@@ -300,11 +302,23 @@ func (w *Window) Listen() {
 					NormalHandleEnter(w)
 				}
 			}
+		case MODE_CMD:
+			switch {
+			case ka.Action == "Escape":
+				w.Mode = MODE_NORMAL
+			case ka.Action == "Enter":
+				w.ProcessCmd()
+			}
 		case MODE_VISUAL:
 			continue
 		}
 		GlobalLogger.Logln("Reached bottom of input loop")
-		w.DisplayStatusLine()
+		switch {
+		case w.Mode == MODE_CMD:
+			w.DisplayCMDLine()
+		default:
+			w.DisplayStatusLine()
+		}
 		w.MoveCursorToDisplayPosition()
 		// w.RedrawAllLines()
 		if ka.FromPool {
@@ -313,153 +327,9 @@ func (w *Window) Listen() {
 	}
 }
 
-func NormalHandleForwardFind(w *Window, ka *KeyAction) bool {
-	findBytes := ka.Value[0]
-	nextCursorCol := bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol-1:], findBytes)
-	// nextCursorCol := FindByteIndex(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
-	fmt.Fprintf(os.Stderr, "Next cursor Column := %d", nextCursorCol)
-
-	if nextCursorCol != -1 {
-		w.IncrCursorCol(nextCursorCol)
-	}
-	return false
-}
-
-func FindByteIndex(searchBuf []byte, b byte) (idx int) {
-	return bytes.IndexByte(searchBuf, b)
-}
-
-func NormalHandleLeftMove(w *Window, count int) {
-	w.IncrCursorCol(-count)
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleRightMove(w *Window, count int) {
-	w.IncrCursorCol(count)
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleUpMove(w *Window, count int) {
-	w.IncrCursorLine(-count)
-	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
-		w.BufTopLine -= count
-		w.RedrawAllLines()
-	}
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleDownMove(w *Window, count int) {
-	w.IncrCursorLine(count)
-	w.MoveCursorToDisplayPosition()
-}
-
-func InsertHandleDelete(w *Window) {
-	w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
-	if len(w.GetActiveLine()) == 0 {
-		w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, 1)
-		w.IncrCursorLine(-1)
-		numDisplayedLines := len(w.Buf.Lines) - w.BufTopLine
-		if numDisplayedLines < w.Height && w.BufTopLine > 0 {
-			w.BufTopLine--
-		}
-		w.RedrawAllLines()
-		w.IncrCursorCol(len(w.GetActiveLine()))
-
-	} else {
-		w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.GetActiveLine(), w.CursorCol-1)
-		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
-		w.RedrawLine(w.CursorLine)
-		w.IncrCursorCol(-1)
-	}
-}
-
-func InsertHandleEnter(w *Window) {
-	newLine := w.MakeNewLines(1)
-	w.Logger.Logln("Enter detected")
-	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
-	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
-	// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
-	w.IncrCursorLine(1)
-	w.CursorCol = 1
-	if w.CursorLine-w.BufTopLine > w.Height {
-		w.BufTopLine++
-	}
-	w.RedrawAllLines()
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleEnter(w *Window) {
-	newLine := w.MakeNewLines(1)
-	w.Logger.Logln("Enter detected")
-	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
-	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
-	// w.Logger.Logln("New Byte buffer: %b", w.Buf.Lines)
-	w.IncrCursorLine(1)
-	w.CursorCol = 1
-	if w.CursorLine-w.BufTopLine > w.Height {
-		w.BufTopLine++
-	}
-	w.Mode = MODE_INSERT
-	w.RedrawAllLines()
-	w.MoveCursorToDisplayPosition()
-}
-
-func InsertHandleArrowRight(w *Window) {
-	w.IncrCursorCol(1)
-	w.MoveCursorToDisplayPosition()
-}
-
-func InsertHandleArrowLeft(w *Window) {
-	w.IncrCursorCol(-1)
-	w.MoveCursorToDisplayPosition()
-}
-
-func InsertHandleArrowUp(w *Window) {
-	w.IncrCursorLine(-1)
-	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
-		w.BufTopLine--
-		w.RedrawAllLines()
-	}
-	w.MoveCursorToDisplayPosition()
-}
-
-func InsertHandleArrowDown(w *Window) {
-	oldLine := w.CursorLine
-	w.IncrCursorLine(1)
-	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
-		w.BufTopLine++
-		w.RedrawAllLines()
-	}
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleArrowRight(w *Window) {
-	w.IncrCursorCol(1)
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleArrowLeft(w *Window) {
-	w.IncrCursorCol(-1)
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleArrowUp(w *Window) {
-	w.IncrCursorLine(-1)
-	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
-		w.BufTopLine--
-		w.RedrawAllLines()
-	}
-	w.MoveCursorToDisplayPosition()
-}
-
-func NormalHandleArrowDown(w *Window) {
-	oldLine := w.CursorLine
-	w.IncrCursorLine(1)
-	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
-		w.BufTopLine++
-		w.RedrawAllLines()
-	}
-	w.MoveCursorToDisplayPosition()
+func (w *Window) ProcessCmd() {
+	GlobalLogger.Logln("Processing cmd: %s", w.CmdBuf)
+	w.CmdBuf = w.CmdBuf[:0]
 }
 
 func (w *Window) MoveCursorToDisplayPosition() {
@@ -499,6 +369,14 @@ func (w *Window) RedrawAllLines() {
 	for i := w.BufTopLine; i <= w.BufTopLine+lineLimit; i++ {
 		w.RedrawLine(i)
 	}
+}
+
+func (w *Window) DisplayCMDLine() {
+	termStatusLineNum := w.TermTopLine + w.Height
+	w.MoveCursorToPosition(termStatusLineNum, 0)
+	w.Out.Write(TERM_CLEAR_LINE)
+	fmt.Fprintf(w.Out, "\x1b[48;5;202m\x1b[38;5;16m%s\x1b[00m", w.CmdBuf)
+	return
 }
 
 func (w *Window) DisplayStatusLine() {
@@ -814,148 +692,145 @@ func HandleByte(b byte, ch chan interface{}, in io.Reader) (res []byte) {
 //		}()
 //	}
 
-func CopyVars(vars ...any) {
-}
-
-func (cl *ConcreteLogger) Logln(message string, vars ...any) {
-	// fmt.Fprintf(os.Stderr, "Logln called\n")
-	rawLogArgs := cl.RawLogArgPool.Get().(*RawLogArgs)
-	rawLogArgs.FormatMessage = message
-	rawLogArgs.FormatArgs = vars
-	rawLogArgs.Timestamp = time.Now().Format(time.StampMicro)
-	cl.RawLogCh <- rawLogArgs
-}
-
-func (cl *ConcreteLogger) RawLogHandler() {
-	for logArgs := range cl.RawLogCh {
-		// fmt.Fprintf(os.Stderr, "RawLogHandler received log: %s\n", logArgs.FormatMessage)
-		entry := cl.LogEntryPool.Get().(*LogEntry)
-		entry.Message = fmt.Sprintf(logArgs.FormatMessage, logArgs.FormatArgs...)
-		entry.Timestamp = logArgs.Timestamp
-		cl.LogEntryCh <- entry
-		cl.RawLogArgPool.Put(logArgs)
-	}
-	close(cl.LogEntryCh)
-}
-
-func (cl *ConcreteLogger) JsonMarshaler() {
-	encodeBuffer := bytes.NewBuffer(make([]byte, 0, 2048))
-	encoder := json.NewEncoder(encodeBuffer)
-	for rawLog := range cl.LogEntryCh {
-		encodeSlice := cl.MessageBufferPool.New().([]byte)
-		encodeSlice = encodeSlice[:0]
-		// fmt.Fprintf(os.Stderr, "JsonMarshaler received Log entry: +%v\n", rawLog)
-		encodeBuffer.Reset()
-		encoder.Encode(rawLog)
-		encodeSlice = append(encodeSlice, encodeBuffer.Bytes()...)
-		cl.LogOutput <- encodeSlice
-		os.Stderr.Write(encodeBuffer.Bytes())
-		cl.LogEntryPool.Put(rawLog)
-	}
-	close(cl.LogOutput)
-}
-
-func (cl *ConcreteLogger) JsonWriter() {
-	// cl.Mu.Lock()
-	var flushToken *FlushToken
-	bufFlushSize := 1024
-	ticker := time.NewTicker(time.Millisecond * 100)
-LogWriteLoop:
-	for {
-		select {
-		case msg, ok := <-cl.LogOutput:
-			// fmt.Fprintf(os.Stderr, "JsonWriter received Log: %s\n", msg)
-			if !ok {
-				if cl.ActiveBuffer.Len() > 0 {
-					flushToken = <-cl.FlushReceiver
-					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch; if !ok {<this>}"
-					flushToken.SentBy = "JsonWriter(): case msg, ok := <- cl.Logch; if !ok {<this>}"
-					cl.Out.Write(cl.ActiveBuffer.Bytes())
-				}
-				cl.Mu.Unlock()
-				return
-			}
-			cl.SwapMu.Lock()
-			cl.ActiveBuffer.Write(msg)
-			os.Stderr.Write(msg)
-			cl.SwapMu.Unlock()
-			cl.MessageBufferPool.Put(msg)
-			if cl.ActiveBuffer.Len() >= bufFlushSize {
-				select {
-				case flushToken = <-cl.FlushReceiver:
-					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch"
-					flushToken.SentBy = "JsonWriter(): case msg, ok := <- cl.Logch"
-					cl.FlushAndSwapActiveBuffer()
-					cl.FlushSender <- flushToken
-				default:
-					continue LogWriteLoop
-				}
-			}
-		case <-ticker.C:
-			if cl.ActiveBuffer.Len() > 0 {
-				select {
-				case flushToken = <-cl.FlushReceiver:
-					flushToken.HandledBy = "JsonWriter(): case <- ticker.C:"
-					flushToken.SentBy = "JsonWriter(): case <- ticker.C:"
-					cl.FlushAndSwapActiveBuffer()
-					cl.FlushSender <- flushToken
-				default:
-					continue LogWriteLoop
-				}
-			}
-		}
-	}
-}
-
-func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
-	go func() {
-		cl.SwapMu.Lock()
-		cl.ActiveBuffer, cl.FlushBuffer = cl.FlushBuffer, cl.ActiveBuffer
-		cl.SwapMu.Unlock()
-		flushToken := <-cl.FlushSender
-		flushToken.Iteration++
-		flushToken.HandledBy = "FlushAndSwapActiveBuffer()"
-		flushToken.ReceivedBy = "FlushAndSwapActiveBuffer()"
-		cl.Out.Write(cl.FlushBuffer.Bytes())
-		cl.FlushBuffer.Reset()
-		cl.FlushReceiver <- flushToken
-	}()
-}
-
-func (cl *ConcreteLogger) StartAsync() {
-	cl.Mu.Lock()
-	flushToken := &FlushToken{Iteration: 0}
-	cl.FlushReceiver <- flushToken
-	cl.RawLogHandler()
-	cl.JsonMarshaler()
-	cl.JsonWriter()
-	for {
-		_, ok := <-cl.Done
-		if !ok {
-			// fmt.Fprintf(os.Stderr, "Logging close received, exiting")
-			close(cl.RawLogCh)
-		}
-	}
-}
-
-func (cl *ConcreteLogger) Start() {
-	cl.Mu.Lock()
-	flushToken := &FlushToken{Iteration: 0}
-	go cl.RawLogHandler()
-	go cl.JsonMarshaler()
-	go cl.JsonWriter()
-	cl.FlushReceiver <- flushToken
-	for {
-		// fmt.Fprintf(os.Stderr, "Waiting on cl.Done to be closed\n")
-		_, ok := <-cl.Done
-		if !ok {
-			// fmt.Fprintf(os.Stderr, "cl.Done closed, closing cl.RawLogCh\n")
-			cl.RawLogCh <- &RawLogArgs{FormatMessage: "FlushToken{Iterations: %d HandledBy: %s, SentBy: %s", FormatArgs: []any{flushToken.Iteration, flushToken.HandledBy, flushToken.SentBy}}
-			close(cl.RawLogCh)
-			break
-		}
-	}
-}
+//func (cl *ConcreteLogger) Logln(message string, vars ...any) {
+//	// fmt.Fprintf(os.Stderr, "Logln called\n")
+//	rawLogArgs := cl.RawLogArgPool.Get().(*RawLogArgs)
+//	rawLogArgs.FormatMessage = message
+//	rawLogArgs.FormatArgs = vars
+//	rawLogArgs.Timestamp = time.Now().Format(time.StampMicro)
+//	cl.RawLogCh <- rawLogArgs
+//}
+//
+//func (cl *ConcreteLogger) RawLogHandler() {
+//	for logArgs := range cl.RawLogCh {
+//		// fmt.Fprintf(os.Stderr, "RawLogHandler received log: %s\n", logArgs.FormatMessage)
+//		entry := cl.LogEntryPool.Get().(*LogEntry)
+//		entry.Message = fmt.Sprintf(logArgs.FormatMessage, logArgs.FormatArgs...)
+//		entry.Timestamp = logArgs.Timestamp
+//		cl.LogEntryCh <- entry
+//		cl.RawLogArgPool.Put(logArgs)
+//	}
+//	close(cl.LogEntryCh)
+//}
+//
+//func (cl *ConcreteLogger) JsonMarshaler() {
+//	encodeBuffer := bytes.NewBuffer(make([]byte, 0, 2048))
+//	encoder := json.NewEncoder(encodeBuffer)
+//	for rawLog := range cl.LogEntryCh {
+//		encodeSlice := cl.MessageBufferPool.New().([]byte)
+//		encodeSlice = encodeSlice[:0]
+//		// fmt.Fprintf(os.Stderr, "JsonMarshaler received Log entry: +%v\n", rawLog)
+//		encodeBuffer.Reset()
+//		encoder.Encode(rawLog)
+//		encodeSlice = append(encodeSlice, encodeBuffer.Bytes()...)
+//		cl.LogOutput <- encodeSlice
+//		os.Stderr.Write(encodeBuffer.Bytes())
+//		cl.LogEntryPool.Put(rawLog)
+//	}
+//	close(cl.LogOutput)
+//}
+//
+//func (cl *ConcreteLogger) JsonWriter() {
+//	// cl.Mu.Lock()
+//	var flushToken *FlushToken
+//	bufFlushSize := 1024
+//	ticker := time.NewTicker(time.Millisecond * 100)
+//LogWriteLoop:
+//	for {
+//		select {
+//		case msg, ok := <-cl.LogOutput:
+//			// fmt.Fprintf(os.Stderr, "JsonWriter received Log: %s\n", msg)
+//			if !ok {
+//				if cl.ActiveBuffer.Len() > 0 {
+//					flushToken = <-cl.FlushReceiver
+//					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch; if !ok {<this>}"
+//					flushToken.SentBy = "JsonWriter(): case msg, ok := <- cl.Logch; if !ok {<this>}"
+//					cl.Out.Write(cl.ActiveBuffer.Bytes())
+//				}
+//				cl.Mu.Unlock()
+//				return
+//			}
+//			cl.SwapMu.Lock()
+//			cl.ActiveBuffer.Write(msg)
+//			os.Stderr.Write(msg)
+//			cl.SwapMu.Unlock()
+//			cl.MessageBufferPool.Put(msg)
+//			if cl.ActiveBuffer.Len() >= bufFlushSize {
+//				select {
+//				case flushToken = <-cl.FlushReceiver:
+//					flushToken.HandledBy = "JsonWriter(): case msg, ok := <- cl.Logch"
+//					flushToken.SentBy = "JsonWriter(): case msg, ok := <- cl.Logch"
+//					cl.FlushAndSwapActiveBuffer()
+//					cl.FlushSender <- flushToken
+//				default:
+//					continue LogWriteLoop
+//				}
+//			}
+//		case <-ticker.C:
+//			if cl.ActiveBuffer.Len() > 0 {
+//				select {
+//				case flushToken = <-cl.FlushReceiver:
+//					flushToken.HandledBy = "JsonWriter(): case <- ticker.C:"
+//					flushToken.SentBy = "JsonWriter(): case <- ticker.C:"
+//					cl.FlushAndSwapActiveBuffer()
+//					cl.FlushSender <- flushToken
+//				default:
+//					continue LogWriteLoop
+//				}
+//			}
+//		}
+//	}
+//}
+//
+//func (cl *ConcreteLogger) FlushAndSwapActiveBuffer() {
+//	go func() {
+//		cl.SwapMu.Lock()
+//		cl.ActiveBuffer, cl.FlushBuffer = cl.FlushBuffer, cl.ActiveBuffer
+//		cl.SwapMu.Unlock()
+//		flushToken := <-cl.FlushSender
+//		flushToken.Iteration++
+//		flushToken.HandledBy = "FlushAndSwapActiveBuffer()"
+//		flushToken.ReceivedBy = "FlushAndSwapActiveBuffer()"
+//		cl.Out.Write(cl.FlushBuffer.Bytes())
+//		cl.FlushBuffer.Reset()
+//		cl.FlushReceiver <- flushToken
+//	}()
+//}
+//
+//func (cl *ConcreteLogger) StartAsync() {
+//	cl.Mu.Lock()
+//	flushToken := &FlushToken{Iteration: 0}
+//	cl.FlushReceiver <- flushToken
+//	cl.RawLogHandler()
+//	cl.JsonMarshaler()
+//	cl.JsonWriter()
+//	for {
+//		_, ok := <-cl.Done
+//		if !ok {
+//			// fmt.Fprintf(os.Stderr, "Logging close received, exiting")
+//			close(cl.RawLogCh)
+//		}
+//	}
+//}
+//
+//func (cl *ConcreteLogger) Start() {
+//	cl.Mu.Lock()
+//	flushToken := &FlushToken{Iteration: 0}
+//	go cl.RawLogHandler()
+//	go cl.JsonMarshaler()
+//	go cl.JsonWriter()
+//	cl.FlushReceiver <- flushToken
+//	for {
+//		// fmt.Fprintf(os.Stderr, "Waiting on cl.Done to be closed\n")
+//		_, ok := <-cl.Done
+//		if !ok {
+//			// fmt.Fprintf(os.Stderr, "cl.Done closed, closing cl.RawLogCh\n")
+//			cl.RawLogCh <- &RawLogArgs{FormatMessage: "FlushToken{Iterations: %d HandledBy: %s, SentBy: %s", FormatArgs: []any{flushToken.Iteration, flushToken.HandledBy, flushToken.SentBy}}
+//			close(cl.RawLogCh)
+//			break
+//		}
+//	}
+//}
 
 //func (cl *ConcreteLogger) Start() {
 //	cl.Mu.Lock()
