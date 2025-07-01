@@ -42,8 +42,13 @@ func NormalHandleUpMove(w *Window, count int) {
 }
 
 func NormalHandleDownMove(w *Window, count int) {
+	oldLine := w.CursorLine
 	w.IncrCursorLine(count)
 	w.MoveCursorToDisplayPosition()
+	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
+		w.BufTopLine += count
+		w.RedrawAllLines()
+	}
 }
 
 func InsertHandleDelete(w *Window) {
