@@ -2,10 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
 )
-
-var KeyActionTree map[byte]*KeyAction
 
 func NewKeyAction(terminal bool, action string, raw bool, value ...byte) (sq *KeyAction) {
 	sq = &KeyAction{Children: make(map[byte]*KeyAction), Value: value, IsTerminal: terminal, Action: action, PrintRaw: raw, FromPool: false}
@@ -40,19 +37,6 @@ func InitializeControlCodes() error {
 	KeyActionTree[0x08] = NewKeyAction(true, "Backspace", false, 0x08)
 	KeyActionTree[0x0D] = NewKeyAction(true, "Enter", false, 0x0D)
 	return nil
-}
-
-func init() {
-	KeyActionTree = make(map[byte]*KeyAction)
-	KeyActionTree[0x1b] = NewKeyAction(false, "Escape", false, 0x1b)
-	err := InitializeArrowKeys()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	err = InitializeControlCodes()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
 }
 
 func ValidateSequence(seq []byte) (sq *KeyAction) {

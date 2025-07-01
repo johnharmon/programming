@@ -182,9 +182,10 @@ func ProcessCmdArgs(cmdRaw []byte) (cmd string, cmdArgs []string) {
 	cmdString := string(cmdRaw)
 	cmdStrings := strings.Split(cmdString, " ")
 	cmd = cmdStrings[0]
-
 	if len(cmdStrings) > 1 {
 		cmdArgs = cmdStrings[1:]
+	} else {
+		cmdArgs = make([]string, 0)
 	}
 	return cmd, cmdArgs
 }
