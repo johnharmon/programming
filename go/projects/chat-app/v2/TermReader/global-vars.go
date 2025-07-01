@@ -2,7 +2,12 @@ package main
 
 import (
 	"log"
+	"os"
 )
+
+func SetDefaultLogOutput() {
+	log.Default().SetOutput(os.Stderr)
+}
 
 var (
 	COMMANDS                  map[string]Cmd = make(map[string]Cmd)
@@ -32,6 +37,7 @@ func InitCommandShortcuts() {
 
 func InitGlobalVars() {
 	GlobalLogger = NewConcreteLogger()
+	SetDefaultLogOutput()
 	InitCoreCommands()
 	InitCommandShortcuts()
 	InitKeyActionTree()
@@ -42,7 +48,7 @@ func InitKeyActionTree() {
 	KeyActionTree[0x1b] = NewKeyAction(false, "Escape", false, 0x1b)
 	err := InitializeArrowKeys()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf(err.Error())
 	}
 	err = InitializeControlCodes()
 	if err != nil {
