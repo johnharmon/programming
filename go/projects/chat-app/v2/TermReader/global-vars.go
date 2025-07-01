@@ -5,10 +5,6 @@ import (
 	"os"
 )
 
-func SetDefaultLogOutput() {
-	log.Default().SetOutput(os.Stderr)
-}
-
 var (
 	COMMANDS                  map[string]Cmd = make(map[string]Cmd)
 	COMMAND_ALIASES           map[string]Cmd = make(map[string]Cmd)
@@ -24,6 +20,10 @@ var (
 	TERM_CLEAR_LINE           = []byte{0x1b, '[', '2', 'K'}
 	TERM_CLEAR_SCREEN         = []byte{0x1b, '[', '2', 'J'}
 )
+
+func SetDefaultLogOutput() {
+	log.Default().SetOutput(os.Stderr)
+}
 
 func InitCoreCommands() {
 	COMMANDS["edit"] = Cmd{ExecFunc: Edit}

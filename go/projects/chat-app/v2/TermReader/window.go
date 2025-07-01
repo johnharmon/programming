@@ -341,12 +341,6 @@ func (w *Window) Listen() {
 				CmdHandleArrowRight(w)
 			case ka.Action == "ArrowLeft":
 				CmdHandleArrowLeft(w)
-				//			case ka.Action == "ArrowUp":
-				//				CmdHandleArrowUp(w)
-				//			case ka.Action == "ArrowDown":
-				//				CmdHandleArrowDown(w)
-				//			case ka.Action == "Enter":
-				//				CmdHandleEnter(w)
 			case ka.PrintRaw && len(ka.Value) == 1:
 				w.WriteToCmd(ka.Value)
 				w.IncrCmdCursorCol(1)
