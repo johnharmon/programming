@@ -26,3 +26,9 @@ func (w *Window) LoadNewEmptyBuffer() {
 	w.CursorCol, w.CursorLine = 1, 0
 	w.TermTopLine = 1
 }
+
+func (w *Window) WriteBuffer(out io.Writer) {
+	for _, line := range w.Buf.Lines {
+		out.Write(append(line, '\n'))
+	}
+}

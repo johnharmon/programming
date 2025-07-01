@@ -8,8 +8,13 @@ import (
 
 func NormalHandleForwardFind(w *Window, ka *KeyAction) bool {
 	findBytes := ka.Value[0]
-	nextCursorCol := bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol-1:], findBytes)
-	// nextCursorCol := FindByteIndex(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
+	var nextCursorCol int
+	if w.CursorCol-1 < len(w.Buf.Lines[w.CursorLine]) {
+		nextCursorCol = bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol-1:], findBytes)
+		// nextCursorCol := FindByteIndex(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
+	} else {
+		nextCursorCol = -1
+	}
 	fmt.Fprintf(os.Stderr, "Next cursor Column := %d", nextCursorCol)
 
 	if nextCursorCol != -1 {
@@ -36,7 +41,8 @@ func NormalHandleUpMove(w *Window, count int) {
 	w.IncrCursorLine(-count)
 	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
 		w.BufTopLine -= count
-		w.RedrawAllLines()
+		w.NeedRedraw = true
+		// w.RedrawAllLines()
 	}
 	w.MoveCursorToDisplayPosition()
 }
@@ -47,7 +53,8 @@ func NormalHandleDownMove(w *Window, count int) {
 	w.MoveCursorToDisplayPosition()
 	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
 		w.BufTopLine += count
-		w.RedrawAllLines()
+		w.NeedRedraw = true
+		// w.RedrawAllLines()
 	}
 }
 
@@ -60,7 +67,8 @@ func InsertHandleDelete(w *Window) {
 		if numDisplayedLines < w.Height && w.BufTopLine > 0 {
 			w.BufTopLine--
 		}
-		w.RedrawAllLines()
+		w.NeedRedraw = true
+		// w.RedrawAllLines()
 		w.IncrCursorCol(len(w.GetActiveLine()))
 
 	} else {
@@ -82,7 +90,8 @@ func InsertHandleEnter(w *Window) {
 	if w.CursorLine-w.BufTopLine > w.Height {
 		w.BufTopLine++
 	}
-	w.RedrawAllLines()
+	w.NeedRedraw = true
+	// w.RedrawAllLines()
 	w.MoveCursorToDisplayPosition()
 }
 
@@ -98,7 +107,8 @@ func NormalHandleEnter(w *Window) {
 		w.BufTopLine++
 	}
 	w.Mode = MODE_INSERT
-	w.RedrawAllLines()
+	w.NeedRedraw = true
+	// w.RedrawAllLines()
 	w.MoveCursorToDisplayPosition()
 }
 
@@ -116,7 +126,8 @@ func InsertHandleArrowUp(w *Window) {
 	w.IncrCursorLine(-1)
 	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
 		w.BufTopLine--
-		w.RedrawAllLines()
+		w.NeedRedraw = true
+		// w.RedrawAllLines()
 	}
 	w.MoveCursorToDisplayPosition()
 }
@@ -126,7 +137,8 @@ func InsertHandleArrowDown(w *Window) {
 	w.IncrCursorLine(1)
 	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
 		w.BufTopLine++
-		w.RedrawAllLines()
+		w.NeedRedraw = true
+		// w.RedrawAllLines()
 	}
 	w.MoveCursorToDisplayPosition()
 }
@@ -145,7 +157,8 @@ func NormalHandleArrowUp(w *Window) {
 	w.IncrCursorLine(-1)
 	if w.CursorLine < w.BufTopLine && w.BufTopLine > 0 {
 		w.BufTopLine--
-		w.RedrawAllLines()
+		w.NeedRedraw = true
+		// w.RedrawAllLines()
 	}
 	w.MoveCursorToDisplayPosition()
 }
@@ -155,7 +168,8 @@ func NormalHandleArrowDown(w *Window) {
 	w.IncrCursorLine(1)
 	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
 		w.BufTopLine++
-		w.RedrawAllLines()
+		w.NeedRedraw = true
+		// w.RedrawAllLines()
 	}
 	w.MoveCursorToDisplayPosition()
 }

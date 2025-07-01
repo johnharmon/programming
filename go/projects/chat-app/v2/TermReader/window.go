@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -61,11 +62,6 @@ func CreateCleanupTaskRegistrar(cleanupTaskMap map[string]*CleanupTask) func(cha
 //	ct := &CleanupTask{Closer: closer, Name: name, Func: Func, Start: start}
 //	cleanupKey := GenCleanupKey(ct.Name)
 //	InsertCleanupKey(cleanupKey, ct)
-
-var (
-	TERM_CLEAR_LINE   = []byte{0x1b, '[', '2', 'K'}
-	TERM_CLEAR_SCREEN = []byte{0x1b, '[', '2', 'J'}
-)
 
 func (w Window) Size() int {
 	return w.Height
@@ -337,7 +333,7 @@ func (w *Window) Listen() {
 				w.CursorCol = w.PrevCursorCol
 				w.MoveCursorToDisplayPosition()
 			case ka.Action == "Enter":
-				w.ProcessCmd()
+				_ = w.ProcessCmd()
 				w.Mode = MODE_NORMAL
 			case ka.Action == "Delete":
 				CmdHandleDelete(w)
@@ -365,15 +361,19 @@ func (w *Window) Listen() {
 			w.DisplayCmdLine()
 		default:
 			w.DisplayStatusLine()
-			w.MoveCursorToDisplayPosition()
+			// w.MoveCursorToDisplayPosition()
 		}
 		switch {
-		case w.Mode == MODE_VISUAL || w.Mode == MODE_INSERT || w.Mode == MODE_VISUAL:
+		case w.Mode == MODE_NORMAL || w.Mode == MODE_INSERT || w.Mode == MODE_VISUAL:
 			w.MoveCursorToDisplayPosition()
 		case w.Mode == MODE_CMD:
 			w.MoveCursorToCmdPosition()
 		}
 		// w.RedrawAllLines()
+		if w.NeedRedraw {
+			w.RedrawAllLines()
+			w.NeedRedraw = false
+		}
 		if ka.FromPool {
 			w.KeyActionReturner <- ka
 		}
@@ -385,17 +385,24 @@ func (w *Window) MoveCursorToCmdPosition() {
 	w.MoveCursorToPosition(cursorDisplayLine, w.CursorCol)
 }
 
-func (w *Window) ProcessCmd() {
+func (w *Window) ProcessCmd() (err error) {
 	GlobalLogger.Logln("Processing cmd: %s", w.CmdBuf)
 	cmd, cmdArgs := ProcessCmdArgs(w.CmdBuf)
+	GlobalLogger.Logln("cmd: %s, cmdArgs: %s", cmd, strings.Join(cmdArgs, "|"))
+	fmt.Fprintf(os.Stderr, "cmd: %s, cmdArgs: %s\n", cmd, strings.Join(cmdArgs, "|"))
 	w.CmdBuf = w.CmdBuf[:1]
 	w.CmdCursorCol = 2
 	cmdDispatch, ok := COMMANDS[cmd]
 	if !ok {
-		w.DisplayCmdMessage(fmt.Sprintf("Error: %s not found", cmd))
-		return
+		err = errors.New(fmt.Sprintf("Error: cmd not found: \"%s\"", cmd))
+		w.DisplayCmdMessage(err.Error())
+		return err
 	}
-	cmdDispatch.ExecFunc(w, cmdArgs...)
+	err = cmdDispatch.ExecFunc(w, cmdArgs...)
+	if err != nil {
+		w.DisplayCmdMessage(fmt.Sprintf("Error: %s", err))
+	}
+	return err
 }
 
 func (w *Window) MoveCursorToDisplayPosition() {
