@@ -177,6 +177,7 @@ func Squeeze(s byte, buf []byte) []byte {
 }
 
 func ProcessCmdArgs(cmdRaw []byte) (cmd string, cmdArgs []string) {
+	cmdRaw = cmdRaw[1:]
 	cmdRaw = Squeeze(' ', cmdRaw)
 	cmdString := string(cmdRaw)
 	cmdStrings := strings.Split(cmdString, " ")

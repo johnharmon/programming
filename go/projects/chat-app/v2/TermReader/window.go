@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -89,9 +88,11 @@ func NewWindow(line int, column int, height int, width int) (w *Window) {
 	w.TermTopLine = line
 	w.StartCol = column
 	w.Height = height
+	w.CmdBuf = make([]byte, 1, 256)
 	w.Width = width
 	w.Mode = MODE_INSERT
 	w.BufTopLine = 0
+	w.CmdCursorCol = 2
 	w.CursorCol = 1
 	w.DesiredCursorCol = 1
 	w.TermTopLine = 1
@@ -131,6 +132,27 @@ func (w Window) Render(out io.Writer) {
 func (w *Window) WriteRaw(b []byte) {
 	w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
 	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol-1)
+}
+
+func (w *Window) WriteToCmd(b []byte) {
+	w.CmdBuf = InsertAt(w.CmdBuf, b, w.CursorCol-1)
+}
+
+func (w *Window) IncrCmdCursorCol(incr int) {
+	lLen := len(w.CmdBuf)
+	newPos := w.CursorCol + incr
+	if newPos < 1 {
+		newPos = 1
+		w.CursorCol = newPos
+		w.DesiredCursorCol = newPos
+	} else if newPos <= lLen+1 {
+		w.CursorCol = newPos
+		w.DesiredCursorCol = newPos
+	} else if newPos > lLen+1 {
+		newPos = lLen + 1
+	} else {
+		w.CursorCol = lLen
+	}
 }
 
 func (w *Window) IncrCursorCol(incr int) {
@@ -284,7 +306,12 @@ func (w *Window) Listen() {
 					expectingInput = true
 					expectingInputFunc = NormalHandleForwardFind
 				case CHAR_COLON:
+					GlobalLogger.Logln("Setting mode to cmd")
+					w.PrevCursorCol = w.CursorCol
+					w.CursorCol = w.CmdCursorCol
 					w.Mode = MODE_CMD
+					// w.CursorCol = 2
+					w.CmdBuf[0] = ':'
 				default:
 					break
 				}
@@ -306,8 +333,28 @@ func (w *Window) Listen() {
 			switch {
 			case ka.Action == "Escape":
 				w.Mode = MODE_NORMAL
+				w.CmdCursorCol = w.CursorCol
+				w.CursorCol = w.PrevCursorCol
+				w.MoveCursorToDisplayPosition()
 			case ka.Action == "Enter":
 				w.ProcessCmd()
+				w.Mode = MODE_NORMAL
+			case ka.Action == "Delete":
+				CmdHandleDelete(w)
+			case ka.Action == "ArrowRight":
+				CmdHandleArrowRight(w)
+			case ka.Action == "ArrowLeft":
+				CmdHandleArrowLeft(w)
+				//			case ka.Action == "ArrowUp":
+				//				CmdHandleArrowUp(w)
+				//			case ka.Action == "ArrowDown":
+				//				CmdHandleArrowDown(w)
+				//			case ka.Action == "Enter":
+				//				CmdHandleEnter(w)
+			case ka.PrintRaw && len(ka.Value) == 1:
+				w.WriteToCmd(ka.Value)
+				w.IncrCmdCursorCol(1)
+
 			}
 		case MODE_VISUAL:
 			continue
@@ -315,11 +362,17 @@ func (w *Window) Listen() {
 		GlobalLogger.Logln("Reached bottom of input loop")
 		switch {
 		case w.Mode == MODE_CMD:
-			w.DisplayCMDLine()
+			w.DisplayCmdLine()
 		default:
 			w.DisplayStatusLine()
+			w.MoveCursorToDisplayPosition()
 		}
-		w.MoveCursorToDisplayPosition()
+		switch {
+		case w.Mode == MODE_VISUAL || w.Mode == MODE_INSERT || w.Mode == MODE_VISUAL:
+			w.MoveCursorToDisplayPosition()
+		case w.Mode == MODE_CMD:
+			w.MoveCursorToCmdPosition()
+		}
 		// w.RedrawAllLines()
 		if ka.FromPool {
 			w.KeyActionReturner <- ka
@@ -327,9 +380,22 @@ func (w *Window) Listen() {
 	}
 }
 
+func (w *Window) MoveCursorToCmdPosition() {
+	cursorDisplayLine := w.TermTopLine + w.Height
+	w.MoveCursorToPosition(cursorDisplayLine, w.CursorCol)
+}
+
 func (w *Window) ProcessCmd() {
 	GlobalLogger.Logln("Processing cmd: %s", w.CmdBuf)
-	w.CmdBuf = w.CmdBuf[:0]
+	cmd, cmdArgs := ProcessCmdArgs(w.CmdBuf)
+	w.CmdBuf = w.CmdBuf[:1]
+	w.CmdCursorCol = 2
+	cmdDispatch, ok := COMMANDS[cmd]
+	if !ok {
+		w.DisplayCmdMessage(fmt.Sprintf("Error: %s not found", cmd))
+		return
+	}
+	cmdDispatch.ExecFunc(w, cmdArgs...)
 }
 
 func (w *Window) MoveCursorToDisplayPosition() {
@@ -371,12 +437,19 @@ func (w *Window) RedrawAllLines() {
 	}
 }
 
-func (w *Window) DisplayCMDLine() {
+func (w *Window) DisplayCmdLine() {
 	termStatusLineNum := w.TermTopLine + w.Height
 	w.MoveCursorToPosition(termStatusLineNum, 0)
 	w.Out.Write(TERM_CLEAR_LINE)
-	fmt.Fprintf(w.Out, "\x1b[48;5;202m\x1b[38;5;16m%s\x1b[00m", w.CmdBuf)
-	return
+	padding := strings.Repeat(" ", w.Width-len(w.CmdBuf))
+	fmt.Fprintf(w.Out, "\x1b[48;5;202m\x1b[38;5;16m%s%s\x1b[00m", w.CmdBuf, padding)
+}
+
+func (w *Window) DisplayCmdMessage(msg string) {
+	termStatusLineNum := w.TermTopLine + w.Height + 2
+	w.MoveCursorToPosition(termStatusLineNum, 0)
+	w.Out.Write(TERM_CLEAR_LINE)
+	fmt.Fprintf(w.Out, "\x1b[48;5;202m\x1b[38;5;16m%s\x1b[00m", msg)
 }
 
 func (w *Window) DisplayStatusLine() {
