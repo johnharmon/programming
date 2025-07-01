@@ -11,7 +11,6 @@ func NormalHandleForwardFind(w *Window, ka *KeyAction) bool {
 	var nextCursorCol int
 	if w.CursorCol-1 < len(w.Buf.Lines[w.CursorLine]) {
 		nextCursorCol = bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol-1:], findBytes)
-		// nextCursorCol := FindByteIndex(w.Buf.Lines[w.CursorLine][w.CursorCol:], findBytes)
 	} else {
 		nextCursorCol = -1
 	}
