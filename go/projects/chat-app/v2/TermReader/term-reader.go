@@ -1065,6 +1065,7 @@ func main() {
 	config := ParseFlags()
 	env := NewDefaultEnv(config)
 	GlobalLogger = NewConcreteLogger()
+	InitCommands()
 	if config.Terminal {
 		MakeRawTerm(config)
 	} else if config.Debug {

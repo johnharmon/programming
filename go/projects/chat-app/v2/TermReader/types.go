@@ -96,6 +96,8 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	CursorCol         int
 	DesiredCursorCol  int
 	Mode              int
+	PrevCursorCol     int
+	CmdCursorCol      int
 	EndIndex          int
 	RawStartIndex     int
 	RawEndIndex       int
@@ -221,5 +223,5 @@ type Cell struct {
 }
 
 type Cmd struct {
-	ExecFunc func(*Window) error
+	ExecFunc func(*Window, ...string) error
 }
