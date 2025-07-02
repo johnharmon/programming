@@ -54,4 +54,5 @@ func InitKeyActionTree() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+	InitAsciiPrintableCharacters()
 }

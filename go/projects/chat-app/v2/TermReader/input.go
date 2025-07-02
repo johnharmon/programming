@@ -86,6 +86,29 @@ func KeyActionGenerator(in chan []byte, out chan *KeyAction, closer chan struct{
 	}
 }
 
+func KeyActionGenerator2(in chan []byte, out chan *KeyAction, closer chan struct{}, kaPool *sync.Pool, bufPool *sync.Pool) {
+	var ka *KeyAction
+	for b := range in {
+		if len(b) == 1 {
+			if b[0] == 3 {
+				closer <- struct{}{}
+				return
+			} else {
+				ka = ValidateSequence(b)
+				if ka == nil {
+					GlobalLogger.Logln("Getting *KeyAction from pool")
+					ka = kaPool.Get().(*KeyAction)
+					ka.Value = ka.Value[0:len(b)]
+					copy(ka.Value, b)
+					ka.Action = "Unknown"
+				}
+				out <- ka
+				bufPool.Put(b[0:cap(b)])
+			}
+		}
+	}
+}
+
 func StartupListeners(input io.Reader, closer chan struct{}, terminalInput chan byte, inputSequences chan []byte, keyActions chan *KeyAction, inputParserPool *sync.Pool, kaPool *sync.Pool) {
 	go ReadInput(input, terminalInput)
 	go InputParser(terminalInput, inputSequences, inputParserPool, time.Millisecond*25)
