@@ -18,7 +18,7 @@ func Edit(w *Window, args ...string) error {
 	}
 	if filepath == "" {
 		w.DisplayCmdMessage("Error, no file provided to open!")
-		return errors.New("err: no such file")
+		return errors.New("Err: no such file")
 	}
 	_, err := os.Stat(filepath)
 	if err != nil {
@@ -39,7 +39,6 @@ func Edit(w *Window, args ...string) error {
 	w.TermTopLine = 1
 	w.BufTopLine = 0
 	w.NeedRedraw = true
-	// w.RedrawAllLines()
 	return nil
 }
 
