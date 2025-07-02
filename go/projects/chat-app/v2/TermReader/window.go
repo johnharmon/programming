@@ -139,6 +139,61 @@ func (w *Window) WriteToCmd(b []byte) {
 	w.CmdBuf = InsertAt(w.CmdBuf, b, w.CursorCol-1)
 }
 
+func IncrCursorCol(line []byte, col int, incr int) (newCol int) {
+	lLen := len(line)
+	newPos := col + incr
+	if newPos < 1 {
+		newPos = 1
+		newCol = newPos
+	} else if newPos <= lLen+1 {
+		newCol = newPos
+	} else if newPos > lLen+1 {
+		newPos = lLen + 1
+	} else {
+		newCol = lLen
+	}
+	return newCol
+}
+
+func IncrCursorColPtr(line []byte, col *int, incr int) {
+	lLen := len(line)
+	newPos := *col + incr
+	GlobalLogger.Logln("New Cursor Col Target: %d", newPos)
+	switch {
+	case newPos < 1:
+		newPos = 1
+		*col = newPos
+	case newPos <= lLen+1:
+		*col = newPos
+	case newPos > lLen+1:
+		*col = lLen + 1
+	default:
+		*col = lLen
+	}
+	GlobalLogger.Logln("New Cursor Col: %d", *col)
+}
+
+func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
+	lLen := len(line)
+	newPos := *col1 + incr
+	GlobalLogger.Logln("New Cursor col1 Target: %d", newPos)
+	switch {
+	case newPos < 1:
+		newPos = 1
+		*col1 = newPos
+		*col2 = newPos
+	case newPos <= lLen+1:
+		*col1 = newPos
+		*col2 = newPos
+	case newPos > lLen+1:
+		*col1 = lLen + 1
+		*col2 = lLen + 1
+	default:
+		*col1 = lLen
+	}
+	GlobalLogger.Logln("New Cursor Col: %d,%d", *col1, *col2)
+}
+
 func (w *Window) IncrCmdCursorCol(incr int) {
 	lLen := len(w.CmdBuf)
 	newPos := w.CursorCol + incr
@@ -307,10 +362,10 @@ func (w *Window) RedrawAllLines() {
 	w.MoveCursorToPosition(w.TermTopLine, 1)
 	var lineLimit int
 	linesLeftInBuffer := len(w.Buf.Lines) - w.BufTopLine - 1
-	if linesLeftInBuffer < w.Height {
+	if linesLeftInBuffer < w.Height-1 {
 		lineLimit = linesLeftInBuffer
 	} else {
-		lineLimit = w.Height
+		lineLimit = w.Height - 1
 	}
 	w.Logger.Logln("Line limit calculated: %d", lineLimit)
 	for i := w.BufTopLine; i <= w.BufTopLine+lineLimit; i++ {
