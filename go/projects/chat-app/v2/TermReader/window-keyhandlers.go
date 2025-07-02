@@ -85,7 +85,7 @@ func InsertHandleEnter(w *Window) {
 	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
 	w.IncrCursorLine(1)
 	w.CursorCol = 1
-	if w.CursorLine-w.BufTopLine > w.Height {
+	if w.CursorLine-w.BufTopLine >= w.Height {
 		w.BufTopLine++
 	}
 	w.NeedRedraw = true
@@ -132,7 +132,7 @@ func InsertHandleArrowUp(w *Window) {
 func InsertHandleArrowDown(w *Window) {
 	oldLine := w.CursorLine
 	w.IncrCursorLine(1)
-	if w.CursorLine > w.BufTopLine+w.Height && oldLine != w.CursorLine {
+	if w.CursorLine > w.BufTopLine+w.Height-1 && oldLine != w.CursorLine {
 		w.BufTopLine++
 		w.NeedRedraw = true
 		// w.RedrawAllLines()

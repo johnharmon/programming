@@ -20,7 +20,9 @@ func (w *Window) Listen() {
 			if ka.PrintRaw && len(ka.Value) == 1 {
 				gl.Logln("Raw write triggered for %s", ka.String())
 				w.WriteRaw(ka.Value)
-				w.IncrCursorCol(1)
+				IncrTwoCursorColPtr(w.Buf.Lines[w.CursorLine], &w.CursorCol, &w.DesiredCursorCol, 1)
+				GlobalLogger.Logln("New Cursor Col after ptr mutation: %d", w.CursorCol)
+				// w.IncrCursorCol(1)
 				w.RedrawLine(w.Buf.ActiveLine)
 				w.MoveCursorToDisplayPosition()
 				// w.KeyActionReturner <- ka
@@ -32,7 +34,9 @@ func (w *Window) Listen() {
 					w.IncrCursorLine(-1)
 					w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
 					w.RedrawLine(w.CursorLine)
-					w.IncrCursorCol(-1)
+					// w.IncrCursorCol(-1)
+					IncrCursorColPtr(w.Buf.Lines[w.CursorLine], &w.CursorCol, -1)
+					GlobalLogger.Logln("New Cursor Col after ptr mutation: %d", w.CursorCol)
 				case "Delete":
 					InsertHandleDelete(w)
 				case "ArrowRight":
@@ -112,7 +116,7 @@ func (w *Window) Listen() {
 				CmdHandleArrowLeft(w)
 			case ka.PrintRaw && len(ka.Value) == 1:
 				w.WriteToCmd(ka.Value)
-				w.IncrCmdCursorCol(1)
+				IncrCursorColPtr(w.CmdBuf, &w.CmdCursorCol, 1)
 
 			}
 		case MODE_VISUAL:
@@ -135,6 +139,7 @@ func (w *Window) Listen() {
 		if w.NeedRedraw {
 			w.RedrawAllLines()
 			w.NeedRedraw = false
+			w.MoveCursorToDisplayPosition()
 		}
 		if ka.FromPool {
 			w.KeyActionReturner <- ka
