@@ -190,3 +190,12 @@ func CmdHandleArrowLeft(w *Window) {
 	w.IncrCmdCursorCol(-1)
 	w.MoveCursorToDisplayPosition()
 }
+
+func (w *Window) AgnosticHandleDelete(line []byte, index int) (newLine []byte) {
+	w.Logger.Logln("Backspace Detected, content before deletion: %s", w.CmdBuf)
+	if len(line) != 0 {
+		newLine = DeleteByteAt(line, index)
+		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
+	}
+	return newLine
+}
