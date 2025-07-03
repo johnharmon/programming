@@ -1,5 +1,20 @@
 package main
 
+func GetModeString(mode int) string {
+	switch mode {
+	case 0:
+		return "NORMAL"
+	case 1:
+		return "INSERT"
+	case 2:
+		return "VISUAL"
+	case 3:
+		return "CMD"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 func (w *Window) Listen() {
 	// redrawHandler := w.MakeRedrawHandler()
 	gl := GlobalLogger
@@ -12,12 +27,13 @@ func (w *Window) Listen() {
 	var ka *KeyAction
 	for {
 		GlobalLogger.Logln("########## START OF WINDOW LISTEN LOOP ##########")
+		GlobalLogger.Logln("Window Mode: %s", GetModeString(w.Mode))
 		ka = <-w.EventChan
 		gl.Logln("Window received *KeyAction: %s", ka.String())
 	ModeSwitch:
 		switch w.Mode {
 		case MODE_INSERT:
-			if ka.PrintRaw && len(ka.Value) == 1 {
+			if ka.Action == "Print" && len(ka.Value) == 1 {
 				gl.Logln("Raw write triggered for %s", ka.String())
 				w.WriteRaw(ka.Value)
 				IncrTwoCursorColPtr(w.Buf.Lines[w.CursorLine], &w.CursorCol, &w.DesiredCursorCol, 1)
@@ -99,6 +115,7 @@ func (w *Window) Listen() {
 				}
 			}
 		case MODE_CMD:
+			GlobalLogger.Logln("CMD INPUT PARSING STARTED")
 			switch {
 			case ka.Action == "Escape":
 				w.Mode = MODE_NORMAL
@@ -133,6 +150,7 @@ func (w *Window) Listen() {
 		case w.Mode == MODE_NORMAL || w.Mode == MODE_INSERT || w.Mode == MODE_VISUAL:
 			w.MoveCursorToDisplayPosition()
 		case w.Mode == MODE_CMD:
+			w.DisplayCmdLine()
 			w.MoveCursorToCmdPosition()
 		}
 		// w.RedrawAllLines()
