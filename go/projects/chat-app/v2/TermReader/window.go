@@ -136,7 +136,8 @@ func WriteToLine(line []byte, b []byte, start int) (newLine []byte) {
 }
 
 func (w *Window) WriteToCmd(b []byte) {
-	w.CmdBuf = InsertAt(w.CmdBuf, b, w.CursorCol-1)
+	w.CmdBuf = InsertAt(w.CmdBuf, b, w.CmdCursorCol-1)
+	GlobalLogger.Logln("CMD Buffer: %s", w.CmdBuf)
 }
 
 func IncrCursorCol(line []byte, col int, incr int) (newCol int) {
@@ -181,6 +182,7 @@ func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
 	case newPos < 1:
 		newPos = 1
 		*col1 = newPos
+		col1 = &newPos
 		*col2 = newPos
 	case newPos <= lLen+1:
 		*col1 = newPos
@@ -196,18 +198,18 @@ func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
 
 func (w *Window) IncrCmdCursorCol(incr int) {
 	lLen := len(w.CmdBuf)
-	newPos := w.CursorCol + incr
+	newPos := w.CmdCursorCol + incr
 	if newPos < 1 {
 		newPos = 1
-		w.CursorCol = newPos
-		w.DesiredCursorCol = newPos
+		w.CmdCursorCol = newPos
+		// w.DesiredCursorCol = newPos
 	} else if newPos <= lLen+1 {
-		w.CursorCol = newPos
-		w.DesiredCursorCol = newPos
+		w.CmdCursorCol = newPos
+		// w.DesiredCursorCol = newPos
 	} else if newPos > lLen+1 {
 		newPos = lLen + 1
 	} else {
-		w.CursorCol = lLen
+		w.CmdCursorCol = lLen
 	}
 }
 
@@ -311,7 +313,7 @@ func (w *Window) NewBuffer() {
 
 func (w *Window) MoveCursorToCmdPosition() {
 	cursorDisplayLine := w.TermTopLine + w.Height
-	w.MoveCursorToPosition(cursorDisplayLine, w.CursorCol)
+	w.MoveCursorToPosition(cursorDisplayLine, w.CmdCursorCol)
 }
 
 func (w *Window) ProcessCmd() (err error) {

@@ -19,6 +19,9 @@ var (
 	KeyActionTree             map[byte]*KeyAction
 	TERM_CLEAR_LINE           = []byte{0x1b, '[', '2', 'K'}
 	TERM_CLEAR_SCREEN         = []byte{0x1b, '[', '2', 'J'}
+	InsertModeDispatchMap     = map[string]Action{}
+	NormalModeDispatchMap     = map[string]Action{}
+	Commands                  = map[string]Cmd{}
 )
 
 func SetDefaultLogOutput() {
@@ -54,5 +57,5 @@ func InitKeyActionTree() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	InitAsciiPrintableCharacters()
+	InitAsciiPrintableCharactersWithPrintAction()
 }
