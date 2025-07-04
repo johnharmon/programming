@@ -174,10 +174,12 @@ func NormalHandleArrowDown(w *Window) {
 func CmdHandleDelete(w *Window) {
 	w.Logger.Logln("Backspace Detected, content before deletion: %s", w.CmdBuf)
 	if len(w.CmdBuf) != 0 {
-		w.CmdBuf = DeleteByteAt(w.CmdBuf, w.CmdCursorCol-1)
+		if w.CmdCursorCol > 2 {
+			w.CmdBuf = DeleteByteAt(w.CmdBuf, w.CmdCursorCol-1)
+			w.IncrCmdCursorCol(-1)
+		}
 		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
 		w.DisplayCmdLine()
-		w.IncrCmdCursorCol(-1)
 	}
 }
 
