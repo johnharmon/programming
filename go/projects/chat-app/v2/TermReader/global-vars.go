@@ -20,7 +20,7 @@ var (
 	TERM_CLEAR_LINE           = []byte{0x1b, '[', '2', 'K'}
 	TERM_CLEAR_SCREEN         = []byte{0x1b, '[', '2', 'J'}
 	InsertModeDispatchMap     = map[string]Action{}
-	NormalModeDispatchMap     = map[string]Action{}
+	NormalModeDispatchMap     = map[string]CommandEntry{}
 	Commands                  = map[string]Cmd{}
 )
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"regexp"
 	"sync"
 )
 
@@ -109,6 +110,8 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	RawEventChan      chan []byte
 	KeyActionReturner chan *KeyAction // channel on which to return pool-generated KeyActions to
 	Logger            EphemeralLogger // Mostly Unused, reference to any struct that implements the interface
+	ActionCount       int
+	MotionCount       int
 }
 
 type LogConfig struct {
@@ -240,4 +243,21 @@ type ActionContext struct {
 	FullInput []byte // Full action input including the actionable key itself
 	Prefix    []byte // arguments/modifiers that came before the action key
 	Suffix    []byte // arguments/modifiers that came after the action key
+}
+
+type ActionWithContext struct {
+	Action  *Action
+	Context *ActionContext
+}
+
+type CommandEntry struct {
+	AcceptsCount  bool
+	AcceptsSuffix bool
+	MustBeFirst   bool
+	ExecFunc      func(*Window, *ActionContext)
+}
+
+type Motion struct {
+	Expression   regexp.Regexp
+	AcceptsCount bool
 }
