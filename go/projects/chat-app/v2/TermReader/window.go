@@ -325,7 +325,7 @@ func (w *Window) ProcessCmd() (err error) {
 	w.CmdCursorCol = 2
 	cmdDispatch, ok := COMMANDS[cmd]
 	if !ok {
-		err = errors.New(fmt.Sprintf("Error: cmd not found: \"%s\"", cmd))
+		err = fmt.Errorf("Error: cmd not found: \"%s\"", cmd)
 		w.DisplayCmdMessage(err.Error())
 		return err
 	}

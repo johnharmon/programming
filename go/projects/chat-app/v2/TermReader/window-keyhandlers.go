@@ -79,7 +79,7 @@ func InsertHandleDelete(w *Window) {
 }
 
 func InsertHandleEnter(w *Window) {
-	newLine := MakeNewLines(1, 256)
+	newLine := MakeNewLines(1, 80)
 	w.Logger.Logln("Enter detected")
 	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
 	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
@@ -94,7 +94,7 @@ func InsertHandleEnter(w *Window) {
 }
 
 func NormalHandleEnter(w *Window) {
-	newLine := MakeNewLines(1, 256)
+	newLine := MakeNewLines(1, 80)
 	w.Logger.Logln("Enter detected")
 	w.Logger.Logln("Inserting new line at index %d", w.CursorLine+1)
 	w.Buf.Lines = InsertLineAt(w.Buf.Lines, newLine, w.CursorLine+1)
