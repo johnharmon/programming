@@ -1,6 +1,18 @@
 package main
 
 const (
+	STATE_INITIAL_INPUT = iota
+	STATE_PARSING_CMD_COUNT
+	STATE_CMD_IDENTIFIED
+	STATE_PARSING_SUFFIX
+	STATE_PENDING_SUFFIX
+	STATE_PARSING_MOTION_COUNT
+	STATE_PARSING_MOTION
+	STATE_PARSING_SPECIAL_SUFFIX
+	STATE_EXECUTING_CMD
+)
+
+const (
 	MR              = "\033[1C"
 	ML              = "\033[1D"
 	MU              = "\033[1A"
@@ -104,4 +116,9 @@ const (
 	CHAR_PIPE       = '|'
 	CHAR_RBRACE     = '}'
 	CHAR_TILDE      = '~'
+)
+
+const (
+	CMD_ACCEPT_SUFFIX = 1 << iota
+	CMD_ACCEPT_MOTION
 )

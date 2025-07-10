@@ -112,6 +112,7 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	Logger            EphemeralLogger // Mostly Unused, reference to any struct that implements the interface
 	ActionCount       int
 	MotionCount       int
+	NormPS            NormalModeParsingState
 }
 
 type LogConfig struct {
@@ -233,9 +234,10 @@ type Cmd struct {
 }
 
 type Action struct {
-	ExecFunc    func(*Window, *ActionContext)
-	MustBeFirst bool
-	Context     *ActionContext
+	ExecFunc       func(*Window, *ActionContext)
+	MustBeFirst    bool
+	SuffixRequired bool
+	Context        *ActionContext
 }
 
 type ActionContext struct {
@@ -251,13 +253,39 @@ type ActionWithContext struct {
 }
 
 type CommandEntry struct {
-	AcceptsCount  bool
-	AcceptsSuffix bool
-	MustBeFirst   bool
-	ExecFunc      func(*Window, *ActionContext)
+	SuffixRequired       bool
+	AcceptsMotion        bool
+	AcceptsSpecialSuffix bool
+	MustBeFirst          bool
+	ExecFunc             func(*Window, *ActionContext)
+	Name                 string
+	SpecialSuffixMap     map[string]Suffix
 }
 
 type Motion struct {
 	Expression   regexp.Regexp
 	AcceptsCount bool
+	MotionFunc   func([]byte, int) (int, int)
+}
+
+type Suffix struct {
+	Name string
+}
+
+type NormalModeParsingState struct {
+	RawInput           []byte
+	ParsingCount       bool
+	ParsingMotion      bool
+	CommandIdentified  bool
+	PendingInput       bool
+	Command            *CommandEntry
+	Motion             *Motion
+	CommandCount       int
+	CommandCountString string
+	MotionCountString  string
+	MotionCount        int
+	State              int
+	Suffix             string
+	ExecReady          bool
+	ActionContext      ActionContext
 }
