@@ -95,6 +95,8 @@ func NewWindow(line int, column int, height int, width int) (w *Window) {
 	w.Out = os.Stdout
 	w.EventChan = make(chan *KeyAction, 10)
 	w.KeyActionReturner = make(chan *KeyAction, 10)
+	w.NormPS = NormalModeParsingState{}
+	CleanParsingState(&w.NormPS)
 	w.Buf = NewEmptyDisplayBuffer()
 	return w
 }
@@ -163,14 +165,10 @@ func IncrCursorColPtr(line []byte, col *int, incr int) {
 	switch {
 	case newPos < 1:
 		newPos = 1
-		*col = newPos
-	case newPos <= lLen+1:
-		*col = newPos
 	case newPos > lLen+1:
-		*col = lLen + 1
-	default:
-		*col = lLen
+		newPos = lLen + 1
 	}
+	*col = newPos
 	GlobalLogger.Logln("New Cursor Col: %d", *col)
 }
 
@@ -180,18 +178,27 @@ func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
 	GlobalLogger.Logln("New Cursor col1 Target: %d", newPos)
 	switch {
 	case newPos < 1:
-		newPos = 1
-		*col1 = newPos
-		col1 = &newPos
-		*col2 = newPos
+		*col1 = 1
+		*col2 = 1
 	case newPos <= lLen+1:
-		*col1 = newPos
-		*col2 = newPos
+		if incr < 0 && newPos == lLen+1 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = newPos
+			*col2 = newPos
+		}
 	case newPos > lLen+1:
-		*col1 = lLen + 1
-		*col2 = lLen + 1
+		if incr < 0 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = lLen + 1
+			*col2 = lLen + 1
+		}
 	default:
 		*col1 = lLen
+		*col2 = lLen
 	}
 	GlobalLogger.Logln("New Cursor Col: %d,%d", *col1, *col2)
 }
@@ -265,10 +272,15 @@ func (w *Window) HandleArrowDown() (col int) {
 
 func (w *Window) IncrCursorLine(vec int) {
 	nextLine := w.CursorLine + vec
-	if nextLine >= 0 && nextLine < len(w.Buf.Lines) {
-		w.Buf.ActiveLine = nextLine
-		w.CursorLine = nextLine
+	if nextLine >= len(w.Buf.Lines) {
+		nextLine = len(w.Buf.Lines) - 1
+	} else if nextLine < 0 {
+		nextLine = 0
 	}
+	// if nextLine >= 0 && nextLine < len(w.Buf.Lines) {
+	w.Buf.ActiveLine = nextLine
+	w.CursorLine = nextLine
+	//}
 }
 
 func MakeNewLines(lines int, lineSize int) [][]byte {
