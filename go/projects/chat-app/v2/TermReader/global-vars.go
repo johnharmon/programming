@@ -20,7 +20,8 @@ var (
 	TERM_CLEAR_LINE           = []byte{0x1b, '[', '2', 'K'}
 	TERM_CLEAR_SCREEN         = []byte{0x1b, '[', '2', 'J'}
 	InsertModeDispatchMap     = map[string]Action{}
-	NormalModeDispatchMap     = map[string]CommandEntry{}
+	NormalModeDispatchMap     = map[int]CommandEntry{}
+	MotionDispatchMap         = map[string]Motion{}
 	Commands                  = map[string]Cmd{}
 )
 
@@ -58,4 +59,34 @@ func InitKeyActionTree() {
 		log.Fatal(err.Error())
 	}
 	InitAsciiPrintableCharactersWithPrintAction()
+}
+
+func InitNormalModeCommands() {
+	NormalModeDispatchMap['h'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleLeftMoveCmd,
+	}
+
+	NormalModeDispatchMap['j'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleDownMoveCmd,
+	}
+
+	NormalModeDispatchMap['k'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleUpMoveCmd,
+	}
+
+	NormalModeDispatchMap['l'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleRightMoveCmd,
+	}
 }
