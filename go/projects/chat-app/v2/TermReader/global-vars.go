@@ -45,6 +45,7 @@ func InitGlobalVars() {
 	InitCoreCommands()
 	InitCommandShortcuts()
 	InitKeyActionTree()
+	InitNormalModeCommands()
 }
 
 func InitKeyActionTree() {
@@ -67,6 +68,7 @@ func InitNormalModeCommands() {
 		AcceptsMotion:  false,
 		MustBeFirst:    false,
 		ExecFunc:       NormalHandleLeftMoveCmd,
+		Name:           "NormalHandleLeftMoveCmd",
 	}
 
 	NormalModeDispatchMap['j'] = CommandEntry{
@@ -74,6 +76,7 @@ func InitNormalModeCommands() {
 		AcceptsMotion:  false,
 		MustBeFirst:    false,
 		ExecFunc:       NormalHandleDownMoveCmd,
+		Name:           "NormalHandleDownMoveCmd",
 	}
 
 	NormalModeDispatchMap['k'] = CommandEntry{
@@ -81,6 +84,7 @@ func InitNormalModeCommands() {
 		AcceptsMotion:  false,
 		MustBeFirst:    false,
 		ExecFunc:       NormalHandleUpMoveCmd,
+		Name:           "NormalHandleUpMoveCmd",
 	}
 
 	NormalModeDispatchMap['l'] = CommandEntry{
@@ -88,5 +92,21 @@ func InitNormalModeCommands() {
 		AcceptsMotion:  false,
 		MustBeFirst:    false,
 		ExecFunc:       NormalHandleRightMoveCmd,
+		Name:           "NormalHandleRightMoveCmd",
+	}
+	NormalModeDispatchMap['i'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalModeSwitchToInsert,
+		Name:           "NormalModeSwitchToInsert",
+	}
+	NormalModeDispatchMap['f'] = CommandEntry{
+		SuffixRequired:       true,
+		AcceptsSpecialSuffix: true,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleForwardFind,
+		Name:                 "NormalHandleForwardFind",
 	}
 }

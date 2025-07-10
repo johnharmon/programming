@@ -2,25 +2,25 @@ package main
 
 import (
 	"bytes"
-	"fmt"
-	"os"
+	// "fmt"
+	// "os"
 )
 
-func NormalHandleForwardFind(w *Window, ka *KeyAction) bool {
-	findBytes := ka.Value[0]
-	var nextCursorCol int
-	if w.CursorCol-1 < len(w.Buf.Lines[w.CursorLine]) {
-		nextCursorCol = bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol-1:], findBytes)
-	} else {
-		nextCursorCol = -1
-	}
-	fmt.Fprintf(os.Stderr, "Next cursor Column := %d", nextCursorCol)
-
-	if nextCursorCol != -1 {
-		w.IncrCursorCol(nextCursorCol)
-	}
-	return false
-}
+//func NormalHandleForwardFind(w *Window, ka *KeyAction) bool {
+//	findBytes := ka.Value[0]
+//	var nextCursorCol int
+//	if w.CursorCol-1 < len(w.Buf.Lines[w.CursorLine]) {
+//		nextCursorCol = bytes.IndexByte(w.Buf.Lines[w.CursorLine][w.CursorCol-1:], findBytes)
+//	} else {
+//		nextCursorCol = -1
+//	}
+//	fmt.Fprintf(os.Stderr, "Next cursor Column := %d", nextCursorCol)
+//
+//	if nextCursorCol != -1 {
+//		w.IncrCursorCol(nextCursorCol)
+//	}
+//	return false
+//}
 
 func FindByteIndex(searchBuf []byte, b byte) (idx int) {
 	return bytes.IndexByte(searchBuf, b)
