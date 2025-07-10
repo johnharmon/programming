@@ -1,5 +1,10 @@
 package main
 
+import (
+	"fmt"
+	"os"
+)
+
 func GetModeString(mode int) string {
 	switch mode {
 	case 0:
@@ -75,14 +80,16 @@ func (w *Window) Listen() {
 			}
 		case MODE_NORMAL:
 			callAgain = NormalModeParseNextInput(w, ka)
-			if callAgain {
+			for callAgain {
+				GlobalLogger.Logln("callAgain invoked on the normal mode command parser")
 				callAgain = NormalModeParseNextInput(w, ka)
-			} else {
-				if w.NormPS.ExecReady {
-					w.NormPS.Command.ExecFunc(w, &w.NormPS.ActionContext)
-					CleanParsingState(&w.NormPS)
-					ClearActionContext(&w.NormPS.ActionContext)
-				}
+			}
+
+			if w.NormPS.ExecReady {
+				fmt.Fprintf(os.Stderr, "Executing command: +%v\n", w.NormPS.Command)
+				w.NormPS.Command.ExecFunc(w, &w.NormPS.ActionContext)
+				CleanParsingState(&w.NormPS)
+				ClearActionContext(&w.NormPS.ActionContext)
 			}
 			/*
 				if expectingInput {

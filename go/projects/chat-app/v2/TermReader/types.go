@@ -285,7 +285,7 @@ type NormalModeParsingState struct {
 	MotionCountString  string
 	MotionCount        int
 	State              int
-	Suffix             string
+	Suffix             []byte
 	ExecReady          bool
 	ActionContext      ActionContext
 }
