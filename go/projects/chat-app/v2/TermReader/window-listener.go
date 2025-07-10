@@ -18,8 +18,9 @@ func GetModeString(mode int) string {
 func (w *Window) Listen() {
 	// redrawHandler := w.MakeRedrawHandler()
 	gl := GlobalLogger
-	expectingInput := false
-	var expectingInputFunc func(*Window, *KeyAction) bool
+	//	expectingInput := false
+	//	var expectingInputFunc func(*Window, *KeyAction) bool
+	var callAgain bool
 	w.Logger = gl
 	w.Out.Write(TERM_CLEAR_SCREEN)
 	w.DisplayStatusLine()
@@ -73,47 +74,59 @@ func (w *Window) Listen() {
 				}
 			}
 		case MODE_NORMAL:
-			if expectingInput {
-				expectingInput = expectingInputFunc(w, ka)
-			} else if ka.Action == "Print" {
-				switch ka.Value[0] {
-				case CHAR_h:
-					NormalHandleLeftMove(w, 1)
-				case CHAR_j:
-					NormalHandleDownMove(w, 1)
-				case CHAR_k:
-					NormalHandleUpMove(w, 1)
-				case CHAR_l:
-					NormalHandleRightMove(w, 1)
-				case CHAR_i:
-					w.Mode = MODE_INSERT
-				case CHAR_f:
-					expectingInput = true
-					expectingInputFunc = NormalHandleForwardFind
-				case CHAR_COLON:
-					GlobalLogger.Logln("Setting mode to cmd")
-					w.PrevCursorCol = w.CursorCol
-					w.CursorCol = w.CmdCursorCol
-					w.Mode = MODE_CMD
-					// w.CursorCol = 2
-					w.CmdBuf[0] = ':'
-				default:
-					break
-				}
+			callAgain = NormalModeParseNextInput(w, ka)
+			if callAgain {
+				callAgain = NormalModeParseNextInput(w, ka)
 			} else {
-				switch ka.Action {
-				case "ArrowRight":
-					NormalHandleArrowRight(w)
-				case "ArrowLeft":
-					NormalHandleArrowLeft(w)
-				case "ArrowUp":
-					NormalHandleArrowUp(w)
-				case "ArrowDown":
-					NormalHandleArrowDown(w)
-				case "Enter":
-					NormalHandleEnter(w)
+				if w.NormPS.ExecReady {
+					w.NormPS.Command.ExecFunc(w, &w.NormPS.ActionContext)
+					CleanParsingState(&w.NormPS)
+					ClearActionContext(&w.NormPS.ActionContext)
 				}
 			}
+			/*
+				if expectingInput {
+					expectingInput = expectingInputFunc(w, ka)
+				} else if ka.Action == "Print" {
+					switch ka.Value[0] {
+					case CHAR_h:
+						NormalHandleLeftMove(w, 1)
+					case CHAR_j:
+						NormalHandleDownMove(w, 1)
+					case CHAR_k:
+						NormalHandleUpMove(w, 1)
+					case CHAR_l:
+						NormalHandleRightMove(w, 1)
+					case CHAR_i:
+						w.Mode = MODE_INSERT
+					case CHAR_f:
+						expectingInput = true
+						expectingInputFunc = NormalHandleForwardFind
+					case CHAR_COLON:
+						GlobalLogger.Logln("Setting mode to cmd")
+						w.PrevCursorCol = w.CursorCol
+						w.CursorCol = w.CmdCursorCol
+						w.Mode = MODE_CMD
+						// w.CursorCol = 2
+						w.CmdBuf[0] = ':'
+					default:
+						break
+					}
+				} else {
+					switch ka.Action {
+					case "ArrowRight":
+						NormalHandleArrowRight(w)
+					case "ArrowLeft":
+						NormalHandleArrowLeft(w)
+					case "ArrowUp":
+						NormalHandleArrowUp(w)
+					case "ArrowDown":
+						NormalHandleArrowDown(w)
+					case "Enter":
+						NormalHandleEnter(w)
+					}
+				}
+			*/
 		case MODE_CMD:
 			GlobalLogger.Logln("CMD INPUT PARSING STARTED")
 			switch {
