@@ -302,7 +302,8 @@ func (w *Window) RedrawLine(ln int) {
 			w.Out.Write(w.Buf.Lines[ln])
 		} else {
 			w.Logger.Logln("Clearing unbuffered line")
-			w.Out.Write(TERM_CLEAR_LINE)
+			w.Out.Write([]byte(strings.Repeat("*", w.Width)))
+			// w.Out.Write(TERM_CLEAR_LINE)
 		}
 	}
 }
