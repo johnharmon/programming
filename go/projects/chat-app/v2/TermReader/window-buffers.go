@@ -20,7 +20,7 @@ func (w *Window) LoadBuffer(in io.Reader) {
 			dispBuf.Lines = MakeNewLines(1, 80)
 		}
 		w.Buf = dispBuf
-		w.Buf.ActiveLine = 0
+		w.CursorLine = 0
 	}
 }
 

@@ -61,3 +61,44 @@ func NormalHandleForwardFind(w *Window, ac *ActionContext) {
 		w.IncrCursorCol(nextCursorCol)
 	}
 }
+
+func NormalHandleDeleteChar(w *Window, ac *ActionContext) {
+	// w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
+	if len(w.GetActiveLine()) == 0 {
+		return
+		//		w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, 1)
+		//		w.IncrCursorLine(-1)
+		//		numDisplayedLines := len(w.Buf.Lines) - w.BufTopLine
+		//		if numDisplayedLines < w.Height && w.BufTopLine > 0 {
+		//			w.BufTopLine--
+		//		}
+		//		w.NeedRedraw = true
+		//		// w.RedrawAllLines()
+		//		w.IncrCursorCol(len(w.GetActiveLine()))
+	} else {
+		w.Buf.Lines[w.CursorLine] = DeleteByteAt(w.GetActiveLine(), w.CursorCol-1)
+		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
+		w.RedrawLine(w.CursorLine)
+		w.IncrCursorCol(-1)
+	}
+}
+
+func NormalModeHandleDeleteCmd(w *Window, ac *ActionContext) {
+	switch {
+	case string(ac.Suffix) == "d":
+		w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, ac.Count)
+		if w.CursorLine >= len(w.Buf.Lines) && len(w.Buf.Lines) > 0 {
+			w.CursorLine = len(w.Buf.Lines) - 1
+		}
+		w.NeedRedraw = true
+		//		for i := 1; i <= ac.Count; i++ {
+		//			if w.CursorLine >= len(w.Buf.Lines) {
+		//				w.CursorLine = len(w.Buf.Lines) - 1
+		//			}
+		//			w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, 1)
+		//			if w.CursorLine >= len(w.Buf.Lines) {
+		//				w.CursorLine = len(w.Buf.Lines) - 1
+		//			}
+		//		}
+	}
+}

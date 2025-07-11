@@ -109,4 +109,20 @@ func InitNormalModeCommands() {
 		ExecFunc:             NormalHandleForwardFind,
 		Name:                 "NormalHandleForwardFind",
 	}
+	NormalModeDispatchMap['x'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleDeleteChar,
+		Name:                 "NormalHandleDeleteChar",
+	}
+	NormalModeDispatchMap['d'] = CommandEntry{
+		SuffixRequired:       true,
+		AcceptsSpecialSuffix: true,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalModeHandleDeleteCmd,
+		Name:                 "NormalHandleDeleteCmd",
+	}
 }
