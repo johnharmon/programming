@@ -128,12 +128,12 @@ func (w Window) Render(out io.Writer) {
 }
 
 func (w *Window) WriteRaw(b []byte) {
-	w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
-	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol-1)
+	w.Logger.Logln("Writing %b to %d", b, w.CursorLine)
+	w.Buf.Lines[w.CursorLine] = InsertAt(w.Buf.Lines[w.CursorLine], b, w.CursorCol-1)
 }
 
 func WriteToLine(line []byte, b []byte, start int) (newLine []byte) {
-	// w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
+	// w.Logger.Logln("Writing %b to %d", b, w.CursorLine)
 	return InsertAt(line, b, start)
 }
 
@@ -238,7 +238,7 @@ func (w *Window) IncrCmdCursorCol2(incr int) {
 }
 
 func (w *Window) IncrCursorCol(incr int) {
-	lLen := len(w.Buf.Lines[w.Buf.ActiveLine])
+	lLen := len(w.Buf.Lines[w.CursorLine])
 	newPos := w.CursorCol + incr
 	if newPos < 1 {
 		newPos = 1
@@ -255,9 +255,9 @@ func (w *Window) IncrCursorCol(incr int) {
 }
 
 func (w *Window) GetDisplayCursorCol() int {
-	if len(w.Buf.Lines[w.Buf.ActiveLine])+1 < w.DesiredCursorCol {
-		w.Logger.Logln("Setting cursor display position to: %d", len(w.Buf.Lines[w.Buf.ActiveLine]))
-		return len(w.Buf.Lines[w.Buf.ActiveLine])
+	if len(w.Buf.Lines[w.CursorLine]) < w.DesiredCursorCol {
+		w.Logger.Logln("Setting cursor display position to: %d", len(w.Buf.Lines[w.CursorLine]))
+		return len(w.Buf.Lines[w.CursorLine])
 	} else {
 		w.Logger.Logln("Desired Cursor position is compatible with the active line")
 		return w.DesiredCursorCol
@@ -278,7 +278,7 @@ func (w *Window) IncrCursorLine(vec int) {
 		nextLine = 0
 	}
 	// if nextLine >= 0 && nextLine < len(w.Buf.Lines) {
-	w.Buf.ActiveLine = nextLine
+	w.CursorLine = nextLine
 	w.CursorLine = nextLine
 	//}
 }
@@ -317,7 +317,7 @@ func (w *Window) NewBuffer() {
 		w.Buf.Lines[i] = make([]byte, 0, 256)
 	}
 	w.Buf.Size = len(w.Buf.Lines)
-	w.Buf.ActiveLine = 0
+	w.CursorLine = 0
 	w.CursorLine = 0
 	w.CursorCol = 0
 	w.Redraw(w.MakeRedrawHandler())
@@ -374,6 +374,7 @@ func (w *Window) Redraw(handler func() []int) {
 func (w *Window) RedrawAllLines() {
 	w.Logger.Logln("Forcing full redraw of all lines")
 	w.MoveCursorToPosition(w.TermTopLine, 1)
+	w.Out.Write(TERM_CLEAR_SCREEN)
 	var lineLimit int
 	linesLeftInBuffer := len(w.Buf.Lines) - w.BufTopLine - 1
 	if linesLeftInBuffer < w.Height-1 {
@@ -382,8 +383,12 @@ func (w *Window) RedrawAllLines() {
 		lineLimit = w.Height - 1
 	}
 	w.Logger.Logln("Line limit calculated: %d", lineLimit)
-	for i := w.BufTopLine; i <= w.BufTopLine+lineLimit; i++ {
-		w.RedrawLine(i)
+	for i := w.BufTopLine; i <= w.BufTopLine+w.Height-1; i++ {
+		if i <= lineLimit {
+			w.RedrawLine(i)
+		} else {
+			w.Out.Write(TERM_CLEAR_LINE)
+		}
 	}
 }
 
@@ -414,7 +419,7 @@ func (w *Window) DisplayStatusLine() {
 		w.BufTopLine,
 		w.DesiredCursorCol,
 		w.TermTopLine+(w.CursorLine-w.BufTopLine),
-		len(w.Buf.Lines[w.Buf.ActiveLine]),
+		len(w.Buf.Lines[w.CursorLine]),
 		len(w.Buf.Lines),
 		w.Height)
 	padding := strings.Repeat(" ", w.Width-len(statusLine))
