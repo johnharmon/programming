@@ -194,3 +194,118 @@ func ProcessCmdArgs(cmdRaw []byte) (cmd string, cmdArgs []string) {
 	}
 	return cmd, cmdArgs
 }
+
+func StepRight(line []byte, curPos int) int {
+	if curPos >= len(line) {
+		return -1
+	} else if ok, step := IsStartingByte(line[curPos]); ok {
+		return step
+	} else if IsContinuationByte(line[curPos]) {
+		return StepRightMinimal(line, curPos)
+	} else {
+		return 1
+	}
+	/*
+		if line[curPos]&SINGLE_BYTE_OPERATOR == SINGLE_BYTE_RESULT {
+			return 1
+		} else if line[curPos]&TWO_BYTE_OPERATOR == TWO_BYTE_RESULT {
+			return 2
+		} else if line[curPos]&THREE_BYTE_OPERATOR == THREE_BYTE_RESULT {
+			return 3
+		} else if line[curPos]&FOUR_BYTE_OPERATOR == FOUR_BYTE_RESULT {
+			return 4
+		} else if line[curPos]&CONTINUATION_BYTE_OPERATOR == CONTINUATION_BYTE_RESULT {
+			return StepRightMinimal(line, curPos)
+		} else {
+			return 0
+		}
+	*/
+}
+
+func StepLeft(line []byte, curPos int) int { // move left until a utf-8 starting byte is found
+	step := -1
+	if curPos-1 < 0 || curPos-1 >= len(line) {
+		return 0
+	} else {
+		for i := curPos - 1; i >= 0; i-- {
+			if ok, _ := IsStartingByte(line[i]); ok {
+				break
+			}
+			step--
+		}
+		return step
+	}
+}
+
+func StepLeftMinmal(line []byte, curPos int) int { // move left until a utf-8 starting byte is found, including the one it starts on
+	step := 0
+	if curPos < 0 || curPos >= len(line) {
+		return 0
+	} else {
+		for i := curPos; i >= 0; i-- {
+			if ok, _ := IsStartingByte(line[i]); ok {
+				break
+			}
+			step--
+		}
+		return step
+	}
+}
+
+func StepRightMinimal(line []byte, curPos int) int { // minimally steps right until a utf-8 starting byte is found, including the one it starts on
+	//	CONTINUATION_BYTE_OPERATOR := byte(0b11000000)
+	//	CONTINUATION_BYTE_RESULT := byte(0b10000000)
+	for i := 0; i+curPos < len(line); i++ {
+		if line[curPos+i]&CONTINUATION_BYTE_OPERATOR != CONTINUATION_BYTE_RESULT {
+			return i
+		}
+	}
+	return 1
+}
+
+func GetCharacterPositionByIndex(line []byte, curPos int) int { // Gets the display/character position of a point from a raw []byte location
+	if curPos > len(line) {
+		curPos = len(line)
+	} else if curPos < 0 {
+		curPos = 0
+	}
+	chars := 0
+	curIndex := 0
+	for curIndex < curPos {
+		curIndex += StepRight(line, curIndex)
+		chars += 1
+	}
+	return chars
+}
+
+func GetBytePositionByCharacter(line []byte, characterPos int) int { // Gets the byte index of the start of the character position given
+	bytePos := 0
+	chars := 0
+	for chars < characterPos {
+		bytePos += StepRight(line, bytePos)
+		chars++
+	}
+	if bytePos > len(line) {
+		bytePos = len(line)
+	}
+	return bytePos
+}
+
+func IsStartingByte(b byte) (bool, int) {
+	switch {
+	case b&SINGLE_BYTE_OPERATOR == SINGLE_BYTE_RESULT:
+		return true, 1
+	case b&TWO_BYTE_OPERATOR == TWO_BYTE_RESULT:
+		return true, 2
+	case b&THREE_BYTE_OPERATOR == THREE_BYTE_RESULT:
+		return true, 3
+	case b&FOUR_BYTE_OPERATOR == FOUR_BYTE_RESULT:
+		return true, 4
+	default:
+		return false, -1
+	}
+}
+
+func IsContinuationByte(b byte) bool {
+	return b&CONTINUATION_BYTE_OPERATOR == CONTINUATION_BYTE_RESULT
+}
