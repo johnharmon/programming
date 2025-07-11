@@ -13,6 +13,19 @@ const (
 )
 
 const (
+	SINGLE_BYTE_OPERATOR       = byte(0b10000000)
+	SINGLE_BYTE_RESULT         = byte(0b00000000)
+	TWO_BYTE_OPERATOR          = byte(0b11100000)
+	TWO_BYTE_RESULT            = byte(0b11000000)
+	THREE_BYTE_OPERATOR        = byte(0b11110000)
+	THREE_BYTE_RESULT          = byte(0b11100000)
+	FOUR_BYTE_OPERATOR         = byte(0b11111000)
+	FOUR_BYTE_RESULT           = byte(0b11110000)
+	CONTINUATION_BYTE_OPERATOR = byte(0b11000000)
+	CONTINUATION_BYTE_RESULT   = byte(0b10000000)
+)
+
+const (
 	MR              = "\033[1C"
 	ML              = "\033[1D"
 	MU              = "\033[1A"

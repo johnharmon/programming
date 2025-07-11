@@ -94,7 +94,8 @@ type Window struct { // Represents a sliding into its backing buffer of Window.B
 	Width             int // how many columns/characters wide this terminal window is
 	StartCol          int
 	CursorLine        int             // the line **in the backing buffer** that the terminal is on
-	CursorCol         int             // the column in the terminal that the cursor should be on for normal buffer operations
+	CursorCol         int             // the index in the line on for normal buffer operations (separate from display position for utf-8 compatibility)
+	CursorDisplayCol  int             // the column in the terminal that the cursor should be on for normal buffer operations
 	DesiredCursorCol  int             // the column that the cursor *wants* to be on, really only for allowing the cursor to move back to a desired position after scrolling across lines that are shorter than a pervous one
 	Mode              int             // insert, normal, visual, cmd, used to decide key sequence routing
 	PrevCursorCol     int             // essentially a storage field when the cursor column only needs to be updated temporarily
