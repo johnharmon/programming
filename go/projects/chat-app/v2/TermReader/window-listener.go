@@ -45,14 +45,14 @@ func (w *Window) Listen() {
 				IncrTwoCursorColPtr(w.Buf.Lines[w.CursorLine], &w.CursorCol, &w.DesiredCursorCol, 1)
 				GlobalLogger.Logln("New Cursor Col after ptr mutation: %d", w.CursorCol)
 				// w.IncrCursorCol(1)
-				w.RedrawLine(w.Buf.ActiveLine)
+				w.RedrawLine(w.CursorLine)
 				w.MoveCursorToDisplayPosition()
 				// w.KeyActionReturner <- ka
 			} else {
 				switch ka.Action {
 				case "Backspace":
 					w.Logger.Logln("Backspace Detected, content before deletion: %s", w.GetActiveLine())
-					w.Buf.Lines[w.Buf.ActiveLine] = DeleteByteAt(w.Buf.Lines[w.Buf.ActiveLine], w.CursorCol-1)
+					w.Buf.Lines[w.CursorLine] = DeleteByteAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
 					w.IncrCursorLine(-1)
 					w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
 					w.RedrawLine(w.CursorLine)
@@ -86,7 +86,7 @@ func (w *Window) Listen() {
 			}
 
 			if w.NormPS.ExecReady {
-				fmt.Fprintf(os.Stderr, "Executing command: +%v\n", w.NormPS.Command)
+				fmt.Fprintf(os.Stderr, "Executing command: %s\n", w.NormPS.Command.Name)
 				w.NormPS.Command.ExecFunc(w, &w.NormPS.ActionContext)
 				CleanParsingState(&w.NormPS)
 				ClearActionContext(&w.NormPS.ActionContext)
@@ -159,6 +159,12 @@ func (w *Window) Listen() {
 		case MODE_VISUAL:
 			continue
 		}
+		// w.RedrawAllLines()
+		if w.NeedRedraw {
+			w.RedrawAllLines()
+			w.NeedRedraw = false
+			w.MoveCursorToDisplayPosition()
+		}
 		switch {
 		case w.Mode == MODE_CMD:
 			w.DisplayCmdLine()
@@ -172,12 +178,6 @@ func (w *Window) Listen() {
 		case w.Mode == MODE_CMD:
 			w.DisplayCmdLine()
 			w.MoveCursorToCmdPosition()
-		}
-		// w.RedrawAllLines()
-		if w.NeedRedraw {
-			w.RedrawAllLines()
-			w.NeedRedraw = false
-			w.MoveCursorToDisplayPosition()
 		}
 		if ka.FromPool {
 			w.KeyActionReturner <- ka
