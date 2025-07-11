@@ -86,6 +86,7 @@ func NormalHandleDeleteChar(w *Window, ac *ActionContext) {
 func NormalModeHandleDeleteCmd(w *Window, ac *ActionContext) {
 	switch {
 	case string(ac.Suffix) == "d":
+		w.Logger.Logln("Deleting cursor line: %d", w.CursorLine)
 		w.Buf.Lines = DeleteLineAt(w.Buf.Lines, w.CursorLine, ac.Count)
 		if w.CursorLine >= len(w.Buf.Lines) && len(w.Buf.Lines) > 0 {
 			w.CursorLine = len(w.Buf.Lines) - 1
