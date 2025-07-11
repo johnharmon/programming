@@ -255,9 +255,9 @@ func (w *Window) IncrCursorCol(incr int) {
 }
 
 func (w *Window) GetDisplayCursorCol() int {
-	if len(w.Buf.Lines[w.CursorLine]) < w.DesiredCursorCol {
+	if len(w.Buf.Lines[w.CursorLine])+1 < w.DesiredCursorCol {
 		w.Logger.Logln("Setting cursor display position to: %d", len(w.Buf.Lines[w.CursorLine]))
-		return len(w.Buf.Lines[w.CursorLine])
+		return len(w.Buf.Lines[w.CursorLine]) + 1
 	} else {
 		w.Logger.Logln("Desired Cursor position is compatible with the active line")
 		return w.DesiredCursorCol
@@ -295,10 +295,15 @@ func (w *Window) RedrawLine(ln int) {
 	screenLine := ln - w.BufTopLine
 	if screenLine >= 0 && screenLine < w.BufTopLine+w.Height {
 		w.MoveCursorToPosition(screenLine+w.TermTopLine, 1)
-		w.Logger.Logln("Writing content to line #%d:", screenLine)
-		w.Logger.Logln("%s", w.Buf.Lines[ln])
-		w.Out.Write(TERM_CLEAR_LINE)
-		w.Out.Write(w.Buf.Lines[ln])
+		if ln < len(w.Buf.Lines) {
+			w.Logger.Logln("Writing content to line #%d:", screenLine)
+			w.Logger.Logln("%s", w.Buf.Lines[ln])
+			w.Out.Write(TERM_CLEAR_LINE)
+			w.Out.Write(w.Buf.Lines[ln])
+		} else {
+			w.Logger.Logln("Clearing unbuffered line")
+			w.Out.Write(TERM_CLEAR_LINE)
+		}
 	}
 }
 
@@ -376,19 +381,16 @@ func (w *Window) RedrawAllLines() {
 	w.MoveCursorToPosition(w.TermTopLine, 1)
 	w.Out.Write(TERM_CLEAR_SCREEN)
 	var lineLimit int
-	linesLeftInBuffer := len(w.Buf.Lines) - w.BufTopLine - 1
+	linesLeftInBuffer := len(w.Buf.Lines) - w.BufTopLine
 	if linesLeftInBuffer < w.Height-1 {
 		lineLimit = linesLeftInBuffer
 	} else {
 		lineLimit = w.Height - 1
 	}
 	w.Logger.Logln("Line limit calculated: %d", lineLimit)
-	for i := w.BufTopLine; i <= w.BufTopLine+w.Height-1; i++ {
-		if i <= lineLimit {
-			w.RedrawLine(i)
-		} else {
-			w.Out.Write(TERM_CLEAR_LINE)
-		}
+	for i := w.BufTopLine; i < w.BufTopLine+w.Height; i++ {
+		w.RedrawLine(i)
+		// w.Out.Write(TERM_CLEAR_LINE)
 	}
 }
 
