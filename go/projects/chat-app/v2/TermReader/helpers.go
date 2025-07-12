@@ -381,7 +381,7 @@ Returns an int representing the total distance from the starting position to the
 func StepRightUntilValidByte(line []byte, curPos int) (startOk bool, foundOk bool, totalStep int) {
 	ok, step := ValidateUtf8At(line, curPos)
 	if ok {
-		GlobalLogger.Logln("Valid byte identified, stepped forward: %d", step)
+		GlobalLogger.Logln("Valid byte identified at %d, stepped forward: %d", curPos, step)
 		return ok, ok, step
 	}
 
@@ -401,6 +401,15 @@ func StepRightUntilValidByte(line []byte, curPos int) (startOk bool, foundOk boo
 	}
 }
 
+/*
+Will check if the current position represents the start of a sequence,
+if not step left until it finds one;
+and will then delete that entire sequence
+*/
+func StepLeftUntilValidByteInclusive(line []byte, curPos int) (leftOffset int, charLen int) {
+	return 0, 0
+}
+
 //func GetNthChar(line []byte, charPos int) (start int, end int) {
 //	start, charLen := GetBytePositionByCharacter(line, charPos)
 //	return start, start + charLen
@@ -416,11 +425,12 @@ func GetNthChar(line []byte, charPos int) (bytePos int, charLen int) {
 	prevStep := 0
 	for chars <= charPos {
 		bytePos += prevStep
-		_, _, step = StepRightUntilValidByte(line, bytePos)
 		GlobalLogger.Logln("Validating byte at: %d", bytePos)
+		_, _, step = StepRightUntilValidByte(line, bytePos)
 		prevStep = step
 		chars++
-		if bytePos+step >= len(line)-1 {
+		GlobalLogger.Logln("Current character count: %d", chars)
+		if bytePos+step > len(line)-1 {
 			break
 		}
 	}
@@ -428,4 +438,16 @@ func GetNthChar(line []byte, charPos int) (bytePos int, charLen int) {
 		bytePos = len(line) - 1
 	}
 	return bytePos, step
+}
+
+func DeleteCharacterAt(line []byte, charPos int) (charLen int) {
+	var startPos int
+	if charPos < 0 && charPos >= Utf8Len(line) {
+		return
+	} else {
+		startPos, charLen = GetNthChar(line, charPos)
+	}
+	GlobalLogger.Logln("Deleting position: %d with length: %d", startPos, charLen)
+	DeleteAt(line, startPos, charLen)
+	return charLen
 }
