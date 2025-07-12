@@ -118,7 +118,7 @@ func ClearActionContext(ac *ActionContext) {
 
 func CleanParsingState(n *NormalModeParsingState) {
 	GlobalLogger.Logln("Cleaning parsing state")
-	clear(n.RawInput)
+	n.RawInput = n.RawInput[:0]
 	n.ParsingCount = false
 	n.ParsingMotion = false
 	n.CommandIdentified = false
@@ -136,12 +136,13 @@ func CleanParsingState(n *NormalModeParsingState) {
 func NormalModeParseNextInput(w *Window, ka *KeyAction) (callAgain bool) {
 	var command CommandEntry
 	var ok bool
+	w.NormPS.RawInput = append(w.NormPS.RawInput, ka.Value...)
 	switch w.NormPS.State {
 	case STATE_INITIAL_INPUT:
 		GlobalLogger.Logln("Initial input state entered for parsing")
 		if ka.Value[0] >= 0x31 && ka.Value[0] <= 0x39 {
 			w.NormPS.CommandCount = int(ka.Value[0] - 0x30)
-			w.NormPS.RawInput = append(w.NormPS.RawInput, ka.Value[0])
+			// w.NormPS.RawInput = append(w.NormPS.RawInput, ka.Value[0])
 			w.NormPS.State = STATE_PARSING_CMD_COUNT
 			return false
 		} else {

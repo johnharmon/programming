@@ -63,17 +63,19 @@ func NormalHandleForwardFind(w *Window, ac *ActionContext) {
 }
 
 func NormalHandleDeleteCharNoCursorMove(w *Window, ac *ActionContext) {
-	if len(w.GetActiveLine()) == 0 {
-		return
-	}
-	bytesDeleted := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
-	w.Buf.Lines[w.CursorLine] = w.Buf.Lines[w.CursorLine][:len(w.Buf.Lines[w.CursorLine])-bytesDeleted]
+	for i := 0; i < ac.Count; i++ {
+		if len(w.GetActiveLine()) == 0 {
+			return
+		}
+		bytesDeleted, lLen := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
+		w.Buf.Lines[w.CursorLine] = w.Buf.Lines[w.CursorLine][:len(w.Buf.Lines[w.CursorLine])-bytesDeleted]
 
-	w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
-	// w.RedrawLine(w.CursorLine)
-	w.NeedRedraw = true
-	if w.CursorCol > Utf8Len(w.Buf.Lines[w.CursorLine]) {
-		w.IncrCursorCol(-1)
+		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
+		// w.RedrawLine(w.CursorLine)
+		w.NeedRedraw = true
+		if w.CursorCol > lLen {
+			w.IncrCursorCol(-1)
+		}
 	}
 }
 
@@ -92,7 +94,7 @@ func NormalHandleDeleteChar(w *Window, ac *ActionContext) {
 		//		w.IncrCursorCol(len(w.GetActiveLine()))
 	} else {
 		// w.Buf.Lines[w.CursorLine] = DeleteByteAt(w.GetActiveLine(), w.CursorCol-1)
-		bytesDeleted := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
+		bytesDeleted, _ := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
 		w.Buf.Lines[w.CursorLine] = w.Buf.Lines[w.CursorLine][:len(w.Buf.Lines[w.CursorLine])-bytesDeleted]
 
 		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())

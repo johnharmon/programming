@@ -440,14 +440,15 @@ func GetNthChar(line []byte, charPos int) (bytePos int, charLen int) {
 	return bytePos, step
 }
 
-func DeleteCharacterAt(line []byte, charPos int) (charLen int) {
+func DeleteCharacterAt(line []byte, charPos int) (charLen int, numChars int) {
 	var startPos int
-	if charPos < 0 && charPos >= Utf8Len(line) {
+	lLen := Utf8Len(line)
+	if charPos < 0 && charPos >= lLen {
 		return
 	} else {
 		startPos, charLen = GetNthChar(line, charPos)
 	}
 	GlobalLogger.Logln("Deleting position: %d with length: %d", startPos, charLen)
 	DeleteAt(line, startPos, charLen)
-	return charLen
+	return charLen, lLen - 1
 }
