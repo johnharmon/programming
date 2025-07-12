@@ -5,6 +5,7 @@ import (
 	//"errors"
 	"fmt"
 	"io"
+	//"math"
 	"os"
 	"regexp"
 	"strings"
@@ -172,6 +173,78 @@ func IncrCursorColPtr(line []byte, col *int, incr int) {
 	GlobalLogger.Logln("New Cursor Col: %d", *col)
 }
 
+// charIncr represents the number of characters to increment the cursor by, this will figure out how many bytes that is
+func IncrCursorByteIdxByCharacter(line []byte, col *int, charIncr int) int {
+	var step int
+	var loopCol int
+	if charIncr == 0 {
+		return 0
+	} else if charIncr > 0 {
+		for i := 0; i < charIncr; i++ {
+			loopCol = *col + step
+			incr := StepRight(line, loopCol)
+			if *col+incr <= len(line) {
+				step += incr
+			} else {
+				return len(line) - *col
+			}
+		}
+	} else {
+		for i := charIncr; i > 0; i-- {
+			loopCol = *col + step
+			incr := StepLeft(line, loopCol)
+			if *col+incr > 0 {
+				step += incr
+			} else {
+				return -*col
+			}
+		}
+	}
+	return step
+}
+
+func IncrCursorByteIdxPtrByCharacter(line []byte, col *int, charIncr int) {
+	var step int
+	var loopCol int
+	if charIncr == 0 {
+		return
+	} else if charIncr > 0 {
+		for i := 0; i < charIncr; i++ {
+			loopCol = *col + step
+			incr := StepRight(line, loopCol)
+			if *col+incr <= len(line) {
+				step += incr
+			} else {
+				*col = len(line) - *col
+			}
+		}
+	} else {
+		for i := charIncr; i > 0; i-- {
+			loopCol = *col + step
+			incr := StepLeft(line, loopCol)
+			if *col+incr > 0 {
+				step += incr
+			} else {
+				*col = -*col
+				return
+			}
+		}
+	}
+	*col = *col + step
+	return
+}
+
+func IncrDisplayAndByteCol(line []byte, curDisplayPos int, curBytePos int, incr int) (byteIncr int, charIncr int) {
+	byteIncr = IncrCursorByteIdxByCharacter(line, &curBytePos, incr)
+	charIncr = IncrCursorCol(line, curDisplayPos, incr)
+	return byteIncr, charIncr
+}
+
+func IncrDisplayAndByteColPtr(line []byte, curDisplayPos *int, curDesiredPos *int, curBytePos *int, incr int) {
+	IncrTwoCursorColPtr(line, curDisplayPos, curDesiredPos, incr)
+	IncrCursorByteIdxPtrByCharacter(line, curBytePos, incr)
+}
+
 func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
 	lLen := len(line)
 	newPos := *col1 + incr
@@ -201,6 +274,44 @@ func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
 		*col2 = lLen
 	}
 	GlobalLogger.Logln("New Cursor Col: %d,%d", *col1, *col2)
+}
+
+func IncrTwoDisplayCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
+	lLen := len(line)
+	newPos := *col1 + incr
+	GlobalLogger.Logln("New Cursor col1 Target: %d", newPos)
+	switch {
+	case newPos < 1:
+		*col1 = 1
+		*col2 = 1
+	case newPos <= lLen+1:
+		if incr < 0 && newPos == lLen+1 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = newPos
+			*col2 = newPos
+		}
+	case newPos > lLen+1:
+		if incr < 0 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = lLen + 1
+			*col2 = lLen + 1
+		}
+	default:
+		*col1 = lLen
+		*col2 = lLen
+	}
+	GlobalLogger.Logln("New Cursor Col: %d,%d", *col1, *col2)
+}
+
+func (w *Window) IncrCursorCol2(incr int) {
+	IncrDisplayAndByteColPtr(w.Buf.Lines[w.CursorLine], &w.CursorDisplayCol, &w.DesiredCursorCol, &w.CursorCol, incr)
+}
+
+func (w *Window) IncrCursorCol3(incr int) {
 }
 
 func (w *Window) IncrCmdCursorCol(incr int) {
@@ -413,6 +524,7 @@ func (w *Window) DisplayCmdMessage(msg string) {
 func (w *Window) DisplayStatusLine() {
 	termStatusLineNum := w.TermTopLine + w.Height
 	w.MoveCursorToPosition(termStatusLineNum, 0)
+	bytePosition, byteLen := GetBytePositionByCharacter(w.Buf.Lines[w.CursorLine], w.CursorCol)
 	w.Out.Write(TERM_CLEAR_LINE)
 	statusLine := fmt.Sprintf(
 		"%sCursorLine: %d | CursorColumn: %d | BufTopLine: %d | DesiredCursorColumn: %d | TermLine: %d | LineLength: %d | BufferLength: %d | WindowHeight: %d",
@@ -428,6 +540,7 @@ func (w *Window) DisplayStatusLine() {
 	padding := strings.Repeat(" ", w.Width-len(statusLine))
 	fmt.Fprintf(w.Out, "%s%s", statusLine, padding)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
+	fmt.Fprintf(w.Out, "\nBytePosition: %d | ByteLength: %d", bytePosition, byteLen)
 	fmt.Fprintf(w.Out, "\nMode: %d", w.Mode)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
 	// fmt.Fprintf(w.Out, "FlushToken: %s", GlobalLogger.(*ConcreteLogger).FlushBuffer.Bytes())
