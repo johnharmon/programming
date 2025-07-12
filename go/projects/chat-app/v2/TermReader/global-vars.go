@@ -114,8 +114,8 @@ func InitNormalModeCommands() {
 		AcceptsSpecialSuffix: false,
 		AcceptsMotion:        false,
 		MustBeFirst:          false,
-		ExecFunc:             NormalHandleDeleteChar,
-		Name:                 "NormalHandleDeleteChar",
+		ExecFunc:             NormalHandleDeleteCharNoCursorMove,
+		Name:                 "NormalHandleDeleteCharNoCursorMove",
 	}
 	NormalModeDispatchMap['d'] = CommandEntry{
 		SuffixRequired:       true,
