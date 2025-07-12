@@ -540,7 +540,7 @@ func (w *Window) DisplayStatusLine() {
 	padding := strings.Repeat(" ", w.Width-len(statusLine))
 	fmt.Fprintf(w.Out, "%s%s", statusLine, padding)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
-	fmt.Fprintf(w.Out, "\r\n%sBytePosition: %d | ByteLength: %d | NormalModeParsingState: %d", TERM_CLEAR_LINE, bytePosition, byteLen, w.NormPS.State)
+	fmt.Fprintf(w.Out, "\r\n%sBytePosition: %d | ByteLength: %d | NormalModeParsingState: %d | NormalModeCmdBuffer: %s", TERM_CLEAR_LINE, bytePosition, byteLen, w.NormPS.State, w.NormPS.RawInput)
 	fmt.Fprintf(w.Out, "\r\nMode: %d", w.Mode)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
 	// fmt.Fprintf(w.Out, "FlushToken: %s", GlobalLogger.(*ConcreteLogger).FlushBuffer.Bytes())
