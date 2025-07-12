@@ -246,7 +246,7 @@ func IncrDisplayAndByteColPtr(line []byte, curDisplayPos *int, curDesiredPos *in
 }
 
 func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
-	lLen := len(line)
+	lLen := Utf8Len(line)
 	newPos := *col1 + incr
 	GlobalLogger.Logln("New Cursor col1 Target: %d", newPos)
 	switch {
@@ -441,7 +441,7 @@ func (w *Window) NewBuffer() {
 }
 
 func (w *Window) MoveCursorToCmdPosition() {
-	cursorDisplayLine := w.TermTopLine + w.Height
+	cursorDisplayLine := w.TermTopLine + w.Height + 3
 	w.MoveCursorToPosition(cursorDisplayLine, w.CmdCursorCol)
 }
 
@@ -508,7 +508,7 @@ func (w *Window) RedrawAllLines() {
 
 func (w *Window) DisplayCmdLine() {
 	termStatusLineNum := w.TermTopLine + w.Height
-	w.MoveCursorToPosition(termStatusLineNum, 0)
+	w.MoveCursorToPosition(termStatusLineNum+3, 0)
 	w.Out.Write(TERM_CLEAR_LINE)
 	padding := strings.Repeat(" ", w.Width-len(w.CmdBuf))
 	fmt.Fprintf(w.Out, "\x1b[48;5;202m\x1b[38;5;16m%s%s\x1b[00m", w.CmdBuf, padding)
@@ -524,7 +524,7 @@ func (w *Window) DisplayCmdMessage(msg string) {
 func (w *Window) DisplayStatusLine() {
 	termStatusLineNum := w.TermTopLine + w.Height
 	w.MoveCursorToPosition(termStatusLineNum, 0)
-	bytePosition, byteLen := GetBytePositionByCharacter(w.Buf.Lines[w.CursorLine], w.CursorCol)
+	bytePosition, byteLen := GetNthChar(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
 	w.Out.Write(TERM_CLEAR_LINE)
 	statusLine := fmt.Sprintf(
 		"%sCursorLine: %d | CursorColumn: %d | BufTopLine: %d | DesiredCursorColumn: %d | TermLine: %d | LineLength: %d | BufferLength: %d | WindowHeight: %d",
@@ -534,14 +534,14 @@ func (w *Window) DisplayStatusLine() {
 		w.BufTopLine,
 		w.DesiredCursorCol,
 		w.TermTopLine+(w.CursorLine-w.BufTopLine),
-		len(w.Buf.Lines[w.CursorLine]),
+		Utf8Len((w.Buf.Lines[w.CursorLine])),
 		len(w.Buf.Lines),
 		w.Height)
 	padding := strings.Repeat(" ", w.Width-len(statusLine))
 	fmt.Fprintf(w.Out, "%s%s", statusLine, padding)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
-	fmt.Fprintf(w.Out, "\nBytePosition: %d | ByteLength: %d", bytePosition, byteLen)
-	fmt.Fprintf(w.Out, "\nMode: %d", w.Mode)
+	fmt.Fprintf(w.Out, "\r\n%sBytePosition: %d | ByteLength: %d | NormalModeParsingState: %d", TERM_CLEAR_LINE, bytePosition, byteLen, w.NormPS.State)
+	fmt.Fprintf(w.Out, "\r\nMode: %d", w.Mode)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
 	// fmt.Fprintf(w.Out, "FlushToken: %s", GlobalLogger.(*ConcreteLogger).FlushBuffer.Bytes())
 }

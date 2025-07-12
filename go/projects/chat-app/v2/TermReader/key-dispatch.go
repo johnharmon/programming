@@ -186,7 +186,7 @@ func NormalModeParseNextInput(w *Window, ka *KeyAction) (callAgain bool) {
 		} else {
 			w.NormPS.ActionContext = *MakeNewActionContextPtr()
 			PopulateActionContext(&w.NormPS, &w.NormPS.ActionContext)
-			GlobalLogger.Logln("normal mode function ready to execute: %s", command.Name)
+			GlobalLogger.Logln("normal mode function ready to execute: %s", w.NormPS.Command.Name)
 			w.NormPS.ExecReady = true
 			return false
 			// command.ExecFunc(w, actionContext)
