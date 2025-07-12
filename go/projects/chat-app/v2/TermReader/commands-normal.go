@@ -103,3 +103,9 @@ func NormalModeHandleDeleteCmd(w *Window, ac *ActionContext) {
 		//		}
 	}
 }
+
+func NormalModeSwitchToCmd(w *Window, ac *ActionContext) {
+	GlobalLogger.Logln("Switching mode to command")
+	w.CmdBuf[0] = ':'
+	w.Mode = MODE_CMD
+}
