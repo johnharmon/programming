@@ -125,4 +125,12 @@ func InitNormalModeCommands() {
 		ExecFunc:             NormalModeHandleDeleteCmd,
 		Name:                 "NormalHandleDeleteCmd",
 	}
+	NormalModeDispatchMap[':'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalModeSwitchToCmd,
+		Name:                 "NormalModeSwitchToCmd",
+	}
 }
