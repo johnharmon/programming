@@ -401,24 +401,30 @@ func StepRightUntilValidByte(line []byte, curPos int) (startOk bool, foundOk boo
 	}
 }
 
-func GetNthChar(line []byte, charPos int) (start int, end int) {
-	start, charLen := GetBytePositionByCharacter(line, charPos)
-	return start, start + charLen
-}
+//func GetNthChar(line []byte, charPos int) (start int, end int) {
+//	start, charLen := GetBytePositionByCharacter(line, charPos)
+//	return start, start + charLen
+//}
 
-func GetBytePositionByCharacter(line []byte, charPos int) (bytePos int, charLen int) { // Gets the byte index of the start of the character position given
+/*
+Gets the byte intex of the start of the character position given (0 based index)
+*/
+func GetNthChar(line []byte, charPos int) (bytePos int, charLen int) {
 	bytePos = 0
 	chars := 0
 	step := 0
-	for chars < charPos {
-		_, _, step := StepRightUntilValidByte(line, bytePos)
-		bytePos += step
+	prevStep := 0
+	for chars <= charPos {
+		bytePos += prevStep
+		_, _, step = StepRightUntilValidByte(line, bytePos)
+		GlobalLogger.Logln("Validating byte at: %d", bytePos)
+		prevStep = step
 		chars++
-		if bytePos >= len(line)-1 {
+		if bytePos+step >= len(line)-1 {
 			break
 		}
 	}
-	if bytePos > len(line) {
+	if bytePos >= len(line) {
 		bytePos = len(line) - 1
 	}
 	return bytePos, step
