@@ -394,6 +394,9 @@ func ValidateUtf8At(line []byte, start int) (bool, int) {
 	return false, 1
 }
 
+/*
+Attempts to validate a utf8 codepoint. if it cannot, returns immediately and only steps by 1 byte, even if multiple invalid bytes are found sequentially. This treats every invalid byte as a separate character.
+*/
 func ValidateMinimalUtf8At(line []byte, start int) (bool, int) {
 	if start < 0 || start >= len(line) {
 		return false, 0
