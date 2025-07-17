@@ -349,7 +349,7 @@ func (w *Window) IncrCmdCursorCol2(incr int) {
 }
 
 func (w *Window) IncrCursorCol(incr int) {
-	lLen := len(w.Buf.Lines[w.CursorLine])
+	lLen := Utf8Len(w.Buf.Lines[w.CursorLine])
 	newPos := w.CursorCol + incr
 	if newPos < 1 {
 		newPos = 1

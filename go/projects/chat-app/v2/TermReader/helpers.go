@@ -2,6 +2,8 @@ package main
 
 import (
 	//"bytes"
+	//	"fmt"
+	//	"os"
 	"strings"
 )
 
@@ -440,7 +442,7 @@ func GetNthChar(line []byte, charPos int) (bytePos int, charLen int) {
 	return bytePos, step
 }
 
-func DeleteCharacterAt(line []byte, charPos int) (charLen int, numChars int) {
+func DeleteCharacterAt(line []byte, charPos int) (charLen int, numChars int, newLine []byte) {
 	var startPos int
 	lLen := Utf8Len(line)
 	if charPos < 0 && charPos >= lLen {
@@ -449,6 +451,7 @@ func DeleteCharacterAt(line []byte, charPos int) (charLen int, numChars int) {
 		startPos, charLen = GetNthChar(line, charPos)
 	}
 	GlobalLogger.Logln("Deleting position: %d with length: %d", startPos, charLen)
-	DeleteAt(line, startPos, charLen)
-	return charLen, lLen - 1
+	// fmt.Fprintf(os.Stderr, "Character detected, calling actual deletion\n")
+	newLine = DeleteAt(line, startPos, charLen)
+	return charLen, lLen - 1, newLine
 }
