@@ -19,6 +19,10 @@ var (
 	KeyActionTree             map[byte]*KeyAction
 	TERM_CLEAR_LINE           = []byte{0x1b, '[', '2', 'K'}
 	TERM_CLEAR_SCREEN         = []byte{0x1b, '[', '2', 'J'}
+	InsertModeDispatchMap     = map[string]Action{}
+	NormalModeDispatchMap     = map[int]CommandEntry{}
+	MotionDispatchMap         = map[string]Motion{}
+	Commands                  = map[string]Cmd{}
 )
 
 func SetDefaultLogOutput() {
@@ -41,6 +45,7 @@ func InitGlobalVars() {
 	InitCoreCommands()
 	InitCommandShortcuts()
 	InitKeyActionTree()
+	InitNormalModeCommands()
 }
 
 func InitKeyActionTree() {
@@ -54,5 +59,94 @@ func InitKeyActionTree() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	InitAsciiPrintableCharacters()
+	InitAsciiPrintableCharactersWithPrintAction()
+}
+
+func InitNormalModeCommands() {
+	NormalModeDispatchMap['h'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleLeftMoveCmd,
+		Name:           "NormalHandleLeftMoveCmd",
+	}
+
+	NormalModeDispatchMap['j'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleDownMoveCmd,
+		Name:           "NormalHandleDownMoveCmd",
+	}
+
+	NormalModeDispatchMap['k'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleUpMoveCmd,
+		Name:           "NormalHandleUpMoveCmd",
+	}
+
+	NormalModeDispatchMap['l'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalHandleRightMoveCmd,
+		Name:           "NormalHandleRightMoveCmd",
+	}
+	NormalModeDispatchMap['i'] = CommandEntry{
+		SuffixRequired: false,
+		AcceptsMotion:  false,
+		MustBeFirst:    false,
+		ExecFunc:       NormalModeSwitchToInsert,
+		Name:           "NormalModeSwitchToInsert",
+	}
+	NormalModeDispatchMap['f'] = CommandEntry{
+		SuffixRequired:       true,
+		AcceptsSpecialSuffix: true,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleForwardFind,
+		Name:                 "NormalHandleForwardFind",
+	}
+	NormalModeDispatchMap['x'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleDeleteCharNoCursorMove,
+		Name:                 "NormalHandleDeleteCharNoCursorMove",
+	}
+	NormalModeDispatchMap['d'] = CommandEntry{
+		SuffixRequired:       true,
+		AcceptsSpecialSuffix: true,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalModeHandleDeleteCmd,
+		Name:                 "NormalHandleDeleteCmd",
+	}
+	NormalModeDispatchMap[':'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalModeSwitchToCmd,
+		Name:                 "NormalModeSwitchToCmd",
+	}
+	NormalModeDispatchMap['0'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleMoveToLineStart,
+		Name:                 "NormalHandleMoveToLineStart",
+	}
+	NormalModeDispatchMap['A'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleAppendToEOL,
+		Name:                 "NormalHandleAppendToEOL",
+	}
 }

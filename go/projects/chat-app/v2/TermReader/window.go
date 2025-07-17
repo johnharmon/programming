@@ -2,9 +2,10 @@ package main
 
 import (
 	"bytes"
-	"errors"
+	//"errors"
 	"fmt"
 	"io"
+	//"math"
 	"os"
 	"regexp"
 	"strings"
@@ -95,6 +96,8 @@ func NewWindow(line int, column int, height int, width int) (w *Window) {
 	w.Out = os.Stdout
 	w.EventChan = make(chan *KeyAction, 10)
 	w.KeyActionReturner = make(chan *KeyAction, 10)
+	w.NormPS = NormalModeParsingState{}
+	CleanParsingState(&w.NormPS)
 	w.Buf = NewEmptyDisplayBuffer()
 	return w
 }
@@ -126,17 +129,18 @@ func (w Window) Render(out io.Writer) {
 }
 
 func (w *Window) WriteRaw(b []byte) {
-	w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
-	w.Buf.Lines[w.Buf.ActiveLine] = InsertAt(w.Buf.Lines[w.Buf.ActiveLine], b, w.CursorCol-1)
+	w.Logger.Logln("Writing %b to %d", b, w.CursorLine)
+	w.Buf.Lines[w.CursorLine] = InsertAt(w.Buf.Lines[w.CursorLine], b, w.CursorCol-1)
 }
 
 func WriteToLine(line []byte, b []byte, start int) (newLine []byte) {
-	// w.Logger.Logln("Writing %b to %d", b, w.Buf.ActiveLine)
+	// w.Logger.Logln("Writing %b to %d", b, w.CursorLine)
 	return InsertAt(line, b, start)
 }
 
 func (w *Window) WriteToCmd(b []byte) {
-	w.CmdBuf = InsertAt(w.CmdBuf, b, w.CursorCol-1)
+	w.CmdBuf = InsertAt(w.CmdBuf, b, w.CmdCursorCol-1)
+	GlobalLogger.Logln("CMD Buffer: %s", w.CmdBuf)
 }
 
 func IncrCursorCol(line []byte, col int, incr int) (newCol int) {
@@ -162,52 +166,168 @@ func IncrCursorColPtr(line []byte, col *int, incr int) {
 	switch {
 	case newPos < 1:
 		newPos = 1
-		*col = newPos
-	case newPos <= lLen+1:
-		*col = newPos
 	case newPos > lLen+1:
-		*col = lLen + 1
-	default:
-		*col = lLen
+		newPos = lLen + 1
 	}
+	*col = newPos
 	GlobalLogger.Logln("New Cursor Col: %d", *col)
 }
 
+// charIncr represents the number of characters to increment the cursor by, this will figure out how many bytes that is
+func IncrCursorByteIdxByCharacter(line []byte, col *int, charIncr int) int {
+	var step int
+	var loopCol int
+	if charIncr == 0 {
+		return 0
+	} else if charIncr > 0 {
+		for i := 0; i < charIncr; i++ {
+			loopCol = *col + step
+			incr := StepRight(line, loopCol)
+			if *col+incr <= len(line) {
+				step += incr
+			} else {
+				return len(line) - *col
+			}
+		}
+	} else {
+		for i := charIncr; i > 0; i-- {
+			loopCol = *col + step
+			incr := StepLeft(line, loopCol)
+			if *col+incr > 0 {
+				step += incr
+			} else {
+				return -*col
+			}
+		}
+	}
+	return step
+}
+
+func IncrCursorByteIdxPtrByCharacter(line []byte, col *int, charIncr int) {
+	var step int
+	var loopCol int
+	if charIncr == 0 {
+		return
+	} else if charIncr > 0 {
+		for i := 0; i < charIncr; i++ {
+			loopCol = *col + step
+			incr := StepRight(line, loopCol)
+			if *col+incr <= len(line) {
+				step += incr
+			} else {
+				*col = len(line) - *col
+			}
+		}
+	} else {
+		for i := charIncr; i > 0; i-- {
+			loopCol = *col + step
+			incr := StepLeft(line, loopCol)
+			if *col+incr > 0 {
+				step += incr
+			} else {
+				*col = -*col
+				return
+			}
+		}
+	}
+	*col = *col + step
+	return
+}
+
+func IncrDisplayAndByteCol(line []byte, curDisplayPos int, curBytePos int, incr int) (byteIncr int, charIncr int) {
+	byteIncr = IncrCursorByteIdxByCharacter(line, &curBytePos, incr)
+	charIncr = IncrCursorCol(line, curDisplayPos, incr)
+	return byteIncr, charIncr
+}
+
+func IncrDisplayAndByteColPtr(line []byte, curDisplayPos *int, curDesiredPos *int, curBytePos *int, incr int) {
+	IncrTwoCursorColPtr(line, curDisplayPos, curDesiredPos, incr)
+	IncrCursorByteIdxPtrByCharacter(line, curBytePos, incr)
+}
+
 func IncrTwoCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
+	lLen := Utf8Len(line)
+	newPos := *col1 + incr
+	GlobalLogger.Logln("New Cursor col1 Target: %d", newPos)
+	switch {
+	case newPos < 1:
+		*col1 = 1
+		*col2 = 1
+	case newPos <= lLen+1:
+		if incr < 0 && newPos == lLen+1 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = newPos
+			*col2 = newPos
+		}
+	case newPos > lLen+1:
+		if incr < 0 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = lLen + 1
+			*col2 = lLen + 1
+		}
+	default:
+		*col1 = lLen
+		*col2 = lLen
+	}
+	GlobalLogger.Logln("New Cursor Col: %d,%d", *col1, *col2)
+}
+
+func IncrTwoDisplayCursorColPtr(line []byte, col1 *int, col2 *int, incr int) {
 	lLen := len(line)
 	newPos := *col1 + incr
 	GlobalLogger.Logln("New Cursor col1 Target: %d", newPos)
 	switch {
 	case newPos < 1:
-		newPos = 1
-		*col1 = newPos
-		*col2 = newPos
+		*col1 = 1
+		*col2 = 1
 	case newPos <= lLen+1:
-		*col1 = newPos
-		*col2 = newPos
+		if incr < 0 && newPos == lLen+1 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = newPos
+			*col2 = newPos
+		}
 	case newPos > lLen+1:
-		*col1 = lLen + 1
-		*col2 = lLen + 1
+		if incr < 0 {
+			*col1 = lLen
+			*col2 = lLen
+		} else {
+			*col1 = lLen + 1
+			*col2 = lLen + 1
+		}
 	default:
 		*col1 = lLen
+		*col2 = lLen
 	}
 	GlobalLogger.Logln("New Cursor Col: %d,%d", *col1, *col2)
 }
 
+func (w *Window) IncrCursorCol2(incr int) {
+	IncrDisplayAndByteColPtr(w.Buf.Lines[w.CursorLine], &w.CursorDisplayCol, &w.DesiredCursorCol, &w.CursorCol, incr)
+}
+
+func (w *Window) IncrCursorCol3(incr int) {
+}
+
 func (w *Window) IncrCmdCursorCol(incr int) {
 	lLen := len(w.CmdBuf)
-	newPos := w.CursorCol + incr
+	newPos := w.CmdCursorCol + incr
 	if newPos < 1 {
 		newPos = 1
-		w.CursorCol = newPos
-		w.DesiredCursorCol = newPos
+		w.CmdCursorCol = newPos
+		// w.DesiredCursorCol = newPos
 	} else if newPos <= lLen+1 {
-		w.CursorCol = newPos
-		w.DesiredCursorCol = newPos
+		w.CmdCursorCol = newPos
+		// w.DesiredCursorCol = newPos
 	} else if newPos > lLen+1 {
 		newPos = lLen + 1
 	} else {
-		w.CursorCol = lLen
+		w.CmdCursorCol = lLen
 	}
 }
 
@@ -229,7 +349,7 @@ func (w *Window) IncrCmdCursorCol2(incr int) {
 }
 
 func (w *Window) IncrCursorCol(incr int) {
-	lLen := len(w.Buf.Lines[w.Buf.ActiveLine])
+	lLen := Utf8Len(w.Buf.Lines[w.CursorLine])
 	newPos := w.CursorCol + incr
 	if newPos < 1 {
 		newPos = 1
@@ -246,9 +366,9 @@ func (w *Window) IncrCursorCol(incr int) {
 }
 
 func (w *Window) GetDisplayCursorCol() int {
-	if len(w.Buf.Lines[w.Buf.ActiveLine])+1 < w.DesiredCursorCol {
-		w.Logger.Logln("Setting cursor display position to: %d", len(w.Buf.Lines[w.Buf.ActiveLine]))
-		return len(w.Buf.Lines[w.Buf.ActiveLine])
+	if len(w.Buf.Lines[w.CursorLine])+1 < w.DesiredCursorCol {
+		w.Logger.Logln("Setting cursor display position to: %d", len(w.Buf.Lines[w.CursorLine]))
+		return len(w.Buf.Lines[w.CursorLine]) + 1
 	} else {
 		w.Logger.Logln("Desired Cursor position is compatible with the active line")
 		return w.DesiredCursorCol
@@ -263,10 +383,15 @@ func (w *Window) HandleArrowDown() (col int) {
 
 func (w *Window) IncrCursorLine(vec int) {
 	nextLine := w.CursorLine + vec
-	if nextLine >= 0 && nextLine < len(w.Buf.Lines) {
-		w.Buf.ActiveLine = nextLine
-		w.CursorLine = nextLine
+	if nextLine >= len(w.Buf.Lines) {
+		nextLine = len(w.Buf.Lines) - 1
+	} else if nextLine < 0 {
+		nextLine = 0
 	}
+	// if nextLine >= 0 && nextLine < len(w.Buf.Lines) {
+	w.CursorLine = nextLine
+	w.CursorLine = nextLine
+	//}
 }
 
 func MakeNewLines(lines int, lineSize int) [][]byte {
@@ -281,10 +406,16 @@ func (w *Window) RedrawLine(ln int) {
 	screenLine := ln - w.BufTopLine
 	if screenLine >= 0 && screenLine < w.BufTopLine+w.Height {
 		w.MoveCursorToPosition(screenLine+w.TermTopLine, 1)
-		w.Logger.Logln("Writing content to line #%d:", screenLine)
-		w.Logger.Logln("%s", w.Buf.Lines[ln])
-		w.Out.Write(TERM_CLEAR_LINE)
-		w.Out.Write(w.Buf.Lines[ln])
+		if ln < len(w.Buf.Lines) {
+			w.Logger.Logln("Writing content to line #%d:", screenLine)
+			w.Logger.Logln("%s", w.Buf.Lines[ln])
+			w.Out.Write(TERM_CLEAR_LINE)
+			w.Out.Write(w.Buf.Lines[ln])
+		} else {
+			w.Logger.Logln("Clearing unbuffered line")
+			w.Out.Write([]byte(strings.Repeat("*", w.Width)))
+			// w.Out.Write(TERM_CLEAR_LINE)
+		}
 	}
 }
 
@@ -303,15 +434,15 @@ func (w *Window) NewBuffer() {
 		w.Buf.Lines[i] = make([]byte, 0, 256)
 	}
 	w.Buf.Size = len(w.Buf.Lines)
-	w.Buf.ActiveLine = 0
+	w.CursorLine = 0
 	w.CursorLine = 0
 	w.CursorCol = 0
 	w.Redraw(w.MakeRedrawHandler())
 }
 
 func (w *Window) MoveCursorToCmdPosition() {
-	cursorDisplayLine := w.TermTopLine + w.Height
-	w.MoveCursorToPosition(cursorDisplayLine, w.CursorCol)
+	cursorDisplayLine := w.TermTopLine + w.Height + 3
+	w.MoveCursorToPosition(cursorDisplayLine, w.CmdCursorCol)
 }
 
 func (w *Window) ProcessCmd() (err error) {
@@ -323,7 +454,7 @@ func (w *Window) ProcessCmd() (err error) {
 	w.CmdCursorCol = 2
 	cmdDispatch, ok := COMMANDS[cmd]
 	if !ok {
-		err = errors.New(fmt.Sprintf("Error: cmd not found: \"%s\"", cmd))
+		err = fmt.Errorf("Error: cmd not found: \"%s\"", cmd)
 		w.DisplayCmdMessage(err.Error())
 		return err
 	}
@@ -360,22 +491,24 @@ func (w *Window) Redraw(handler func() []int) {
 func (w *Window) RedrawAllLines() {
 	w.Logger.Logln("Forcing full redraw of all lines")
 	w.MoveCursorToPosition(w.TermTopLine, 1)
+	w.Out.Write(TERM_CLEAR_SCREEN)
 	var lineLimit int
-	linesLeftInBuffer := len(w.Buf.Lines) - w.BufTopLine - 1
+	linesLeftInBuffer := len(w.Buf.Lines) - w.BufTopLine
 	if linesLeftInBuffer < w.Height-1 {
 		lineLimit = linesLeftInBuffer
 	} else {
 		lineLimit = w.Height - 1
 	}
 	w.Logger.Logln("Line limit calculated: %d", lineLimit)
-	for i := w.BufTopLine; i <= w.BufTopLine+lineLimit; i++ {
+	for i := w.BufTopLine; i < w.BufTopLine+w.Height; i++ {
 		w.RedrawLine(i)
+		// w.Out.Write(TERM_CLEAR_LINE)
 	}
 }
 
 func (w *Window) DisplayCmdLine() {
 	termStatusLineNum := w.TermTopLine + w.Height
-	w.MoveCursorToPosition(termStatusLineNum, 0)
+	w.MoveCursorToPosition(termStatusLineNum+3, 0)
 	w.Out.Write(TERM_CLEAR_LINE)
 	padding := strings.Repeat(" ", w.Width-len(w.CmdBuf))
 	fmt.Fprintf(w.Out, "\x1b[48;5;202m\x1b[38;5;16m%s%s\x1b[00m", w.CmdBuf, padding)
@@ -391,6 +524,7 @@ func (w *Window) DisplayCmdMessage(msg string) {
 func (w *Window) DisplayStatusLine() {
 	termStatusLineNum := w.TermTopLine + w.Height
 	w.MoveCursorToPosition(termStatusLineNum, 0)
+	bytePosition, byteLen := GetNthChar(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
 	w.Out.Write(TERM_CLEAR_LINE)
 	statusLine := fmt.Sprintf(
 		"%sCursorLine: %d | CursorColumn: %d | BufTopLine: %d | DesiredCursorColumn: %d | TermLine: %d | LineLength: %d | BufferLength: %d | WindowHeight: %d",
@@ -400,13 +534,14 @@ func (w *Window) DisplayStatusLine() {
 		w.BufTopLine,
 		w.DesiredCursorCol,
 		w.TermTopLine+(w.CursorLine-w.BufTopLine),
-		len(w.Buf.Lines[w.Buf.ActiveLine]),
+		Utf8Len((w.Buf.Lines[w.CursorLine])),
 		len(w.Buf.Lines),
 		w.Height)
 	padding := strings.Repeat(" ", w.Width-len(statusLine))
 	fmt.Fprintf(w.Out, "%s%s", statusLine, padding)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
-	fmt.Fprintf(w.Out, "\nMode: %d", w.Mode)
+	fmt.Fprintf(w.Out, "\r\n%sBytePosition: %d | ByteLength: %d | NormalModeParsingState: %d | NormalModeCmdBuffer: %s", TERM_CLEAR_LINE, bytePosition, byteLen, w.NormPS.State, w.NormPS.RawInput)
+	fmt.Fprintf(w.Out, "\r\nMode: %d", w.Mode)
 	fmt.Fprintf(w.Out, "\r\x1b[00m")
 	// fmt.Fprintf(w.Out, "FlushToken: %s", GlobalLogger.(*ConcreteLogger).FlushBuffer.Bytes())
 }
