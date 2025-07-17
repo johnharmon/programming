@@ -67,7 +67,7 @@ func NormalHandleDeleteCharNoCursorMove(w *Window, ac *ActionContext) {
 		if len(w.GetActiveLine()) == 0 {
 			return
 		}
-		bytesDeleted, lLen := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
+		bytesDeleted, lLen, _ := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
 		w.Buf.Lines[w.CursorLine] = w.Buf.Lines[w.CursorLine][:len(w.Buf.Lines[w.CursorLine])-bytesDeleted]
 
 		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
@@ -94,7 +94,7 @@ func NormalHandleDeleteChar(w *Window, ac *ActionContext) {
 		//		w.IncrCursorCol(len(w.GetActiveLine()))
 	} else {
 		// w.Buf.Lines[w.CursorLine] = DeleteByteAt(w.GetActiveLine(), w.CursorCol-1)
-		bytesDeleted, _ := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
+		bytesDeleted, _, _ := DeleteCharacterAt(w.Buf.Lines[w.CursorLine], w.CursorCol-1)
 		w.Buf.Lines[w.CursorLine] = w.Buf.Lines[w.CursorLine][:len(w.Buf.Lines[w.CursorLine])-bytesDeleted]
 
 		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
@@ -129,4 +129,17 @@ func NormalModeSwitchToCmd(w *Window, ac *ActionContext) {
 	GlobalLogger.Logln("Switching mode to command")
 	w.CmdBuf[0] = ':'
 	w.Mode = MODE_CMD
+}
+
+func NormalHandleMoveToLineStart(w *Window, ac *ActionContext) {
+	w.IncrCursorCol(-w.CursorCol)
+	w.MoveCursorToDisplayPosition()
+}
+
+func NormalHandleAppendToEOL(w *Window, ac *ActionContext) {
+	curBytePosition, _ := GetNthChar(w.Buf.Lines[w.CursorLine], w.CursorCol)
+	charsFromPos := Utf8Len(w.Buf.Lines[w.CursorLine][curBytePosition:])
+	w.IncrCursorCol(charsFromPos + 1)
+	w.MoveCursorToDisplayPosition()
+	NormalModeSwitchToInsert(w, ac)
 }

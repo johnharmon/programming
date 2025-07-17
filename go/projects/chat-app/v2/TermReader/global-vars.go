@@ -133,4 +133,20 @@ func InitNormalModeCommands() {
 		ExecFunc:             NormalModeSwitchToCmd,
 		Name:                 "NormalModeSwitchToCmd",
 	}
+	NormalModeDispatchMap['0'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleMoveToLineStart,
+		Name:                 "NormalHandleMoveToLineStart",
+	}
+	NormalModeDispatchMap['A'] = CommandEntry{
+		SuffixRequired:       false,
+		AcceptsSpecialSuffix: false,
+		AcceptsMotion:        false,
+		MustBeFirst:          false,
+		ExecFunc:             NormalHandleAppendToEOL,
+		Name:                 "NormalHandleAppendToEOL",
+	}
 }
