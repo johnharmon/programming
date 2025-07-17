@@ -16,8 +16,11 @@ func (w *Window) LoadBuffer(in io.Reader) {
 			copy(newLine, scanner.Bytes())
 			dispBuf.Lines = append(dispBuf.Lines, newLine)
 		}
+		if len(dispBuf.Lines) == 0 {
+			dispBuf.Lines = MakeNewLines(1, 80)
+		}
 		w.Buf = dispBuf
-		w.Buf.ActiveLine = 0
+		w.CursorLine = 0
 	}
 }
 
