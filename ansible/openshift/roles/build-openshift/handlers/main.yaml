@@ -1,0 +1,10 @@
+handlers:
+  - name: remove_temp_file 
+    ansible.builtin.file:
+      path: "{{ handler_remove_temp_file }}"
+      state: absent
+  - name: dump_variable_content
+    ansible.builtin.copy:
+      dest: "{{ handler_dump_file_path + handler_dump_file_name }}"
+      content: "{{ ansible.builtin.to_pretty_json(handler_dump_file_content, indent=2) }}"
+  

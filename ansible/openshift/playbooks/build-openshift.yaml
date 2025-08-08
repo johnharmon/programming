@@ -1,0 +1,67 @@
+- name: Build Openshift Cluster
+  hosts: localhost
+  gather_facts: false
+  handlers:
+    - name: remove_temp_file 
+      ansible.builtin.file:
+        path: "{{ ansible_facts.handler_remove_temp_file }}"
+        state: absent
+    - name: dump_variable_content
+      ansible.builtin.copy:
+        dest: "{{ ansible_facts.handler_dump_file_path + ansible_facts.handler_dump_file_name }}"
+        content: "{{ ansible.builtin.json_encode(ansible_facts.handler_dump_file_content) }}"
+  tasks:
+
+    - name: "debug shell cwd" 
+      ansible.builtin.debug: 
+        var: shell_cwd
+
+    - name: "Set proxmox_config"
+      ansible.builtin.set_fact:
+        handler_remove_temp_file: "{{ shell_cwd + '/' + 'templates/terraform/query_vms/vars.tfvars' }}"
+        handler_dump_file_path: "{{ shell_cwd + '/dump/' }}"
+        handler_dump_file_name: "proxmox_query.yaml" 
+        handler_dump_file_content:
+        handler_temp_file: "{{ shell_cwd + '/templates/terraform/query_vms/vars.tfvars' }}"
+        proxmox_mac_list: "{{ lookup('macgen', count=3, exclude=(existing_macs | default([]))) }}"
+        dump_file_path: "{{ shell_cwd + '/dump/terraform_output.json'  }}"
+        proxmox_config: 
+          proxmox_node_name: "proxmox"
+          openshift_nodes: 3
+          iso_url: "http://dev01/isos/openshift-install.iso"
+          openshift_install_iso_name: "opensfhit-install.iso"
+          proxmox_username: "harmonj"
+          proxmox_endpoint: "https://proxmox.harmonlab.com:8006/"
+          proxmox_ssh_private_key_file: "files/ssh/id_rsa" 
+          proxmox_password: proxmox_password 
+
+    - name: "Template terraform vars" 
+      ansible.builtin.template:
+        src: "{{ shell_cwd + '/templates/terraform/query_vms/.jinja_templates/vars.tfvars.j2' }}"
+        dest: "{{ handler_temp_file }}"
+      vars: 
+        proxmox_config: ansible_facts.proxmox_config
+
+    - name: "Use terraform to get existing vms" 
+      community.general.terraform:
+        project_path: "{{ shell_cwd + '/templates/terraform/query_vms' }}"
+        state: present
+        force_init: true
+        complex_vars: true 
+        variables:
+          proxmox_password: "{{ lookup('env', 'TF_VAR_proxmox_password') }}"
+          #proxmox_config: proxmox_config
+      register: terraform_query
+      notify: remove_temp_file
+
+    - name: "Dump variable content" 
+      ansible.builtin.copy: 
+        dest: "{{ handler_dump_file_path + handler_dump_file_name }}"
+        content: "{{ terraform_query.outputs | ansible.builtin.to_nice_yaml(indent=2) }}"
+        force: true
+
+
+
+
+
+

@@ -1,0 +1,106 @@
+existing_vms:
+  sensitive: false
+  type:
+  - object
+  - filter:
+    - list
+    - - object
+      - name: string
+        regex: bool
+        values:
+        - list
+        - string
+    id: string
+    node_name: string
+    tags:
+    - list
+    - string
+    vms:
+    - list
+    - - object
+      - name: string
+        node_name: string
+        status: string
+        tags:
+        - list
+        - string
+        template: bool
+        vm_id: number
+  value:
+    filter: null
+    id: c53196c5-dd74-4a77-936a-070223076eac
+    node_name: null
+    tags: null
+    vms:
+    - name: Pi-Hole-DNS
+      node_name: proxmox
+      status: running
+      tags: []
+      template: false
+      vm_id: 100
+    - name: DEV01
+      node_name: proxmox
+      status: running
+      tags: []
+      template: false
+      vm_id: 101
+    - name: kubecontrol1
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 102
+    - name: kubeworker1
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 103
+    - name: kubeworker2
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 104
+    - name: rhal9-template
+      node_name: proxmox
+      status: running
+      tags: []
+      template: false
+      vm_id: 106
+    - name: SNO
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 107
+    - name: ocpn-1
+      node_name: proxmox
+      status: running
+      tags:
+      - master
+      - openshift
+      - terraform
+      - worker
+      template: false
+      vm_id: 108
+    - name: ocpn-2
+      node_name: proxmox
+      status: running
+      tags:
+      - master
+      - openshift
+      - terraform
+      - worker
+      template: false
+      vm_id: 109
+    - name: ocpn-0
+      node_name: proxmox
+      status: running
+      tags:
+      - master
+      - openshift
+      - terraform
+      - worker
+      template: false
+      vm_id: 110
