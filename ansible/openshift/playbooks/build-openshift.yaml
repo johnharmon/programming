@@ -4,61 +4,142 @@
   handlers:
     - name: remove_temp_file 
       ansible.builtin.file:
-        path: "{{ ansible_facts.handler_remove_temp_file }}"
+        path: "{{ handler_remove_temp_file }}"
         state: absent
     - name: dump_variable_content
       ansible.builtin.copy:
-        dest: "{{ ansible_facts.handler_dump_file_path + ansible_facts.handler_dump_file_name }}"
-        content: "{{ ansible.builtin.json_encode(ansible_facts.handler_dump_file_content) }}"
+        dest: "{{ handler_dump_file_path + handler_dump_file_name }}"
+        content: "{{ ansible.builtin.json_encode(handler_dump_file_content) }}"
   tasks:
-
     - name: "debug shell cwd" 
       ansible.builtin.debug: 
-        var: shell_cwd
+        var: project_dir
 
     - name: "Set proxmox_config"
       ansible.builtin.set_fact:
-        handler_remove_temp_file: "{{ shell_cwd + '/' + 'templates/terraform/query_vms/vars.tfvars' }}"
-        handler_dump_file_path: "{{ shell_cwd + '/dump/' }}"
+        handler_remove_temp_file: "{{ project_dir + '/templates/terraform/query_vms/vars.tfvars' }}"
+        handler_dump_file_path: "{{ project_dir + '/dump/' }}"
         handler_dump_file_name: "proxmox_query.yaml" 
         handler_dump_file_content:
-        handler_temp_file: "{{ shell_cwd + '/templates/terraform/query_vms/vars.tfvars' }}"
+        handler_temp_file: "{{ project_dir + '/templates/terraform/query_vms/vars.tfvars' }}"
         proxmox_mac_list: "{{ lookup('macgen', count=3, exclude=(existing_macs | default([]))) }}"
-        dump_file_path: "{{ shell_cwd + '/dump/terraform_output.json'  }}"
+        dump_file_path: "{{ project_dir + '/dump/terraform_output.json'  }}"
         proxmox_config: 
           proxmox_node_name: "proxmox"
           openshift_nodes: 3
           iso_url: "http://dev01/isos/openshift-install.iso"
           openshift_install_iso_name: "opensfhit-install.iso"
-          proxmox_username: "harmonj"
+          proxmox_username: "harmonj@pam"
           proxmox_endpoint: "https://proxmox.harmonlab.com:8006/"
           proxmox_ssh_private_key_file: "files/ssh/id_rsa" 
-          proxmox_password: proxmox_password 
+          proxmox_password: "{{ lookup('env', 'TF_VAR_proxmox_password') }}"
+
+    - name: "Debug handler_remove_temp_file" 
+      ansible.builtin.debug:
+        msg: |  
+          "{{ 'handler_remove_temp_file: ' ~ handler_remove_temp_file }}"
 
     - name: "Template terraform vars" 
+      #notify: remove_temp_file
       ansible.builtin.template:
-        src: "{{ shell_cwd + '/templates/terraform/query_vms/.jinja_templates/vars.tfvars.j2' }}"
+        src: "{{ project_dir + '/templates/terraform/query_vms/.jinja_templates/vars.tfvars.j2' }}"
         dest: "{{ handler_temp_file }}"
+        force: true
       vars: 
         proxmox_config: ansible_facts.proxmox_config
 
     - name: "Use terraform to get existing vms" 
+      register: terraform_query
+      notify: remove_temp_file
       community.general.terraform:
-        project_path: "{{ shell_cwd + '/templates/terraform/query_vms' }}"
+        project_path: "{{ project_dir + '/templates/terraform/query_vms' }}"
         state: present
         force_init: true
         complex_vars: true 
         variables:
           proxmox_password: "{{ lookup('env', 'TF_VAR_proxmox_password') }}"
-          #proxmox_config: proxmox_config
-      register: terraform_query
-      notify: remove_temp_file
 
     - name: "Dump variable content" 
+      notify: remove_temp_file
       ansible.builtin.copy: 
         dest: "{{ handler_dump_file_path + handler_dump_file_name }}"
         content: "{{ terraform_query.outputs | ansible.builtin.to_nice_yaml(indent=2) }}"
         force: true
+
+    - name: "Extract list of vm ids" 
+      ansible.builtin.set_fact:
+        vm_ids_and_nodes:  "{{ terraform_query.outputs.existing_vms.value.vms | community.general.json_query('[*].{vm_id: vm_id, node: node_name}') }}"
+
+    - name: "Query api for ticket" 
+      register: vm_ticket
+      ansible.builtin.uri:
+        url: "{{ proxmox_config.proxmox_endpoint ~ 'api2/json/access/ticket' }}"
+        method: POST
+        validate_certs: false
+        force_basic_auth: true 
+        body_format: json
+        body: 
+          username: "{{ proxmox_config.proxmox_username }}" 
+          password: "{{ proxmox_config.proxmox_password }}"
+
+    - name: "Dump ticket returned value"
+      ansible.builtin.copy:
+        content: "{{ vm_ticket | to_nice_yaml(indent=2) }}"
+        dest: "{{ handler_dump_file_path + 'vm_ticket.yaml' }}"
+
+    - name: "Query api for full vm info" 
+      register: vm_configs
+      loop: "{{ vm_ids_and_nodes }}"
+      loop_control:
+        loop_var: vm_info
+      ansible.builtin.uri:
+        url: "{{ proxmox_config.proxmox_endpoint ~ 'api2/json/nodes/' ~ vm_info.node ~ '/qemu/' ~ vm_info.vm_id ~ '/config' }}"
+        method: GET
+        validate_certs: false
+        force_basic_auth: true 
+        headers:
+          Cookie: "{{ 'PVEAuthCookie=' ~ vm_ticket.json.data.ticket }}"
+        url_username: "{{ proxmox_config.proxmox_username }}" 
+        url_password: "{{ proxmox_config.proxmox_password }}"
+
+    - name: "Dump registered values"
+      ansible.builtin.copy:
+        content: "{{ vm_configs.results | to_nice_yaml(indent=2) }}"
+        dest: "{{ handler_dump_file_path + 'terraform_vm_configs.yaml' }}"
+
+    - name: "Extract mac addresses" 
+      vars:
+        query: '[].json.data.net0'
+        mac_regex: '([0-9A-F]{2}:){5}([0-9A-F]{2})'
+      ansible.builtin.set_fact:
+        used_mac_addresses: "{{ vm_configs.results | community.general.json_query(query) | map('ansible.builtin.regex_search', mac_regex, ignorecase=true) | list }}"
+
+    - name: "Dump used mac addresses"
+      ansible.builtin.copy:
+        content: "{{ used_mac_addresses | to_nice_yaml(indent=2) }}"
+        dest: "{{ handler_dump_file_path + 'used_mac_addresses.yaml' }}"
+
+    - name: "Generate new mac addresses" 
+      ansible.builtin.set_fact:
+        openshift_mac_addresses: "{{ query('macgen', count=3, exclude=(used_mac_addresses | default([]))) }}"
+
+    - name: "debug openshift_mac_addresses type"
+      ansible.builtin.debug: 
+        msg: "type: {{ openshift_mac_addresses | type_debug }}"
+
+    - name: "Dump used mac addresses"
+      ansible.builtin.copy:
+        content: "{{ openshift_mac_addresses | to_nice_yaml(indent=2) }}"
+        dest: "{{ handler_dump_file_path + 'openshift_mac_addresses.yaml' }}"
+
+      
+
+
+
+
+
+
+
 
 
 
