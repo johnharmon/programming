@@ -20,6 +20,7 @@
         handler_remove_temp_file: "{{ project_dir + '/templates/terraform/query_vms/vars.tfvars' }}"
         handler_dump_file_path: "{{ project_dir + '/dump/' }}"
         handler_dump_file_name: "proxmox_query.yaml" 
+        openshift_api_vip: "192.168.86.100"
         handler_dump_file_content:
         handler_temp_file: "{{ project_dir + '/templates/terraform/query_vms/vars.tfvars' }}"
         proxmox_mac_list: "{{ lookup('macgen', count=3, exclude=(existing_macs | default([]))) }}"
@@ -119,19 +120,35 @@
         content: "{{ used_mac_addresses | to_nice_yaml(indent=2) }}"
         dest: "{{ handler_dump_file_path + 'used_mac_addresses.yaml' }}"
 
+
     - name: "Generate new mac addresses" 
       ansible.builtin.set_fact:
         openshift_mac_addresses: "{{ query('macgen', count=3, exclude=(used_mac_addresses | default([]))) }}"
+
+    - name: "Generate ip addresses in a loop because ipmath wants to not work with a map" 
+      loop: "{{ query('ansible.builtin.sequence', 'count=' ~ (openshift_node_count | default(3)) ) | map('int') }}"
+      loop_control:
+        loop_var: ip_offset
+      ansible.builtin.set_fact: 
+        openshift_host_ips: "{{ (openshift_host_ips | default([])) +  [(openshift_api_vip | ansible.utils.ipmath(ip_offset))] }}"
+
+    - name: "Generate host data structure for templating"
+      ansible.builtin.set_fact:
+        openshift_hosts: "{{ openshift_host_ips | zip(openshift_mac_addresses) | json_query('[].{ip_address: @[0], mac_address: @[1]}') }}"
 
     - name: "debug openshift_mac_addresses type"
       ansible.builtin.debug: 
         msg: "type: {{ openshift_mac_addresses | type_debug }}"
 
-    - name: "Dump used mac addresses"
+    - name: "Dump new mac addresses"
       ansible.builtin.copy:
-        content: "{{ openshift_mac_addresses | to_nice_yaml(indent=2) }}"
+        content: "{{ openshift_hosts | to_nice_yaml(indent=2) }}"
         dest: "{{ handler_dump_file_path + 'openshift_mac_addresses.yaml' }}"
 
+#    - name: "Create openshift hosts data" 
+#      ansible.builtin.set_fact: 
+#        openshift_hosts: >-
+#          {{ openshift_mac_addresses | zip
       
 
 

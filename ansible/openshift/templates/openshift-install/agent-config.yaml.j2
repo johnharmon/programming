@@ -1,0 +1,38 @@
+apiVersion: v1beta1
+kind: AgentConfig
+metadata:
+  name: ocp
+rendezvousIP: "{{ rendezvous_ip }}"
+additionalNTPSources:
+hosts:
+{% for host in openshift_hosts %}
+  - hostname: "{{ host.name }}"
+    role: master
+    interfaces:
+      - macAddress: {{ host.mac_address }}
+    networkConfig:
+      interfaces:
+        - mac-address: {{ host.mac_address }}
+          name: eth0
+          identifier: mac-address
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: {{ host.ip_address }}
+                prefix-length: 24
+          ipv6:
+            enabled: false
+      dns-resolver:
+        config:
+          server:
+            - 192.168.86.4
+            - 8.8.8.8
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: 192.168.86.1
+            next-hop-interface: {{ 
+            table-id: 254
