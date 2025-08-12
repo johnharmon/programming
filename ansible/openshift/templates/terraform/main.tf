@@ -60,7 +60,7 @@ locals {
 
 resource "proxmox_virtual_environment_vm" "openshift_nodes" {
   count       = var.openshift_nodes
-  name        = "ocpn-${count.index}"
+  name        = "ocpn-${count.index + 1}"
   description = "Openshift Node"
   tags        = ["terraform", "openshift", "worker", "master"]
   node_name   = var.proxmox_node_name
