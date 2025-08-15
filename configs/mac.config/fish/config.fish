@@ -32,6 +32,9 @@ if status is-interactive
         else if test (count $argv) > 1
             git commit *.go -m (string join ' ' $argv[2..-1])
             git push origin HEAD:$argv[1]
+        else 
+            git commit *.go -m 'committing more work'
+            git push origin HEAD:$argv[1]
         end
     end
     tmux
