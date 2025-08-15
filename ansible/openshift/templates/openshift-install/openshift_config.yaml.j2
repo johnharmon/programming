@@ -1,7 +1,0 @@
-openshift_hosts: 
-{% for address in mac_addresses %}
-  - mac_address: {{ address }} 
-    ip_address:  {{ (openshift_api_vip | ansible.utils.ipmath(loop.index) }}
-    hostname: ocpn-0{{ loop.index }}
-{% endfor %}
-
