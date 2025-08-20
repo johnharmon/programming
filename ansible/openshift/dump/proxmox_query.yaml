@@ -28,7 +28,7 @@ existing_vms:
         vm_id: number
   value:
     filter: null
-    id: c53196c5-dd74-4a77-936a-070223076eac
+    id: 0e3ef333-0901-4b75-a04e-2b3f72271378
     node_name: null
     tags: null
     vms:
@@ -64,7 +64,7 @@ existing_vms:
       vm_id: 104
     - name: rhal9-template
       node_name: proxmox
-      status: running
+      status: stopped
       tags: []
       template: false
       vm_id: 106
@@ -74,33 +74,3 @@ existing_vms:
       tags: []
       template: false
       vm_id: 107
-    - name: ocpn-1
-      node_name: proxmox
-      status: running
-      tags:
-      - master
-      - openshift
-      - terraform
-      - worker
-      template: false
-      vm_id: 108
-    - name: ocpn-2
-      node_name: proxmox
-      status: running
-      tags:
-      - master
-      - openshift
-      - terraform
-      - worker
-      template: false
-      vm_id: 109
-    - name: ocpn-0
-      node_name: proxmox
-      status: running
-      tags:
-      - master
-      - openshift
-      - terraform
-      - worker
-      template: false
-      vm_id: 110

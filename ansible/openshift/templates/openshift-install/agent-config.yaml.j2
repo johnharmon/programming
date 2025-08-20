@@ -10,6 +10,9 @@ hosts:
     role: master
     interfaces:
       - macAddress: {{ host.mac_address }}
+    rootDeviceHints: 
+      deviceName: "/dev/vda"
+{#      serialNumber: OCP-BOOT01 #}
     networkConfig:
       interfaces:
         - mac-address: {{ host.mac_address }}
