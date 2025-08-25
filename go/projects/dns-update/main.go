@@ -12,12 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	A = iota
-	AAAA
-	CNAME
-)
-
 var (
 	apiKey     string
 	zoneName   string
@@ -93,18 +87,18 @@ func GetDNSRecord(apiKey string, apiUrl string, zoneID string, recordName string
 	return recordResult
 }
 
-func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordName string, ipAddress string, apiUrl string, apiKey string, zoneID string) *http.Response {
+func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordSettings RecordSetting, ipAddress string, apiUrl string, apiKey string, zoneID string) *http.Response {
 	method := "POST"
 	var setRecord *CloudFlareDnsRecord
 	for _, record := range existingRecords.Result {
-		if record.Name == recordName {
+		if record.Name == recordSettings.Name {
 			setRecord = CreateCloudFlareDnsRecordPtr(record.Name, record.Ttl, record.Type, record.Comment, ipAddress, record.Proxied)
 			method = "PATCH"
 			break
 		}
 	}
 	if setRecord == nil {
-		setRecord = CreateCloudFlareDnsRecordPtr(recordName, 3600, "A", "", ipAddress, false)
+		setRecord = CreateCloudFlareDnsRecordPtr(recordSettings.Name, recordSettings.Ttl, recordSettings.Type, "", ipAddress, recordSettings.Proxied)
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -162,11 +156,18 @@ func GetConfig(fileName string, apiKey string) Config {
 
 func CreateDefaultConfig(apiKey string) Config {
 	config := Config{
-		ApiKey:      apiKey,
-		ZoneName:    "harmonlab.io",
-		RecordNames: []string{"@"},
-		RecordType:  "A",
-		IpUrl:       "https://api.ipify.org",
+		ApiKey:   apiKey,
+		ZoneName: "harmonlab.io",
+		RecordNames: []RecordSetting{
+			{
+				Name:    "@",
+				Type:    "A",
+				Ttl:     3600,
+				Proxied: false,
+			},
+		},
+		RecordType: "A",
+		IpUrl:      "https://api.ipify.org",
 	}
 	return config
 }
@@ -199,7 +200,7 @@ func main() {
 	dnsRecords := GetDNSRecord(config.ApiKey,
 		apiUrl,
 		dnsZone.Result[0].ID,
-		config.RecordNames[0])
+		config.RecordNames[0].Name)
 	setResponse := SetDnsRecordFromResponse(dnsRecords, config.RecordNames[0], ipAddress, apiUrl, config.ApiKey, dnsZone.Result[0].ID)
 	fmt.Println("Set response: ")
 	encoder.Encode(setResponse)
@@ -333,11 +334,11 @@ type CloudFlareDnsRecord struct {
 }
 
 type Config struct {
-	ApiKey      string   `yaml:"apiKey"`
-	ZoneName    string   `yaml:"zoneName"`
-	RecordNames []string `yaml:"recordNames"`
-	RecordType  string   `yaml:"recordType"`
-	IpUrl       string   `yaml:"ipUrl"`
+	ApiKey      string          `yaml:"apiKey"`
+	ZoneName    string          `yaml:"zoneName"`
+	RecordNames []RecordSetting `yaml:"recordNames"`
+	RecordType  string          `yaml:"recordType"`
+	IpUrl       string          `yaml:"ipUrl"`
 }
 
 // Top-level response
@@ -420,131 +421,9 @@ type TenantUnit struct {
 	ID string `json:"id"`
 }
 
-/*
-type CloudFlareAPIError struct {
-	code              int
-	message           string
-	documentation_url string
-	source            struct {
-		pointer string
-	}
+type RecordSetting struct {
+	Name    string `yaml:"name"`
+	Type    string `yaml:"type"`
+	Ttl     int    `yaml:"ttl"`
+	Proxied bool   `yaml:"proxied"`
 }
-
-type CloudFlareAPIMessage struct {
-	code              int
-	message           string
-	documentation_url string
-	source            struct {
-		pointer string
-	}
-}
-
-type CloudFlareDnsZoneResult struct {
-	id      string
-	account struct {
-		id   string
-		name string
-	}
-	meta struct {
-		cdn_only                 bool
-		custom_certificate_quota int
-		dns_noly                 bool
-		foundation_dns           bool
-		page_rule_quota          int
-		phishing_detected        bool
-		step                     int
-	}
-	name  string
-	owner struct {
-		id   string
-		name string
-		Type string `json:"type"`
-	}
-	plan struct {
-		id                 string
-		can_subscribe      bool
-		currency           string
-		externally_managed bool
-		frequency          string
-		is_subscribed      bool
-		legacy_discount    bool
-		legacy_id          string
-		name               string
-		price              float64
-	}
-	cname_suffix string
-	paused       bool
-	permissions  []string
-	tenant       struct {
-		id   string
-		name string
-	}
-	tenant_unit struct {
-		id string
-	}
-	Type                string `json:"type"`
-	vanity_name_servers []string
-}
-
-type CloudFlareDnsZoneResultInfo struct {
-	count       int
-	page        int
-	per_page    int
-total_count int
-	total_pages int
-}
-
-type CloudFlareDnsZoneMessage struct {
-	code              int
-	message           string
-	dovumentation_url string
-	source            struct {
-		pointer string
-	}
-}
-
-type CloudFlareDnsZoneResponse struct {
-	errors      []CloudFlareAPIError
-	messages    []CloudFlareAPIMessage
-	success     bool
-	result      []CloudFlareDnsZoneResult
-	result_info CloudFlareDnsZoneResultInfo
-}
-
-type CloudFlareDnsRecordResponse struct {
-	errors   []CloudFlareAPIError
-	messages []CloudFlareAPIMessage
-	success  bool
-	result   []CloudFlareDnsRecordResult
-}
-
-type CloudFlareDnsRecordResult struct {
-	name    string
-	ttl     int
-	Type    string `json:"type"`
-	comment string
-	content string
-	proxied bool
-	setting struct {
-		ipv4_only bool
-		ipv6_only bool
-	}
-	tags []string
-	id   string
-}
-
-type CloudFlareDnsRecord struct {
-	name    string
-	ttl     int
-	Type    string `json:"type"`
-	comment string
-	content string
-	proxied bool
-	setting struct {
-		ipv4_only bool
-		ipv6_only bool
-	}
-	tags []string
-	id   string
-}
-*/
