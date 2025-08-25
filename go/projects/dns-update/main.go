@@ -68,7 +68,11 @@ func GetCloudFlareDnsZone(apiKey string, apiUrl string, zoneName string) *CloudF
 	if err != nil {
 		fmt.Printf("Error reading body: %s\n", err)
 	}
-	fmt.Println(string(bodyResponse))
+	rawBody := map[string]any{}
+	json.Unmarshal(bodyResponse, &rawBody)
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(rawBody)
 	result := &CloudFlareDnsZoneResponse{}
 	json.Unmarshal(bodyResponse, result)
 	// oneLineResult := bodyData["result"].([]any)[0].(map[string]any)["id"].(string)
@@ -90,18 +94,21 @@ func GetDNSRecord(apiKey string, apiUrl string, zoneID string, recordName string
 }
 
 func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordName string, ipAddress string, apiUrl string, apiKey string, zoneID string) *http.Response {
-	method := "PATCH"
+	method := "POST"
 	var setRecord *CloudFlareDnsRecord
 	for _, record := range existingRecords.Result {
 		if record.Name == recordName {
 			setRecord = CreateCloudFlareDnsRecordPtr(record.Name, record.Ttl, record.Type, record.Comment, ipAddress, record.Proxied)
-			method = "POST"
+			method = "PATCH"
 			break
 		}
 	}
 	if setRecord == nil {
 		setRecord = CreateCloudFlareDnsRecordPtr(recordName, 3600, "A", "", ipAddress, false)
 	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(setRecord)
 	return SetDnsRecord(setRecord, method, apiUrl, recordName, ipAddress, apiKey, zoneID)
 }
 
@@ -118,14 +125,27 @@ func CreateCloudFlareDnsRecordPtr(name string, ttl int, r_type string, comment s
 }
 
 func SetDnsRecord(record *CloudFlareDnsRecord, method string, apiUrl string, recordName string, recordValue string, apiKey string, zoneID string) *http.Response {
-	endpointUrl := fmt.Sprintf("%s/client/v4/zones/%s/dns_records", apiUrl, zoneID)
+	var endpointUrl string
+	if method == "PATCH" {
+		endpointUrl = fmt.Sprintf("%s/client/v4/zones/%s/dns_records/%s", apiUrl, zoneID, record.ID)
+	} else {
+		endpointUrl = fmt.Sprintf("%s/client/v4/zones/%s/dns_records", apiUrl, zoneID)
+	}
 	client := &http.Client{}
+	fmt.Println(endpointUrl)
 	body := &bytes.Buffer{}
 	bodyContent, _ := json.Marshal(record)
 	body.Write(bodyContent)
 	request, _ := http.NewRequest(method, endpointUrl, body)
 	request.Header.Add("Authorization", "Bearer "+apiKey)
 	response, _ := client.Do(request)
+	fmt.Printf("Set Record Response: %d", response.StatusCode)
+	responseContent, _ := io.ReadAll(response.Body)
+	responseBody := &CloudFlareDnsRecordWriteResponse{}
+	json.Unmarshal(responseContent, &responseBody)
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(responseBody)
 	return response
 }
 
@@ -318,6 +338,86 @@ type Config struct {
 	RecordNames []string `yaml:"recordNames"`
 	RecordType  string   `yaml:"recordType"`
 	IpUrl       string   `yaml:"ipUrl"`
+}
+
+// Top-level response
+type CloudFlareDnsRecordWriteResponse struct {
+	Errors   []APIMessage `json:"errors"`
+	Messages []APIMessage `json:"messages"`
+	Success  bool         `json:"success"`
+	Result   Zone         `json:"result"`
+}
+
+// Reused error/message shape
+type APIMessage struct {
+	Code             int            `json:"code"`
+	Message          string         `json:"message"`
+	DocumentationURL string         `json:"documentation_url"`
+	Source           *MessageSource `json:"source,omitempty"`
+}
+
+type MessageSource struct {
+	Pointer string `json:"pointer"`
+}
+
+// "result" object
+type Zone struct {
+	ID                string     `json:"id"`
+	Account           Account    `json:"account"`
+	Meta              Meta       `json:"meta"`
+	Name              string     `json:"name"`
+	Owner             Owner      `json:"owner"`
+	Plan              Plan       `json:"plan"`
+	CNameSuffix       string     `json:"cname_suffix"`
+	Paused            bool       `json:"paused"`
+	Permissions       []string   `json:"permissions"`
+	Tenant            Tenant     `json:"tenant"`
+	TenantUnit        TenantUnit `json:"tenant_unit"`
+	Type              string     `json:"type"` // JSON key "type"
+	VanityNameServers []string   `json:"vanity_name_servers"`
+}
+
+type Account struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Meta struct {
+	CDNOnly                bool `json:"cdn_only"`
+	CustomCertificateQuota int  `json:"custom_certificate_quota"`
+	DNSOnly                bool `json:"dns_only"`
+	FoundationDNS          bool `json:"foundation_dns"`
+	PageRuleQuota          int  `json:"page_rule_quota"`
+	PhishingDetected       bool `json:"phishing_detected"`
+	Step                   int  `json:"step"`
+}
+
+type Owner struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+type Plan struct {
+	ID                string  `json:"id"`
+	CanSubscribe      bool    `json:"can_subscribe"`
+	Currency          string  `json:"currency"`
+	ExternallyManaged bool    `json:"externally_managed"`
+	Frequency         string  `json:"frequency"`
+	IsSubscribed      bool    `json:"is_subscribed"`
+	LegacyDiscount    bool    `json:"legacy_discount"`
+	LegacyID          string  `json:"legacy_id"`
+	Name              string  `json:"name"`
+	Price             float64 `json:"price"`
+}
+
+type Tenant struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type TenantUnit struct {
+	ID string `json:"id"`
 }
 
 /*
