@@ -13,12 +13,13 @@ import (
 )
 
 var (
-	apiKey     string
-	zoneName   string
-	recordName []string
-	recordType int
-	apiUrl     = "https://api.cloudflare.com"
-	ipAddress  string
+	GlobaLDefaults = Config{}
+	apiKey         string
+	zoneName       string
+	recordName     []string
+	recordType     int
+	apiUrl         = "https://api.cloudflare.com"
+	ipAddress      string
 )
 
 func GetAPIKey() string {
@@ -87,23 +88,66 @@ func GetDNSRecord(apiKey string, apiUrl string, zoneID string, recordName string
 	return recordResult
 }
 
-func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordSettings RecordSetting, ipAddress string, apiUrl string, apiKey string, zoneID string) *http.Response {
+func BoolPtr(b bool) *bool {
+	return &b
+}
+
+func ReconcileRecordSettingndExistingEntry(setting *RecordSetting, existingRecord CloudFlareDnsRecord) {
+	switch {
+	case setting.Ttl == 0:
+		setting.Ttl = existingRecord.Ttl
+	case setting.Type == "":
+		setting.Type = existingRecord.Type
+	case setting.Proxied == nil:
+		setting.Proxied = BoolPtr(true)
+	}
+}
+
+func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []CloudFlareDnsRecord) (rs []PatchRecord) {
+	recordsByName := make(map[string]map[string][]*CloudFlareDnsRecord)
+	for _, record := range existingRecords {
+		recordsByName[record.Name][record.Type] = append(recordsByName[record.Name][record.Type], &record)
+	}
+	for _, setting := range settings {
+		setting.SetZeroValues()
+		id := ""
+		if recordForSetting := recordsByName[setting.Name][setting.Type][0]; recordForSetting != nil {
+			id = recordForSetting.ID
+		}
+		rs = append(rs, PatchRecord{
+			RecordID: id, Setting: RecordSetting{
+				Name:    setting.Name,
+				Ttl:     setting.Ttl,
+				Type:    setting.Type,
+				Proxied: setting.Proxied,
+				Comment: setting.Comment,
+				Content: setting.Content,
+			},
+		})
+	}
+	// rs.Records, rs.Settings = recordsByName, settingsByName
+	return rs
+}
+
+func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordSettings []RecordSetting, ipAddress string, apiUrl string, apiKey string, zoneID string) *http.Response {
+	recordUpdates := ExtractSettingsFromRecords(recordSettings, existingRecords.Result)
 	method := "POST"
 	var setRecord *CloudFlareDnsRecord
 	for _, record := range existingRecords.Result {
 		if record.Name == recordSettings.Name {
+			ReconcileRecordSettingndExistingEntry(&recordSettings)
 			setRecord = CreateCloudFlareDnsRecordPtr(record.Name, record.Ttl, record.Type, record.Comment, ipAddress, record.Proxied)
 			method = "PATCH"
 			break
 		}
 	}
 	if setRecord == nil {
-		setRecord = CreateCloudFlareDnsRecordPtr(recordSettings.Name, recordSettings.Ttl, recordSettings.Type, "", ipAddress, recordSettings.Proxied)
+		setRecord = CreateCloudFlareDnsRecordPtr(recordSettings.Name, recordSettings.Ttl, recordSettings.Type, "", ipAddress, *recordSettings.Proxied)
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	encoder.Encode(setRecord)
-	return SetDnsRecord(setRecord, method, apiUrl, recordName, ipAddress, apiKey, zoneID)
+	return SetDnsRecord(setRecord, method, apiUrl, apiKey, zoneID)
 }
 
 func CreateCloudFlareDnsRecordPtr(name string, ttl int, r_type string, comment string, content string, proxied bool) *CloudFlareDnsRecord {
@@ -118,7 +162,7 @@ func CreateCloudFlareDnsRecordPtr(name string, ttl int, r_type string, comment s
 	return record
 }
 
-func SetDnsRecord(record *CloudFlareDnsRecord, method string, apiUrl string, recordName string, recordValue string, apiKey string, zoneID string) *http.Response {
+func SetDnsRecord(record *CloudFlareDnsRecord, method string, apiUrl string, apiKey string, zoneID string) *http.Response {
 	var endpointUrl string
 	if method == "PATCH" {
 		endpointUrl = fmt.Sprintf("%s/client/v4/zones/%s/dns_records/%s", apiUrl, zoneID, record.ID)
@@ -158,12 +202,12 @@ func CreateDefaultConfig(apiKey string) Config {
 	config := Config{
 		ApiKey:   apiKey,
 		ZoneName: "harmonlab.io",
-		RecordNames: []RecordSetting{
+		RecordSettings: []RecordSetting{
 			{
 				Name:    "@",
 				Type:    "A",
 				Ttl:     3600,
-				Proxied: false,
+				Proxied: BoolPtr(false),
 			},
 		},
 		RecordType: "A",
@@ -200,8 +244,8 @@ func main() {
 	dnsRecords := GetDNSRecord(config.ApiKey,
 		apiUrl,
 		dnsZone.Result[0].ID,
-		config.RecordNames[0].Name)
-	setResponse := SetDnsRecordFromResponse(dnsRecords, config.RecordNames[0], ipAddress, apiUrl, config.ApiKey, dnsZone.Result[0].ID)
+		config.RecordSettings[0].Name)
+	setResponse := SetDnsRecordFromResponse(dnsRecords, config.RecordSettings[0], ipAddress, apiUrl, config.ApiKey, dnsZone.Result[0].ID)
 	fmt.Println("Set response: ")
 	encoder.Encode(setResponse)
 }
@@ -334,11 +378,11 @@ type CloudFlareDnsRecord struct {
 }
 
 type Config struct {
-	ApiKey      string          `yaml:"apiKey"`
-	ZoneName    string          `yaml:"zoneName"`
-	RecordNames []RecordSetting `yaml:"recordNames"`
-	RecordType  string          `yaml:"recordType"`
-	IpUrl       string          `yaml:"ipUrl"`
+	ApiKey         string          `yaml:"apiKey"`
+	ZoneName       string          `yaml:"zoneName"`
+	RecordSettings []RecordSetting `yaml:"recordNames"`
+	RecordType     string          `yaml:"recordType"`
+	IpUrl          string          `yaml:"ipUrl"`
 }
 
 // Top-level response
@@ -422,8 +466,37 @@ type TenantUnit struct {
 }
 
 type RecordSetting struct {
-	Name    string `yaml:"name"`
-	Type    string `yaml:"type"`
-	Ttl     int    `yaml:"ttl"`
-	Proxied bool   `yaml:"proxied"`
+	Name    string  `yaml:"name" json:"name"`
+	Type    string  `yaml:"type" json:"type"`
+	Ttl     int     `yaml:"ttl" json:"ttl"`
+	Proxied *bool   `yaml:"proxied" json:"proxied"`
+	Comment *string `yaml:"comment" json:"comment"`
+	Content string  `yaml:"content" json:"content"`
+}
+
+type RecordsAndSettings struct {
+	Records  map[string]map[string][]CloudFlareDnsRecord
+	Settings map[string]map[string][]RecordSetting
+}
+
+type PatchRecord struct {
+	RecordSetting
+	RecordID string `json:"id"`
+}
+
+type CloudFlareBatchRecordPayload struct {
+	Posts   []RecordSetting `yaml:"posts"`
+	Patches []PatchRecord   `yaml:"patches"`
+}
+
+func (rs *RecordSetting) SetZeroValues() {
+	if rs.Type == "" {
+		rs.Type = "A"
+	}
+	if rs.Proxied == nil {
+		rs.Proxied = BoolPtr(true)
+	}
+	if rs.Content == "" {
+		rs.Content = ipAddress
+	}
 }
