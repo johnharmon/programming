@@ -219,6 +219,12 @@
             chdir: "/tmp/openshift-install/" 
             cmd: "{{ openshift_install_bin_path }} agent create image --dir='./configs'"
 
+        - name: "Save the kubeconfig and kubeadm password" 
+          loop: "{{ ['kubeconfig', 'kubeadmin-password'] }}"
+          ansible.builtin.copy: 
+            src: "/tmp/openshift-install/configs/auth/{{ item }}" 
+            dest: "{{ [project_dir, 'dump', item] | ansible.builtin.path_join }}"
+
         - name: "Find openshift boot iso file"
           ansible.builtin.find:
             paths: "/tmp/openshift-install/configs"
