@@ -20,6 +20,7 @@ var (
 	recordType     int
 	apiUrl         = "https://api.cloudflare.com"
 	ipAddress      string
+	stdoutEncoder  *json.Encoder
 )
 
 func GetAPIKey() string {
@@ -78,6 +79,23 @@ func GetDNSRecord(apiKey string, apiUrl string, zoneID string, recordName string
 	data, _ := io.ReadAll(request.Body)
 	recordResult := &CloudFlareDnsRecordResponse{}
 	json.Unmarshal(data, recordResult)
+	stdoutEncoder.Encode(recordResult)
+	return recordResult
+}
+
+func GetDNSRecords(apiKey string, apiUrl string, zoneID string) *CloudFlareDnsRecordResponse {
+	rawURL := fmt.Sprintf("%s/client/v4/zones/%s/dns_records", apiUrl, zoneID)
+	fmt.Printf("Record Query URL: %s\n", rawURL)
+	client := &http.Client{}
+	body := &bytes.Buffer{}
+	request, _ := http.NewRequest("GET", rawURL, body)
+	request.Header.Add("Authorization", "Bearer "+apiKey)
+	response, _ := client.Do(request)
+	data, _ := io.ReadAll(response.Body)
+	stdoutEncoder.Encode(data)
+	recordResult := &CloudFlareDnsRecordResponse{}
+	json.Unmarshal(data, recordResult)
+	// stdoutEncoder.Encode(recordResult)
 	return recordResult
 }
 
@@ -96,14 +114,22 @@ func ReconcileRecordSettingndExistingEntry(setting *RecordSetting, existingRecor
 	}
 }
 
-func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []CloudFlareDnsRecord) (payload CloudFlareBatchRecordPayload) {
+func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []CloudFlareDnsRecord, defaultIP string) (payload CloudFlareBatchRecordPayload) {
 	recordsByName := make(map[string]map[string][]*CloudFlareDnsRecord)
 	for _, record := range existingRecords {
+		if recordsByName[record.Name] == nil {
+			recordsByName[record.Name] = make(map[string][]*CloudFlareDnsRecord)
+		}
 		recordsByName[record.Name][record.Type] = append(recordsByName[record.Name][record.Type], &record)
 	}
+	stdoutEncoder.Encode(recordsByName)
 	for _, setting := range settings {
 		setting.SetZeroValues()
-		if recordForSetting := recordsByName[setting.Name][setting.Type][0]; recordForSetting != nil {
+		if recordForSetting := recordsByName[setting.Name][setting.Type]; len(recordForSetting) != 0 {
+			content := setting.Content
+			if content == "" {
+				content = recordsByName[setting.Name][setting.Type][0].Content
+			}
 			payload.Patches = append(payload.Patches,
 				PatchRecord{
 					RecordSetting: RecordSetting{
@@ -112,11 +138,15 @@ func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []Clou
 						Type:    setting.Type,
 						Proxied: setting.Proxied,
 						Comment: setting.Comment,
-						Content: setting.Content,
+						Content: content,
 					},
-					RecordID: recordForSetting.ID,
+					RecordID: recordForSetting[0].ID,
 				})
 		} else {
+			content := setting.Content
+			if content == "" {
+				content = defaultIP
+			}
 			payload.Posts = append(payload.Posts,
 				RecordSetting{
 					Name:    setting.Name,
@@ -124,20 +154,22 @@ func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []Clou
 					Type:    setting.Type,
 					Proxied: setting.Proxied,
 					Comment: setting.Comment,
-					Content: setting.Content,
+					Content: content,
 				})
 		}
 	}
 	return payload
 }
 
-func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordSettings []RecordSetting, ipAddress string, apiUrl string, apiKey string, zoneID string) []*http.Response {
+func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordSettings []RecordSetting, ipAddress string, apiUrl string, apiKey string, zoneID string, defaultIP string) []*http.Response {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
-	recordUpdates := ExtractSettingsFromRecords(recordSettings, existingRecords.Result)
+	recordUpdates := ExtractSettingsFromRecords(recordSettings, existingRecords.Result, defaultIP)
 	body := &bytes.Buffer{}
+	fmt.Println("Record Updates Payload: ")
 	payload, _ := json.Marshal(recordUpdates)
 	body.Write(payload)
+	fmt.Println("Record Updates: ")
 	encoder.Encode(recordUpdates)
 	batchResponse := SetDnsRecordBatch(recordUpdates, apiUrl, apiKey, zoneID)
 	if batchResponse.StatusCode != 200 {
@@ -154,7 +186,7 @@ func SetDnsRecordsIndividually(records CloudFlareBatchRecordPayload, apiUrl stri
 	responses := []*http.Response{}
 	for _, patch := range records.Patches {
 		body.Reset()
-		url := fmt.Sprintf("%s/zones/%s/records/%s", apiUrl, zoneID, patch.RecordID)
+		url := fmt.Sprintf("%s/client/v4/zones/%s/records/%s", apiUrl, zoneID, patch.RecordID)
 		bodyEncoder.Encode(patch)
 		request, _ := http.NewRequest("PATCH", url, body)
 		response, _ := client.Do(request)
@@ -162,7 +194,7 @@ func SetDnsRecordsIndividually(records CloudFlareBatchRecordPayload, apiUrl stri
 	}
 	for _, post := range records.Posts {
 		body.Reset()
-		url := fmt.Sprintf("%s/zones/%s/records", apiUrl, zoneID)
+		url := fmt.Sprintf("%s/client/v4/zones/%s/records", apiUrl, zoneID)
 		bodyEncoder.Encode(post)
 		request, _ := http.NewRequest("POST", url, body)
 		response, _ := client.Do(request)
@@ -184,7 +216,8 @@ func CreateCloudFlareDnsRecordPtr(name string, ttl int, r_type string, comment s
 }
 
 func SetDnsRecordBatch(batch CloudFlareBatchRecordPayload, apiUrl string, apiKey string, zoneID string) *http.Response {
-	endpointURL := fmt.Sprintf("%s/zones/%s/dns_records/batch", apiUrl, zoneID)
+	endpointURL := fmt.Sprintf("%s/client/v4/zones/%s/dns_records/batch", apiUrl, zoneID)
+	fmt.Printf("Batch record endpiont URL: %s\n", endpointURL)
 	client := &http.Client{}
 	fmt.Println(endpointURL)
 	body := &bytes.Buffer{}
@@ -195,7 +228,7 @@ func SetDnsRecordBatch(batch CloudFlareBatchRecordPayload, apiUrl string, apiKey
 	response, _ := client.Do(request)
 	fmt.Printf("Batch Record Response: %d", response.StatusCode)
 	responseContent, _ := io.ReadAll(response.Body)
-	responseBody := &CloudFlareDnsRecordWriteResponse{}
+	responseBody := &CloudFlareDnsBatchRecordResponse{}
 	json.Unmarshal(responseContent, &responseBody)
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -245,7 +278,7 @@ func CreateDefaultConfig(apiKey string) Config {
 		ZoneName: "harmonlab.io",
 		RecordSettings: []RecordSetting{
 			{
-				Name:    "@",
+				Name:    "harmonlab.io",
 				Type:    "A",
 				Ttl:     3600,
 				Proxied: BoolPtr(false),
@@ -270,6 +303,9 @@ func GetIpAddress(ipUrl string) string {
 }
 
 func main() {
+	stdoutEncoder = json.NewEncoder(os.Stdout)
+	stdoutEncoder.SetIndent("", "  ")
+	stdoutEncoder.SetEscapeHTML(false)
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	encoder.SetEscapeHTML(false)
@@ -277,18 +313,31 @@ func main() {
 	if config.ApiKey == "" {
 		config.ApiKey = GetAPIKey()
 	}
+	stdoutEncoder.Encode(config)
 	// fmt.Println("api key: " + config.ApiKey)
 	ipAddress := GetIpAddress(config.IpUrl)
+	if config.DefaultIP == "" {
+		config.DefaultIP = ipAddress
+	}
 	encoder.Encode(ipAddress)
 	dnsZone := GetCloudFlareDnsZone(config.ApiKey, apiUrl, config.ZoneName)
 	// encoder.Encode(dnsZone)
-	dnsRecords := GetDNSRecord(config.ApiKey,
+	dnsRecords := GetDNSRecords(config.ApiKey,
 		apiUrl,
-		dnsZone.Result[0].ID,
-		config.RecordSettings[0].Name)
-	setResponse := SetDnsRecordFromResponse(dnsRecords, config.RecordSettings, ipAddress, apiUrl, config.ApiKey, dnsZone.Result[0].ID)
-	fmt.Println("Set response: ")
-	encoder.Encode(setResponse)
+		dnsZone.Result[0].ID)
+	fmt.Println("DNS record result:")
+	stdoutEncoder.Encode(dnsRecords)
+	SetDnsRecordFromResponse(dnsRecords, config.RecordSettings, ipAddress, apiUrl, config.ApiKey, dnsZone.Result[0].ID,
+		config.DefaultIP)
+	// fmt.Println("Set response: ")
+	// bodyBuffer := &bytes.Buffer{}
+	//
+	//	for _, response := range setResponse {
+	//		bodyBuffer.Reset()
+	//		tmp, _ := io.ReadAll(response.Body)
+	//		bodyBuffer.Write(tmp)
+	//		encoder.Encode(bodyBuffer.Bytes())
+	//	}
 }
 
 type CloudFlareAPIError struct {
@@ -413,17 +462,18 @@ type CloudFlareDnsRecord struct {
 	Setting struct {
 		Ipv4_only bool `json:"ipv4_only"`
 		Ipv6_only bool `json:"ipv6_only"`
-	} `json:"setting"`
+	} `json:"settings"`
 	Tags []string `json:"tags"`
 	ID   string   `json:"id"`
 }
 
 type Config struct {
-	ApiKey         string          `yaml:"apiKey"`
-	ZoneName       string          `yaml:"zoneName"`
-	RecordSettings []RecordSetting `yaml:"recordNames"`
-	RecordType     string          `yaml:"recordType"`
-	IpUrl          string          `yaml:"ipUrl"`
+	ApiKey         string          `yaml:"apiKey" json:"apiKey"`
+	ZoneName       string          `yaml:"zoneName" json:"zoneName"`
+	RecordSettings []RecordSetting `yaml:"recordSettings" json:"recordSettings"`
+	RecordType     string          `yaml:"recordType" json:"recordType"`
+	IpUrl          string          `yaml:"ipUrl" json:"ipUrl"`
+	DefaultIP      string          `yaml:"defaultIP" json:"defaultIP"`
 }
 
 // Top-level response
@@ -432,6 +482,18 @@ type CloudFlareDnsRecordWriteResponse struct {
 	Messages []APIMessage `json:"messages"`
 	Success  bool         `json:"success"`
 	Result   Zone         `json:"result"`
+}
+
+type CloudFlareDnsBatchRecordResponse struct {
+	Errors   []APIMessage `json:"errors"`
+	Messages []APIMessage `json:"messages"`
+	Success  bool         `json:"success"`
+	Result   struct {
+		Deletes []CloudFlareDnsRecord `json:"deletes"`
+		Posts   []CloudFlareDnsRecord `json:"posts"`
+		Patches []CloudFlareDnsRecord `json:"patches"`
+		Puts    []CloudFlareDnsRecord `json:"puts"`
+	} `json:"result"`
 }
 
 // Reused error/message shape
