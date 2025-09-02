@@ -1,0 +1,15 @@
+proxmox_username = {{ proxmox_config.proxmox_username }} 
+proxmox_endpoint = {{ proxmox_config.proxmox_endpoint }} 
+proxmox_ssh_private_key_file = {{ proxmox_config.proxmox_ssh_private_key_file }} 
+{#
+proxmox_node_name = {{ proxmox_config.proxmox_node_name }}
+openshift_install_iso_name = {{ proxmox_config.openshift_install_iso_name }} 
+openshift_nodes = {{ proxmox_config.openshift_nodes }} 
+iso_url = {{ proxmox_config.iso_url }} 
+ansible_vault_password = {{ proxmox_config.ansible_vault_password }} 
+mac_addresses = [
+{% for host in proxmox_config.hosts %}
+  "{{ host.mac_address }}"{% if not loop.last %},{% endif %}
+{% endfor %}]
+]
+#}
