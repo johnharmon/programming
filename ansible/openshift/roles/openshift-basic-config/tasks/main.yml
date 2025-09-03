@@ -1,0 +1,66 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for openshift-basic-config
+
+- name: "Set project_dir variable if not defined"
+  ansible.builtin.set_fact:
+    project_dir: "{{ lookup('ansible.builtin.lines', 'pwd' }}"
+  when: project_dir is not defined
+
+- name: "Extract kubeadmin credentials" 
+  ansible.bultin.set_fact: 
+    kubeadmin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
+    kubeadmin_username: "kubeadmin"
+
+- name: "Delete htpasswd file"
+  ansible.builtin.file:
+    path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
+    state: absent
+
+- name: "Create htpasswd file"
+  ansible.builtin.file:
+    path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
+    state: present
+
+- name: "Create htpasswd entry for {{ openshift_cluster_admin_name }}"
+  community.general.htpasswd:
+    path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
+    name: "{{ openshift_cluster_admin_name }}"
+    password: "{{ openshift_cluster_admin_password }}"
+    hash_scheme: bcrypt
+
+
+- name: "Create htpasswd password secret"
+  kubernetes.core.k8s:
+    password: "{{ openshift_cluster_admin_password }}"
+    username: "{{ openshift_cluster_admin_username }}"
+    state: present
+    definition: 
+      apiVersion: v1
+      kind: secret
+      metadata:
+        name: htpasswd
+        namespace: openshift-config
+      type: opaque
+      stringData:
+        htpasswd: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'htpasswd')) }}"
+      
+
+- name: "Create htpasswd identity provider"
+  kubernetes.core.k8s:
+    password: "{{ openshift_cluster_admin_password }}"
+    username: "{{ openshift_cluster_admin_username }}"
+    template: |
+      apiVersion: config.openshift.io/v1
+      metadata:
+        name: cluster
+      kind: OAuth
+      spec:
+        identityProviders:
+          - name: local
+            mappingMethod: claim
+            type: HTPasswd
+            htpasswd:
+              fileData: 
+                name: htpasswd
+
