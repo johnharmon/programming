@@ -1,3 +1,7 @@
+# Usage: 
+# ansible-playbook playbooks/build-openshift.yaml -e project_dir=(pwd) -v --ask-vault-pass -e delete=true
+
+
 - name: Build Openshift Cluster
   hosts: localhost
   gather_facts: false
@@ -83,7 +87,7 @@
         - name: "Template terraform vars" 
           #notify: remove_temp_file
           ansible.builtin.template:
-            src: "{{ project_dir + '/templates/terraform/query_vms/.jinja_templates/vars.tfvars.j2' }}"
+            src: "{{ project_dir + '/templates/terraform/query_vms/jinja_templates/vars.tfvars.j2' }}"
             dest: "{{ handler_temp_files.terraform_vars_query }}"
             force: true
           vars: 
@@ -281,6 +285,32 @@
               proxmox_endpoint: "{{ proxmox_config.proxmox_endpoint }}"
               proxmox_ssh_private_key_file: "~/.ssh/id_rsa"
               mac_addresses: "{{ openshift_mac_addresses }}"
+              openshift_storage_disk_size: "{{ openshift_storage_disk_size | default(1000) }}"
+
+        - name: "Extract kubeadmin credentials" 
+          ansible.bultin.set_fact: 
+            kubeadmin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
+            kubeadmin_username: "kubeadmin"
+
+        - name: "Delete htpasswd file"
+          ansible.builtin.file:
+            path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd' }}"
+            state: absent
+
+        - name: "Create htpasswd file"
+          ansible.builtin.file:
+            path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd' }}"
+            state: present
+
+        - name: "Create htpasswd entry for {{ openshift_cluster_admin_name }}"
+          community.general.htpasswd:
+            path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd' }}"
+            name: "{{ openshift_cluster_admin_name }}"
+            password: "{{ openshift_cluster_admin_password }}"
+            
+            
+        - name: Create htpasswd ID provider
+
 
 
         - name: Debug Terraform outputs 
