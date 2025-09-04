@@ -87,7 +87,14 @@ resource "proxmox_virtual_environment_vm" "openshift_nodes" {
     size         = 101
     aio          = "native"
     serial       = "OCP-BOOT01"
+  }
 
+  disk { 
+    datastore_id = local.vm_pool[0].id
+    interface = "virtio1"
+    size = var.openshift_storage_disk_size
+    aio = "native" 
+    serial = "OCP-DATA-1"
   }
   boot_order = [
     "virtio0",

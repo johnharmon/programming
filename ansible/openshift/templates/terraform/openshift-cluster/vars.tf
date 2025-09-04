@@ -55,6 +55,13 @@ variable "proxmox_ssh_private_key_file" {
   default     = "~/.ssh/id_rsa"
 }
 
+
+variable "openshift_storage_disk_size" {
+  description = "The size (GB) for the extra storage disk on each openshift node"
+  type = number
+  default = 1000
+}
+
 # variable "ansible_vault_password" {
 #     description = "The password for the ansible vault"
 #     type = string
