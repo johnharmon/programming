@@ -1,0 +1,10 @@
+- name: "Extract CA cert from kubeconfig" 
+  ansible.builtin.set_fact: 
+    ca_cert_content: "{{ lookup('ansible.builtin.file', kubeconfig_file_path) | from_yaml | json_query('clusters[*].cluster[\"certificate-authority-data\"]') | first | b64decode }}"
+- name: "Build ACM with helm chart" 
+  kubernetes.core.helm:
+    api_key: "{{ openshift_api_key }}"
+    atomic: true
+    ca_cert: "{{ ca_cert_file_path }}"
+    chart_ref: "{{ autoshift_path }}"
+

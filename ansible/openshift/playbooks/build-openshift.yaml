@@ -3,6 +3,7 @@
 
 
 - name: Build Openshift Cluster
+  tags:
   hosts: localhost
   gather_facts: false
   vars_files: 
@@ -30,14 +31,20 @@
 
   tasks:
     - name: "debug shell cwd" 
+      tags:
+        - build
       ansible.builtin.debug: 
         var: project_dir
 
     - name: import vars file
+      tags:
+        - build
       ansible.builtin.include_vars:
         file: "{{ project_dir ~ '/vars/openshift-install.yaml' }}"
 
     - name: "Set general config"
+      tags:
+        - build
       ansible.builtin.set_fact:
         handler_remove_file_list : "{{ [] }}"
         handler_remove_temp_file: "{{ project_dir + '/templates/terraform/query_vms/vars.tfvars' }}"
@@ -54,6 +61,8 @@
 #            })
 #          }}
     - name: "Delete terraform project if specified" 
+      tags:
+        - build
       when: delete | default("false") == "true"
       block:
         - name: "Set openshift_iso fact"
@@ -77,6 +86,8 @@
               mac_addresses: "{{ openshift_mac_addresses }}"
         
     - name: Build if delete is not specified
+      tags:
+        - build
       when: delete | default("false") == "false"
       block:
         - name: "Debug handler_remove_temp_file" 
@@ -291,6 +302,8 @@
           ansible.bultin.set_fact: 
             kubeadmin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
             kubeadmin_username: "kubeadmin"
+            openshift_cluster_admin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
+            openshift_cluster_admin_username: "kubeadmin"
 
         - name: "Delete htpasswd file"
           ansible.builtin.file:
@@ -307,11 +320,6 @@
             path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd' }}"
             name: "{{ openshift_cluster_admin_name }}"
             password: "{{ openshift_cluster_admin_password }}"
-            
-            
-        - name: Create htpasswd ID provider
-
-
 
         - name: Debug Terraform outputs 
           ansible.builtin.copy:
