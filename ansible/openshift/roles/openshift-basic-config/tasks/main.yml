@@ -87,6 +87,21 @@
       ansible.builtin.file:
         path: "{{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt' }}"
         state: absent
+
+    - name: "Create oauth token settings"
+      kubernetes.core.k8s:
+        kubeconfig: "{{ project_dir }}/dump/kubeconfig"
+        host: "{{ openshift_api_url }}"
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        server_side_apply: true
+        state: patched
+        template: |
+          apiVersion: config.openshift.io/v1
+          kind: Oauth
+          spec: 
+            tokenInactivityTimeout: {{ openshift_token_inactivity_timeout | default('86400') }}s
+            tokenMaxAgeSeconds: {{ (openshift_token_inactivity_timeout | default(86400)) * 3 }}
     - name: "Set core password machine config"
       no_log: false
       kubernetes.core.k8s:
@@ -107,23 +122,45 @@
                 users:
                   - name: core
                   - passwordHash: {{ passwd_cmd.stdout }}
-- name: "Setup local volume discovery"
+- name: "Setup local volume storage"
   block:
-  kubernetes.core.k8s:
-    password: "{{ openshift_cluster_admin_password }}"
-    username: "{{ openshift_cluster_admin_username }}"
-    template: |
-      apiVersion: local.storage.openshift.io/v1alpha1
-      kind: LocalVolumeDiscovery
-      metadata:
-        name: auto-discover-devices
-        namespace: openshift-local-storage
-      spec:
-        nodeSelector:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: node-role.kubernetes.io/worker
-                  operator: Exists
+    - name: "Create local volume discovery"
+      kubernetes.core.k8s:
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        template: |
+          apiVersion: local.storage.openshift.io/v1alpha1
+          kind: LocalVolumeDiscovery
+          metadata:
+            name: auto-discover-devices
+            namespace: openshift-local-storage
+          spec:
+            nodeSelector:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: {{ local_storage_node_selector_key | default('node-role.kubernetes.io/worker') }}
+                      operator: {{ local_storage_node_selector_operator | default('Exists') }}
+    - name: "Create local volume set" 
+      kubernetes.core.k8s:
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        server_side_apply: true
+        state: present
+        template: |
+          apiVersion: local.storage.openshift.io/v1alpha1
+          kind: LocalVolumeSet
+          metadata:
+            name: local.volume.set
+            namespace: openshift-local-storage
+          spec:
+            deviceInclusionSpec:
+              minSize: 1T
+            storageClassName: local.storage
+
+
+
+    
+
 
           
     
