@@ -32,8 +32,8 @@
 
 - name: "Create htpasswd password secret"
   kubernetes.core.k8s:
-    password: "{{ openshift_cluster_admin_password }}"
-    username: "{{ openshift_cluster_admin_username }}"
+    password: "{{ kubeadmin_password }}"
+    username: "{{ kubeadmin_username }}"
     state: present
     definition: 
       apiVersion: v1
@@ -44,7 +44,6 @@
       type: opaque
       stringData:
         htpasswd: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'htpasswd')) }}"
-      
 
 - name: "Create htpasswd identity provider"
   kubernetes.core.k8s:
@@ -63,4 +62,49 @@
             htpasswd:
               fileData: 
                 name: htpasswd
+
+- name: "Create core local user credentials" 
+  block:
+    - name: "Create password input file"
+      ansible.builtin.copy:
+        path: "{{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt' }}"
+        content: "{{ coreos_user_password }}"
+        force: true
+
+    - name: "Create encrypted password hash" 
+      no_log: false
+      register: passwd_cmd
+      ansible.builtin.shell:
+        cmd: |
+        openssl passwd -6 -in {{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt') }}
+
+    - name: "Remove password file"
+      tags: 
+        - always
+      ansible.builtin.file:
+        path: "{{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt' }}"
+        state: absent
+    - name: "Set core password machine config"
+      no_log: false
+      kubernetes.core.k8s:
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        template: |
+          kind: MachineConfig
+          metadata:
+            labels:
+              machineconfiguration.openshift.io/role: worker
+              machineconfiguration.openshift.io/role: master
+            name: 99-set-core-password
+          spec:
+            config:
+              ignition:
+                version: 3.4.0
+              passwd:
+                users:
+                  - name: core
+                  - passwordHash: {{ passwd_cmd.stdout }}
+          
+    
+  
 

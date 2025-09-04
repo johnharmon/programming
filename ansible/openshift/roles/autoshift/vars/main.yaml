@@ -1,0 +1,3 @@
+autoshift_sync: false # Should autoshift sync from git or rely on a local repo copy?
+autoshift_path: "~/git-projects/autoshiftv2" # Local path to the 
+
