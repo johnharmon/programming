@@ -31,6 +31,7 @@
 
 
 - name: "Create htpasswd password secret"
+  no_log: false
   kubernetes.core.k8s:
     password: "{{ kubeadmin_password }}"
     username: "{{ kubeadmin_username }}"
@@ -46,6 +47,8 @@
         htpasswd: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'htpasswd')) }}"
 
 - name: "Create htpasswd identity provider"
+  no_log: false
+  kubernetes.core.k8s:
   kubernetes.core.k8s:
     password: "{{ openshift_cluster_admin_password }}"
     username: "{{ openshift_cluster_admin_username }}"
@@ -104,6 +107,24 @@
                 users:
                   - name: core
                   - passwordHash: {{ passwd_cmd.stdout }}
+- name: "Setup local volume discovery"
+  block:
+  kubernetes.core.k8s:
+    password: "{{ openshift_cluster_admin_password }}"
+    username: "{{ openshift_cluster_admin_username }}"
+    template: |
+      apiVersion: local.storage.openshift.io/v1alpha1
+      kind: LocalVolumeDiscovery
+      metadata:
+        name: auto-discover-devices
+        namespace: openshift-local-storage
+      spec:
+        nodeSelector:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/worker
+                  operator: Exists
+
           
     
   
