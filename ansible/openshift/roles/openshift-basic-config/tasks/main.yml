@@ -3,26 +3,33 @@
 # tasks file for openshift-basic-config
 
 - name: "Set project_dir variable if not defined"
+  tags: always
   ansible.builtin.set_fact:
     project_dir: "{{ lookup('ansible.builtin.lines', 'pwd' }}"
   when: project_dir is not defined
 
 - name: "Extract kubeadmin credentials" 
+  tags: always
   ansible.bultin.set_fact: 
     kubeadmin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
     kubeadmin_username: "kubeadmin"
 
 - name: "Delete htpasswd file"
+  tags: always
   ansible.builtin.file:
     path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
     state: absent
 
 - name: "Create htpasswd file"
+  tags:
+    - htpassswd
   ansible.builtin.file:
     path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
     state: present
 
 - name: "Create htpasswd entry for {{ openshift_cluster_admin_name }}"
+  tags:
+    - htpassswd
   community.general.htpasswd:
     path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
     name: "{{ openshift_cluster_admin_name }}"
@@ -31,6 +38,8 @@
 
 
 - name: "Create htpasswd password secret"
+  tags:
+    - htpassswd
   no_log: false
   kubernetes.core.k8s:
     password: "{{ kubeadmin_password }}"
@@ -47,6 +56,8 @@
         htpasswd: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'htpasswd')) }}"
 
 - name: "Create htpasswd identity provider"
+  tags:
+    - htpassswd
   no_log: false
   kubernetes.core.k8s:
     password: "{{ openshift_cluster_admin_password }}"
@@ -67,6 +78,8 @@
                 name: htpasswd
 
 - name: "Add cluster-admin role to cluster-admin account"
+  tags:
+    - cluster_admin
   kubernetes.core.k8s:
     state: present
     template: |
@@ -84,6 +97,8 @@
           name: {{ openshift_cluster_admin_name }}
 
 - name: "Create core local user credentials" 
+  tags: 
+    - core_user_password
   block:
     - name: "Create password input file"
       ansible.builtin.copy:
@@ -100,12 +115,14 @@
 
     - name: "Remove password file"
       tags: 
-        - always
+        - core_user_password
       ansible.builtin.file:
         path: "{{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt' }}"
         state: absent
 
     - name: "Create oauth token settings"
+      tags: 
+        - core_user_password
       kubernetes.core.k8s:
         kubeconfig: "{{ project_dir }}/dump/kubeconfig"
         host: "{{ openshift_api_url }}"
@@ -122,6 +139,8 @@
 
     - name: "Set core password machine config"
       no_log: false
+      tags: 
+        - core_user_password
       kubernetes.core.k8s:
         password: "{{ openshift_cluster_admin_password }}"
         username: "{{ openshift_cluster_admin_username }}"
@@ -146,6 +165,10 @@
 
 - name: "Create machine config to mount data disks for localpath provisioner"
   no_log: false
+  tags:
+    - localpath
+    - local-path
+    - local_path
   kubernetes.core.k8s:
     password: "{{ openshift_cluster_admin_password }}"
     username: "{{ openshift_cluster_admin_username }}"
@@ -195,8 +218,16 @@
                 
 
 - name: "Setup local volume storage"
+  tags: 
+    - ODF
+    - odf 
+    - localstorage
   block:
     - name: "Create local volume discovery"
+      tags: 
+        - ODF
+        - odf 
+        - localstorage
       kubernetes.core.k8s:
         password: "{{ openshift_cluster_admin_password }}"
         username: "{{ openshift_cluster_admin_username }}"
@@ -214,6 +245,10 @@
                       operator: {{ local_storage_node_selector_operator | default('Exists') }}
 
     - name: "Create local volume set" 
+      tags: 
+        - ODF
+        - odf 
+        - localstorage
       kubernetes.core.k8s:
         password: "{{ openshift_cluster_admin_password }}"
         username: "{{ openshift_cluster_admin_username }}"
