@@ -1,0 +1,13 @@
+features_sets:
+  default:
+    - localpath
+    - htpasswd
+
+
+features:
+  htpasswd:
+    tags:
+      - htpasswd
+  localpath: 
+    tags:
+      - localpath
