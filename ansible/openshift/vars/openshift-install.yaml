@@ -1,0 +1,25 @@
+handler_dump_file_name: "proxmox_query.yaml" 
+openshift_api_vip: "192.168.86.100"
+openshift_ingress_vip: "192.168.86.99" 
+proxmox_config: 
+  proxmox_node_name: "proxmox"
+  openshift_nodes: 3
+  iso_url: "http://dev01/isos/"
+  openshift_install_iso_name: "openshfit-install.iso"
+  proxmox_username: "harmonj@pam"
+  proxmox_endpoint: "https://proxmox.harmonlab.com:8006/"
+  proxmox_ssh_private_key_file: "files/ssh/id_rsa" 
+
+
+# NOTES: 
+#   Accounts:
+#   - gitlab
+#   - jira
+#   - aws (up to 3)
+#   - hardware/baremetal
+#   - miro board(s)
+#   Pipelines:
+#   - containeriazaiton/deployments
+#   - library build/push
+#   - containerize UI code and push to repo
+#   - pull from repo and deploy to cluster
