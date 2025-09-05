@@ -62,6 +62,16 @@ variable "openshift_storage_disk_size" {
   default = 1000
 }
 
+variable "openshift_cpu_multiplier" {
+  description = "Decimal represenging how much of the total cpu cores to allot to all openshift nodes combined. Calculated as 'openshift_cpu_multiplier * total_cluster_nodes'"
+  type = number 
+  default = 0.7
+  valiation {
+    condition     = var.openshift_cpu_fraction < 1
+    error_message = "You must allocate less than 100% of available cpus on the node to openshift"
+  }
+}
+
 # variable "ansible_vault_password" {
 #     description = "The password for the ansible vault"
 #     type = string
