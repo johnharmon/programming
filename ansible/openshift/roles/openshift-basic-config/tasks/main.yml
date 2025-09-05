@@ -125,7 +125,10 @@
       kubernetes.core.k8s:
         password: "{{ openshift_cluster_admin_password }}"
         username: "{{ openshift_cluster_admin_username }}"
+        state: present 
+        server_side_apply: true
         template: |
+          apiVersion: machineconfiguration.openshift.io/v1
           kind: MachineConfig
           metadata:
             labels:
@@ -140,6 +143,56 @@
                 users:
                   - name: core
                   - passwordHash: {{ passwd_cmd.stdout }}
+
+- name: "Create machine config to mount data disks for localpath provisioner"
+  no_log: false
+  kubernetes.core.k8s:
+    password: "{{ openshift_cluster_admin_password }}"
+    username: "{{ openshift_cluster_admin_username }}"
+    state: present 
+    server_side_apply: true
+    template: |
+      apiVersion: machineconfiguration.openshift.io/v1
+      kind: MachineConfig
+      metadata:
+        labels:
+          machineconfiguration.openshift.io/role: worker
+          machineconfiguration.openshift.io/role: master
+        name: mount-data-directories
+      spec:
+        config:
+          ignition:
+            version: 3.4.0
+            storage:
+              filesystems:
+                - device: /dev/disk/by-id/{{ openshift_data_disk_interface }}-{{ openshift_data_disk_serial }}
+                  format: xfs
+                  path: {{ openshift_local_path_provisioner.path }}
+            systemd:
+              units:
+                - name: data_mount_selinux.service
+                  enabled: true
+                  contents: |
+                    [Unit]
+                    Description=Ensure SELinux context for local-path provisioner data dir
+                    After={{ openshift_local_path_provisioner.path.lstrip('/') | replace('/', '-') }}.mount
+                    Requires={{ openshift_local_path_provisioner.path.lstrip('/') | replace('/', '-') }}.mount
+                    # If your mount path differs, update these Conditions + the PATH env below.
+                    ConditionPathIsDirectory=/var/lib/localpath
+                    ConditionPathIsMountPoint=/var/lib/localpath
+                    
+                    [Service]
+                    Type=oneshot
+                    # change this to your actual mount path
+                    Environment=PATH_DIR=/var/lib/localpath
+                    # Add or modify fcontext, then relabel recursively
+                    ExecStartPre=/bin/bash -c "/usr/sbin/semanage fcontext -a -t container_file_t \"${PATH_DIR}(/.*)?\" 2>/dev/null || /usr/sbin/semanage fcontext -m -t container_file_t \"${PATH_DIR}(/.*)?\""
+                    ExecStart=/usr/sbin/restorecon -RFv ${PATH_DIR}
+                    RemainAfterExit=yes
+                    
+                    [Install]
+                    WantedBy=multi-user.target
+                
 
 - name: "Setup local volume storage"
   block:

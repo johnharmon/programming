@@ -91,10 +91,11 @@ resource "proxmox_virtual_environment_vm" "openshift_nodes" {
 
   disk { 
     datastore_id = local.vm_pool[0].id
-    interface = "virtio1"
+    interface = "scsi0"
     size = var.openshift_storage_disk_size
     aio = "native" 
     serial = "OCP-DATA-1"
+    ssd = true
   }
   boot_order = [
     "virtio0",
@@ -102,7 +103,7 @@ resource "proxmox_virtual_environment_vm" "openshift_nodes" {
   ]
 
   cpu {
-    cores = floor((local.total_cpu_cores * 0.6) / var.openshift_nodes)
+    cores = floor((local.total_cpu_cores * var.openshift_cpu_multiplier) / var.openshift_nodes)
     type  = "host"
   }
   memory {
