@@ -161,7 +161,7 @@ func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []Clou
 	return payload
 }
 
-func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordSettings []RecordSetting, ipAddress string, apiUrl string, apiKey string, zoneID string, defaultIP string) []*http.Response {
+func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, recordSettings []RecordSetting, apiUrl string, apiKey string, zoneID string, defaultIP string) []*http.Response {
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	recordUpdates := ExtractSettingsFromRecords(recordSettings, existingRecords.Result, defaultIP)
@@ -181,24 +181,36 @@ func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, reco
 
 func SetDnsRecordsIndividually(records CloudFlareBatchRecordPayload, apiUrl string, apiKey string, zoneID string) []*http.Response {
 	body := &bytes.Buffer{}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent(" ", "  ")
 	bodyEncoder := json.NewEncoder(body)
 	client := http.Client{}
 	responses := []*http.Response{}
 	for _, patch := range records.Patches {
 		body.Reset()
-		url := fmt.Sprintf("%s/client/v4/zones/%s/records/%s", apiUrl, zoneID, patch.RecordID)
+		url := fmt.Sprintf("%s/client/v4/zones/%s/dns_records/%s", apiUrl, zoneID, patch.RecordID)
 		bodyEncoder.Encode(patch)
 		request, _ := http.NewRequest("PATCH", url, body)
+		request.Header.Add("Authorization", "Bearer "+apiKey)
 		response, _ := client.Do(request)
 		responses = append(responses, response)
+		fmt.Printf("PATCH: %s STATUS CODE: %d\n", patch.Name, response.StatusCode)
+		// encoder.Encode(patch)
+		// body, _ := io.ReadAll(response.Body)
+		// fmt.Println(string(body))
 	}
 	for _, post := range records.Posts {
 		body.Reset()
-		url := fmt.Sprintf("%s/client/v4/zones/%s/records", apiUrl, zoneID)
+		url := fmt.Sprintf("%s/client/v4/zones/%s/dns_records", apiUrl, zoneID)
 		bodyEncoder.Encode(post)
 		request, _ := http.NewRequest("POST", url, body)
+		request.Header.Add("Authorization", "Bearer "+apiKey)
 		response, _ := client.Do(request)
 		responses = append(responses, response)
+		fmt.Printf("POST: %s STATUS CODE: %d\n", post.Name, response.StatusCode)
+		// encoder.Encode(post)
+		// body, _ := io.ReadAll(response.Body)
+		// fmt.Println(string(body))
 	}
 	return responses
 }
@@ -233,6 +245,7 @@ func SetDnsRecordBatch(batch CloudFlareBatchRecordPayload, apiUrl string, apiKey
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	encoder.Encode(responseBody)
+	// fmt.Println("returning")
 	return response
 }
 
@@ -268,8 +281,21 @@ func GetConfig(fileName string, apiKey string) Config {
 		config = CreateDefaultConfig(apiKey)
 	} else {
 		config = LoadConfig(file)
+		SetConfigDefaults(&config)
 	}
 	return config
+}
+
+func SetConfigDefaults(config *Config) {
+	if config.ApiKey == "" {
+		config.ApiKey = GetAPIKey()
+	}
+	if config.IpUrl == "" {
+		config.IpUrl = "https://api.ipify.org"
+	}
+	if config.DefaultIP == "" {
+		config.DefaultIP = GetIpAddress(config.IpUrl)
+	}
 }
 
 func CreateDefaultConfig(apiKey string) Config {
@@ -302,6 +328,7 @@ func GetIpAddress(ipUrl string) string {
 	return string(ipAddress)
 }
 
+// func GetConfigWithDefaults("config.yaml", api
 func main() {
 	stdoutEncoder = json.NewEncoder(os.Stdout)
 	stdoutEncoder.SetIndent("", "  ")
@@ -310,15 +337,9 @@ func main() {
 	encoder.SetIndent("", "  ")
 	encoder.SetEscapeHTML(false)
 	config := GetConfig("config.yaml", apiKey)
-	if config.ApiKey == "" {
-		config.ApiKey = GetAPIKey()
-	}
 	stdoutEncoder.Encode(config)
 	// fmt.Println("api key: " + config.ApiKey)
 	ipAddress := GetIpAddress(config.IpUrl)
-	if config.DefaultIP == "" {
-		config.DefaultIP = ipAddress
-	}
 	encoder.Encode(ipAddress)
 	dnsZone := GetCloudFlareDnsZone(config.ApiKey, apiUrl, config.ZoneName)
 	// encoder.Encode(dnsZone)
@@ -327,7 +348,7 @@ func main() {
 		dnsZone.Result[0].ID)
 	fmt.Println("DNS record result:")
 	stdoutEncoder.Encode(dnsRecords)
-	SetDnsRecordFromResponse(dnsRecords, config.RecordSettings, ipAddress, apiUrl, config.ApiKey, dnsZone.Result[0].ID,
+	SetDnsRecordFromResponse(dnsRecords, config.RecordSettings, apiUrl, config.ApiKey, dnsZone.Result[0].ID,
 		config.DefaultIP)
 	// fmt.Println("Set response: ")
 	// bodyBuffer := &bytes.Buffer{}
