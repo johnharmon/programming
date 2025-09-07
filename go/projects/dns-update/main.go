@@ -330,6 +330,12 @@ func GetIpAddress(ipUrl string) string {
 	return string(ipAddress)
 }
 
+func AppendBaseDomain(rs *RecordSetting, baseDomain string) {
+	if !strings.HasSuffix(rs.Name, baseDomain) {
+		rs.Name = rs.Name + baseDomain
+	}
+}
+
 // func GetConfigWithDefaults("config.yaml", api
 func main() {
 	stdoutEncoder = json.NewEncoder(os.Stdout)
@@ -350,6 +356,9 @@ func main() {
 		dnsZone.Result[0].ID)
 	fmt.Println("DNS record result:")
 	stdoutEncoder.Encode(dnsRecords)
+	for _, rs := range config.RecordSettings {
+		AppendBaseDomain(&rs, config.ZoneName)
+	}
 	SetDnsRecordFromResponse(dnsRecords, config.RecordSettings, apiUrl, config.ApiKey, dnsZone.Result[0].ID,
 		config.DefaultIP)
 	// fmt.Println("Set response: ")
