@@ -133,12 +133,13 @@ func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []Clou
 			payload.Patches = append(payload.Patches,
 				PatchRecord{
 					RecordSetting: RecordSetting{
-						Name:    setting.Name,
-						Ttl:     setting.Ttl,
-						Type:    setting.Type,
-						Proxied: setting.Proxied,
-						Comment: setting.Comment,
-						Content: content,
+						Name:     setting.Name,
+						Ttl:      setting.Ttl,
+						Type:     setting.Type,
+						Proxied:  setting.Proxied,
+						Comment:  setting.Comment,
+						Content:  content,
+						Priority: setting.Priority,
 					},
 					RecordID: recordForSetting[0].ID,
 				})
@@ -149,12 +150,13 @@ func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []Clou
 			}
 			payload.Posts = append(payload.Posts,
 				RecordSetting{
-					Name:    setting.Name,
-					Ttl:     setting.Ttl,
-					Type:    setting.Type,
-					Proxied: setting.Proxied,
-					Comment: setting.Comment,
-					Content: content,
+					Name:     setting.Name,
+					Ttl:      setting.Ttl,
+					Type:     setting.Type,
+					Proxied:  setting.Proxied,
+					Comment:  setting.Comment,
+					Content:  content,
+					Priority: setting.Priority,
 				})
 		}
 	}
@@ -590,12 +592,13 @@ type TenantUnit struct {
 }
 
 type RecordSetting struct {
-	Name    string  `yaml:"name" json:"name"`
-	Type    string  `yaml:"type" json:"type"`
-	Ttl     int     `yaml:"ttl" json:"ttl"`
-	Proxied *bool   `yaml:"proxied" json:"proxied"`
-	Comment *string `yaml:"comment" json:"comment"`
-	Content string  `yaml:"content" json:"content"`
+	Name     string  `yaml:"name" json:"name"`
+	Type     string  `yaml:"type" json:"type"`
+	Ttl      int     `yaml:"ttl" json:"ttl"`
+	Proxied  *bool   `yaml:"proxied" json:"proxied"`
+	Comment  *string `yaml:"comment" json:"comment"`
+	Content  string  `yaml:"content" json:"content"`
+	Priority *int    `yaml:"priority" json:"priority,omitempty"`
 }
 
 type RecordsAndSettings struct {
