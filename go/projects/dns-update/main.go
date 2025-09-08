@@ -124,25 +124,32 @@ func ExtractSettingsFromRecords(settings []RecordSetting, existingRecords []Clou
 	}
 	stdoutEncoder.Encode(recordsByName)
 	for _, setting := range settings {
-		setting.SetZeroValues()
 		if recordForSetting := recordsByName[setting.Name][setting.Type]; len(recordForSetting) != 0 {
-			content := setting.Content
-			if content == "" {
-				content = recordsByName[setting.Name][setting.Type][0].Content
+			switch setting.State {
+			case "present":
+				content := setting.Content
+				if content == "" {
+					content = recordsByName[setting.Name][setting.Type][0].Content
+				}
+				payload.Patches = append(payload.Patches,
+					PatchRecord{
+						RecordSetting: RecordSetting{
+							Name:     setting.Name,
+							Ttl:      setting.Ttl,
+							Type:     setting.Type,
+							Proxied:  setting.Proxied,
+							Comment:  setting.Comment,
+							Content:  content,
+							Priority: setting.Priority,
+						},
+						RecordID: recordForSetting[0].ID,
+					})
+			case "absent":
+				payload.Deletes = append(payload.Deletes,
+					DeleteRecord{
+						ID: recordForSetting[0].ID,
+					})
 			}
-			payload.Patches = append(payload.Patches,
-				PatchRecord{
-					RecordSetting: RecordSetting{
-						Name:     setting.Name,
-						Ttl:      setting.Ttl,
-						Type:     setting.Type,
-						Proxied:  setting.Proxied,
-						Comment:  setting.Comment,
-						Content:  content,
-						Priority: setting.Priority,
-					},
-					RecordID: recordForSetting[0].ID,
-				})
 		} else {
 			content := setting.Content
 			if content == "" {
@@ -168,10 +175,9 @@ func SetDnsRecordFromResponse(existingRecords *CloudFlareDnsRecordResponse, reco
 	encoder.SetIndent("", "  ")
 	recordUpdates := ExtractSettingsFromRecords(recordSettings, existingRecords.Result, defaultIP)
 	body := &bytes.Buffer{}
-	fmt.Println("Record Updates Payload: ")
 	payload, _ := json.Marshal(recordUpdates)
 	body.Write(payload)
-	fmt.Println("Record Updates: ")
+	fmt.Println("Record Updates Payload: ")
 	encoder.Encode(recordUpdates)
 	batchResponse := SetDnsRecordBatch(recordUpdates, apiUrl, apiKey, zoneID)
 	if batchResponse.StatusCode != 200 {
@@ -356,9 +362,12 @@ func main() {
 		dnsZone.Result[0].ID)
 	fmt.Println("DNS record result:")
 	stdoutEncoder.Encode(dnsRecords)
-	for _, rs := range config.RecordSettings {
-		AppendBaseDomain(&rs, config.ZoneName)
+	for idx := range config.RecordSettings {
+		(&config.RecordSettings[idx]).SetDefaultValues(config.ZoneName)
+		// AppendBaseDomain(&rs, config.ZoneName)
 	}
+	fmt.Println("Record Settings After Defaults: ")
+	stdoutEncoder.Encode(config.RecordSettings)
 	SetDnsRecordFromResponse(dnsRecords, config.RecordSettings, apiUrl, config.ApiKey, dnsZone.Result[0].ID,
 		config.DefaultIP)
 	// fmt.Println("Set response: ")
@@ -608,6 +617,7 @@ type RecordSetting struct {
 	Comment  *string `yaml:"comment" json:"comment"`
 	Content  string  `yaml:"content" json:"content"`
 	Priority *int    `yaml:"priority" json:"priority,omitempty"`
+	State    string  `yaml:"state"`
 }
 
 type RecordsAndSettings struct {
@@ -621,11 +631,17 @@ type PatchRecord struct {
 }
 
 type CloudFlareBatchRecordPayload struct {
-	Posts   []RecordSetting `yaml:"posts"`
-	Patches []PatchRecord   `yaml:"patches"`
+	Posts   []RecordSetting `yaml:"posts" json:"posts"`
+	Patches []PatchRecord   `yaml:"patches" json:"patches"`
+	Deletes []DeleteRecord  `yaml:"deletes" json:"deletes"`
 }
 
-func (rs *RecordSetting) SetZeroValues() {
+type DeleteRecord struct {
+	ID string `yaml:"id" json:"id"`
+}
+
+func (rs *RecordSetting) SetDefaultValues(baseDomain string) {
+	AppendBaseDomain(rs, baseDomain)
 	if rs.Type == "" {
 		rs.Type = "A"
 	}
@@ -634,5 +650,12 @@ func (rs *RecordSetting) SetZeroValues() {
 	}
 	if rs.Content == "" {
 		rs.Content = ipAddress
+	}
+	if rs.State == "" {
+		fmt.Println("Setting record setting state")
+		rs.State = "present"
+	} else if rs.State != "present" && rs.State != "absent" {
+		fmt.Println("Setting record setting state")
+		rs.State = "absent"
 	}
 }
