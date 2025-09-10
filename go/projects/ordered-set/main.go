@@ -10,9 +10,15 @@ const (
 	OP_DELETE
 )
 
-type setOP[T comparable] struct {
+type setOp[T comparable] struct {
+	replayOp[T]
+	callback chan bool
+}
+
+type replayOp[T comparable] struct {
 	opType int
 	opVal  T
+	seqNo  uint64
 }
 
 type OrderedSet[T comparable] struct {
@@ -23,25 +29,66 @@ type OrderedSet[T comparable] struct {
 	compactingItems     []T
 	compactingIndexMap  map[T]int
 	compactingLiveCount int
-	items               []T
-	indexMap            map[T]int
-	liveCount           int
-	rwLock              *sync.RWMutex
-	replayCh            chan setOP[T]
-	tombstones          int
+	// callbackPool        *sync.Pool
+	opPool         *sync.Pool
+	items          []T
+	indexMap       map[T]int
+	liveCount      int
+	seqNo          uint64 // integer representing the most recent operation number so ops can be tagged with it
+	lastAppliedSeq uint64
+	rwLock         *sync.RWMutex
+	opsCh          chan *setOp[T]
+	replayCh       chan replayOp[T]
+	tombstones     int
+}
+
+func (s *OrderedSet[T]) sequencer() {
+	var applied bool
+	var replay replayOp[T]
+	var needReplay bool
+	for op := range s.opsCh {
+		needReplay = false
+		applied = false
+		s.rwLock.Lock()
+		s.lastAppliedSeq = s.seqNo
+		s.seqNo++
+		switch op.opType {
+		case OP_APPEND:
+			applied = s.append(op.opVal)
+		case OP_DELETE:
+			applied = s.delete(op.opVal)
+		}
+		op.seqNo = s.seqNo
+		if s.compacting {
+			replay = op.replayOp
+			needReplay = true
+		}
+		s.rwLock.Unlock()
+		if needReplay {
+			s.replayCh <- replay
+		}
+		op.callback <- applied
+		s.opPool.Put(op)
+	}
 }
 
 func (s *OrderedSet[T]) Append(elem T) bool {
-	s.rwLock.Lock()
+	op := s.opPool.Get().(*setOp[T])
+	op.opType = OP_APPEND
+	op.opVal = elem
+	op.callback = make(chan bool, 1)
+	s.opsCh <- op
+	return <-op.callback
+}
+
+func (s *OrderedSet[T]) append(elem T) bool {
 	if _, ok := s.indexMap[elem]; !ok {
 		s.items = append(s.items, elem)
 		s.indexMap[elem] = len(s.items) - 1
-		s.liveCount += 1
+		s.liveCount++
 		s.appendBitMap(s.indexMap[elem])
-		s.rwLock.Unlock()
 		return true
 	}
-	s.rwLock.Unlock()
 	return false
 }
 
@@ -70,7 +117,7 @@ func (s *OrderedSet[T]) compact() {
 			liveCount++
 		}
 	}
-	s.replayCh = make(chan setOP[T], 10000)
+	s.replayCh = make(chan replayOp[T], 10000)
 	s.rwLock.RUnlock()
 	bitmapRemainder := liveCount % 64
 	for idx := range s.compactingBitMap {
@@ -151,15 +198,15 @@ func (s *OrderedSet[T]) compactingDeleteBitMap(idx int) {
 }
 
 func (s *OrderedSet[T]) Delete(elem T) bool {
-	s.rwLock.Unlock()
+}
+
+func (s *OrderedSet[T]) delete(elem T) bool {
 	if idx, ok := s.indexMap[elem]; ok {
 		s.deleteBitMap(idx)
 		delete(s.indexMap, elem)
 		s.liveCount--
-		s.rwLock.Unlock()
 		return true
 	}
-	s.rwLock.Unlock()
 	return false
 }
 
