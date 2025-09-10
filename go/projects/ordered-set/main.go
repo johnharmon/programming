@@ -5,120 +5,215 @@ import (
 	"sync"
 )
 
+const (
+	OP_APPEND = iota
+	OP_DELETE
+)
+
 type setOP[T comparable] struct {
 	opType int
 	opVal  T
 }
 
 type OrderedSet[T comparable] struct {
-	bitmap     []uint64
-	items      []T
-	indexMap   map[T]int
-	liveCount  int
-	tombstones int
-	compacting bool
-	rwLock     *sync.RWMutex
-	opsCh      chan setOP[T]
+	dualWrite           bool
+	bitmap              []uint64
+	compacting          bool
+	compactingBitMap    []uint64
+	compactingItems     []T
+	compactingIndexMap  map[T]int
+	compactingLiveCount int
+	items               []T
+	indexMap            map[T]int
+	liveCount           int
+	rwLock              *sync.RWMutex
+	replayCh            chan setOP[T]
+	tombstones          int
 }
 
-func (oSet *OrderedSet[T]) Append(elem T) bool {
-	if _, ok := oSet.indexMap[elem]; !ok {
-		oSet.items = append(oSet.items, elem)
-		oSet.indexMap[elem] = len(oSet.items) - 1
-		oSet.liveCount += 1
-		oSet.appendBitMap(oSet.indexMap[elem])
+func (s *OrderedSet[T]) Append(elem T) bool {
+	s.rwLock.Lock()
+	if _, ok := s.indexMap[elem]; !ok {
+		s.items = append(s.items, elem)
+		s.indexMap[elem] = len(s.items) - 1
+		s.liveCount += 1
+		s.appendBitMap(s.indexMap[elem])
+		s.rwLock.Unlock()
 		return true
 	}
+	s.rwLock.Unlock()
 	return false
 }
 
-func (oSet *OrderedSet[T]) appendBitMap(idx int) {
+func (s *OrderedSet[T]) appendBitMap(idx int) {
 	uintIndex := idx / 64
 	bitOffset := idx % 64
-	if uintIndex >= len(oSet.bitmap) {
-		oSet.bitmap = append(oSet.bitmap, uint64(0))
+	if uintIndex >= len(s.bitmap) {
+		s.bitmap = append(s.bitmap, uint64(0))
 	}
 	bitMask := uint64(1) << bitOffset
-	oSet.bitmap[uintIndex] |= bitMask
+	s.bitmap[uintIndex] |= bitMask
 }
 
-func (oSet *OrderedSet[T]) compact() {
-	oSet.rwLock.RLock()
-	oSet.compacting = true
-	bitmapSnapshot := make([]uint64, len(oSet.bitmap))
-	copy(bitmapSnapshot, oSet.bitmap)
-	newItems := make([]T, len(oSet.items))
+func (s *OrderedSet[T]) compact() {
+	newIndexMap := make(map[T]int)
+	s.rwLock.RLock()
+	s.compacting = true
+	s.compactingBitMap = make([]uint64, (s.liveCount+63)/64)
+	s.compactingItems = make([]T, s.liveCount)
+	copy(s.compactingBitMap, s.bitmap[:len(s.compactingBitMap)-1])
 	liveCount := 0
-	for idx := range oSet.items {
-		if isAlive(bitmapSnapshot, idx) {
-			newItems[liveCount] = oSet.items[idx]
+	for idx := range s.items {
+		if isAlive(s.compactingBitMap, idx) {
+			s.compactingItems[liveCount] = s.items[idx]
+			newIndexMap[s.items[idx]] = liveCount
 			liveCount++
 		}
 	}
-	oSet.rwLock.RUnlock()
-	newBitmap := make([]uint64, (liveCount+63)/64)
+	s.replayCh = make(chan setOP[T], 10000)
+	s.rwLock.RUnlock()
 	bitmapRemainder := liveCount % 64
-	for idx := range newBitmap {
-		newBitmap[idx] = ^uint64(0)
+	for idx := range s.compactingBitMap {
+		s.compactingBitMap[idx] = ^uint64(0)
 	}
 	if bitmapRemainder != 0 {
-		newBitmap[len(newBitmap)-1] = (uint64(1) << bitmapRemainder) - 1
+		s.compactingBitMap[len(s.compactingBitMap)-1] = (uint64(1) << bitmapRemainder) - 1
 	}
 
-	go oSet.replay()
+	s.rwLock.Lock()
+	close(s.replayCh)
+	s.replayCh = nil
+	s.dualWrite = true
+	s.rwLock.Unlock()
+	wg := &sync.WaitGroup{}
+	go s.replay(wg)
+	wg.Wait()
+	s.rwLock.Lock()
+	s.bitmap, s.indexMap, s.items = s.compactingBitMap, s.compactingIndexMap, s.compactingItems
+	s.compactingBitMap, s.compactingIndexMap, s.compactingItems = nil, nil, nil
+	s.compacting = false
+	s.rwLock.Unlock()
 }
 
-func (oSet *OrderedSet[T]) replay() {
-}
-
-func (oSet *OrderedSet[T]) deleteBitMap(idx int) {
+func (s *OrderedSet[T]) compactingAppendBitMap(idx int) {
 	uintIndex := idx / 64
 	bitOffset := idx % 64
-	if uintIndex < len(oSet.bitmap) {
+	if uintIndex >= len(s.compactingBitMap) {
+		s.compactingBitMap = append(s.bitmap, uint64(0))
+	}
+	bitMask := uint64(1) << bitOffset
+	s.compactingBitMap[uintIndex] |= bitMask
+}
+
+func (s *OrderedSet[T]) compactingAppend(elem T) bool {
+	s.rwLock.Lock()
+	if _, ok := s.compactingIndexMap[elem]; !ok {
+		s.items = append(s.items, elem)
+		s.compactingIndexMap[elem] = len(s.items) - 1
+		s.compactingLiveCount += 1
+		s.compactingAppendBitMap(s.compactingIndexMap[elem])
+		s.rwLock.Unlock()
+		return true
+	}
+	s.rwLock.Unlock()
+	return false
+}
+
+func (s *OrderedSet[T]) replay(wg *sync.WaitGroup) {
+	wg.Add(1)
+	for op := range s.replayCh {
+		if op.opType == OP_APPEND {
+			s.compactingAppend(op.opVal)
+		}
+		if op.opType == OP_DELETE {
+			s.compactingDelete(op.opVal)
+		}
+	}
+	wg.Done()
+}
+
+func (s *OrderedSet[T]) deleteBitMap(idx int) {
+	uintIndex := idx / 64
+	bitOffset := idx % 64
+	if uintIndex < len(s.bitmap) {
 		bitMask := uint64(1) << bitOffset
-		oSet.bitmap[uintIndex] &^= bitMask
+		s.bitmap[uintIndex] &^= bitMask
 	}
 }
 
-func (oSet *OrderedSet[T]) Delete(elem T) bool {
-	if idx, ok := oSet.indexMap[elem]; ok {
-		oSet.deleteBitMap(idx)
-		delete(oSet.indexMap, elem)
+func (s *OrderedSet[T]) compactingDeleteBitMap(idx int) {
+	uintIndex := idx / 64
+	bitOffset := idx % 64
+	if uintIndex < len(s.bitmap) {
+		bitMask := uint64(1) << bitOffset
+		s.compactingBitMap[uintIndex] &^= bitMask
+	}
+}
+
+func (s *OrderedSet[T]) Delete(elem T) bool {
+	s.rwLock.Unlock()
+	if idx, ok := s.indexMap[elem]; ok {
+		s.deleteBitMap(idx)
+		delete(s.indexMap, elem)
+		s.liveCount--
+		s.rwLock.Unlock()
+		return true
+	}
+	s.rwLock.Unlock()
+	return false
+}
+
+func (s *OrderedSet[T]) compactingDelete(elem T) bool {
+	s.rwLock.Lock()
+	if idx, ok := s.compactingIndexMap[elem]; ok {
+		s.compactingDeleteBitMap(idx)
+		delete(s.compactingIndexMap, elem)
+		s.compactingLiveCount--
+		s.rwLock.Unlock()
+		return true
+	}
+	s.rwLock.Unlock()
+	return false
+}
+
+func (s *OrderedSet[T]) DeleteIdx(idx int) bool {
+	if s.isIdxAlive(idx) {
+		s.deleteBitMap(idx)
 		return true
 	}
 	return false
 }
 
-func (oSet *OrderedSet[T]) isValAlive(elem T) bool {
-	if _, ok := oSet.indexMap[elem]; ok {
+func (s *OrderedSet[T]) isValAlive(elem T) bool {
+	if _, ok := s.indexMap[elem]; ok {
 		return true
 	}
 	return false
 }
 
 // func getBitMapIndex(idx int) uint64
-func (oSet *OrderedSet[T]) isIdxAlive(idx int) bool {
-	if idx < 0 || idx > len(oSet.bitmap) {
+func (s *OrderedSet[T]) isIdxAlive(idx int) bool {
+	if idx < 0 || idx > len(s.bitmap) {
 		return false
 	}
 	uintIndex := idx / 64
 	bitOffset := idx % 64
 	bitMask := uint64(1) << bitOffset
-	return (oSet.bitmap[uintIndex] & bitMask) != 0
+	return (s.bitmap[uintIndex] & bitMask) != 0
 }
 
-func (oSet *OrderedSet[T]) In(elem T) bool {
-	if _, ok := oSet.indexMap[elem]; ok {
+func (s *OrderedSet[T]) In(elem T) bool {
+	if _, ok := s.indexMap[elem]; ok {
 		return true
 	} else {
 		return false
 	}
 }
 
-func (oSet *OrderedSet[T]) Iter() iter.Seq[T] {
+func (s *OrderedSet[T]) Iter() iter.Seq[T] {
 	return func(yield func(T) bool) {
-		for _, item := range oSet.items {
-			if oSet.isValAlive(item) {
+		for _, item := range s.items {
+			if s.isValAlive(item) {
 				if !(yield(item)) {
 					return
 				}
@@ -127,11 +222,11 @@ func (oSet *OrderedSet[T]) Iter() iter.Seq[T] {
 	}
 }
 
-func (oSet *OrderedSet[T]) IterIndex() iter.Seq2[int, T] {
+func (s *OrderedSet[T]) IterIndex() iter.Seq2[int, T] {
 	return func(yield func(int, T) bool) {
 		liveIdx := 0
-		for _, item := range oSet.items {
-			if oSet.isValAlive(item) {
+		for _, item := range s.items {
+			if s.isValAlive(item) {
 				if !(yield(liveIdx, item)) {
 					return
 				}
