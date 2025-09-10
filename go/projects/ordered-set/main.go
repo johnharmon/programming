@@ -5,6 +5,11 @@ import (
 	"sync"
 )
 
+type setOP[T comparable] struct {
+	opType int
+	opVal  T
+}
+
 type OrderedSet[T comparable] struct {
 	bitmap     []uint64
 	items      []T
@@ -13,6 +18,7 @@ type OrderedSet[T comparable] struct {
 	tombstones int
 	compacting bool
 	rwLock     *sync.RWMutex
+	opsCh      chan setOP[T]
 }
 
 func (oSet *OrderedSet[T]) Append(elem T) bool {
@@ -58,6 +64,11 @@ func (oSet *OrderedSet[T]) compact() {
 	if bitmapRemainder != 0 {
 		newBitmap[len(newBitmap)-1] = (uint64(1) << bitmapRemainder) - 1
 	}
+
+	go oSet.replay()
+}
+
+func (oSet *OrderedSet[T]) replay() {
 }
 
 func (oSet *OrderedSet[T]) deleteBitMap(idx int) {
