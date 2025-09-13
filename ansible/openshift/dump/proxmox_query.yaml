@@ -1,0 +1,76 @@
+existing_vms:
+  sensitive: false
+  type:
+  - object
+  - filter:
+    - list
+    - - object
+      - name: string
+        regex: bool
+        values:
+        - list
+        - string
+    id: string
+    node_name: string
+    tags:
+    - list
+    - string
+    vms:
+    - list
+    - - object
+      - name: string
+        node_name: string
+        status: string
+        tags:
+        - list
+        - string
+        template: bool
+        vm_id: number
+  value:
+    filter: null
+    id: 0e3ef333-0901-4b75-a04e-2b3f72271378
+    node_name: null
+    tags: null
+    vms:
+    - name: Pi-Hole-DNS
+      node_name: proxmox
+      status: running
+      tags: []
+      template: false
+      vm_id: 100
+    - name: DEV01
+      node_name: proxmox
+      status: running
+      tags: []
+      template: false
+      vm_id: 101
+    - name: kubecontrol1
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 102
+    - name: kubeworker1
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 103
+    - name: kubeworker2
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 104
+    - name: rhal9-template
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 106
+    - name: SNO
+      node_name: proxmox
+      status: stopped
+      tags: []
+      template: false
+      vm_id: 107

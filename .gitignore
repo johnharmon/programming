@@ -2,7 +2,7 @@ rust/
 python/update-linux-aide/linux-aide/
 *.rpm
 *.bin
-*.terraform*
+**.terraform/
 *.tfstate*
 *.tfvars*
 *.tfplan

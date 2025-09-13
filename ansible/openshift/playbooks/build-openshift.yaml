@@ -1,0 +1,347 @@
+# Usage: 
+# ansible-playbook playbooks/build-openshift.yaml -e project_dir=(pwd) -v --ask-vault-pass -e delete=true
+
+
+- name: Build Openshift Cluster
+  tags:
+  hosts: localhost
+  gather_facts: false
+  vars_files: 
+    - "{{ [project_dir, 'vault.yaml'] | ansible.builtin.path_join() }}"
+    - "{{ [project_dir, 'vars/openshift-install.yaml'] | ansible.builtin.path_join() }}"
+  handlers:
+    - name: remove_temp_file 
+      loop: "{{ handler_temp_files | ansible.builtin.dict2items }}"
+      loop_control: 
+        loop_var: temp_file
+      ansible.builtin.file:
+        path: "{{ temp_file.value }}"
+        state: absent
+    - name: dump_variable_content
+      ansible.builtin.copy:
+        dest: "{{ handler_dump_file_path + handler_dump_file_name }}"
+        content: "{{ ansible.builtin.json_encode(handler_dump_file_content) }}"
+    - name: remove_temp_files 
+      loop: "{{ handler_remove_file_list | default([]) }}"
+      loop_control: 
+        loop_var: file_to_remove
+      ansible.builtin.file:
+        path: "{{ file_to_remove }}"
+        state: absent
+
+  tasks:
+    - name: "debug shell cwd" 
+      tags:
+        - build
+      ansible.builtin.debug: 
+        var: project_dir
+
+    - name: import vars file
+      tags:
+        - build
+      ansible.builtin.include_vars:
+        file: "{{ project_dir ~ '/vars/openshift-install.yaml' }}"
+
+    - name: "Set general config"
+      tags:
+        - build
+      ansible.builtin.set_fact:
+        handler_remove_file_list : "{{ [] }}"
+        handler_remove_temp_file: "{{ project_dir + '/templates/terraform/query_vms/vars.tfvars' }}"
+        handler_dump_file_path: "{{ project_dir + '/dump/' }}"
+        openshift_install_bin_path: "{{ lookup('env', 'HOME') ~ '/.local/bin/openshift-install' }}"
+        handler_temp_files: "{{ (handler_temp_files | default({})) | combine({'terraform_vars_query': (project_dir + '/templates/terraform/query_vms/vars.tfvars')}) }}"
+        proxmox_mac_list: "{{ lookup('macgen', count=3, exclude=(existing_macs | default([]))) }}"
+        dump_file_path: "{{ project_dir + '/dump/terraform_output.json'  }}"
+        openshift_mac_addresses: "{{ query('macgen', count=3, exclude=(used_mac_addresses | default([]))) }}"
+#        proxmox_config: >- 
+#          {{
+#            proxmox_config | ansible.builtin.combine({
+#          'proxmox_pasword': lookup('env', 'TF_VAR_proxmox_password')
+#            })
+#          }}
+    - name: "Delete terraform project if specified" 
+      tags:
+        - build
+      when: delete | default("false") == "true"
+      block:
+        - name: "Set openshift_iso fact"
+          ansible.builtin.set_fact: 
+            openshift_iso_name: "agent-x86.iso"
+
+        - name: "Delete project"
+          community.general.terraform: 
+            project_path: "{{ project_dir + '/templates/terraform/openshift-cluster' }}"
+            state: absent
+            complex_vars: true 
+            variables:
+              proxmox_password: "{{ proxmox_password }}"
+              proxmox_node_name: "{{ proxmox_config.proxmox_node_name }}"
+              openshift_nodes: "{{ proxmox_config.openshift_nodes }}"
+              openshift_install_iso_name: "{{  openshift_iso_name }}"
+              iso_url: "{{ [proxmox_config.iso_url, openshift_iso_name] | ansible.builtin.path_join() }}"
+              proxmox_username: "{{ proxmox_config.proxmox_username }}"
+              proxmox_endpoint: "{{ proxmox_config.proxmox_endpoint }}"
+              proxmox_ssh_private_key_file: "~/.ssh/id_rsa"
+              mac_addresses: "{{ openshift_mac_addresses }}"
+        
+    - name: Build if delete is not specified
+      tags:
+        - build
+      when: delete | default("false") == "false"
+      block:
+        - name: "Debug handler_remove_temp_file" 
+          ansible.builtin.debug:
+            msg: |  
+              "{{ 'handler_temp_files.terraform_vars_query' ~ ': ' ~ handler_temp_files.terraform_vars_query }}"
+
+        - name: "Template terraform vars" 
+          #notify: remove_temp_file
+          ansible.builtin.template:
+            src: "{{ project_dir + '/templates/terraform/query_vms/jinja_templates/vars.tfvars.j2' }}"
+            dest: "{{ handler_temp_files.terraform_vars_query }}"
+            force: true
+          vars: 
+            proxmox_config: ansible_facts.proxmox_config
+
+        - name: "Use terraform to get existing vms" 
+          register: terraform_query
+          #notify: remove_temp_file
+          community.general.terraform:
+            project_path: "{{ project_dir + '/templates/terraform/query_vms' }}"
+            state: present
+            force_init: true
+            complex_vars: true 
+            variables:
+              proxmox_password: "{{ proxmox_password }}"
+
+        - name: "Dump variable content" 
+          #notify: remove_temp_file
+          ansible.builtin.copy: 
+            dest: "{{ handler_dump_file_path + handler_dump_file_name }}"
+            content: "{{ terraform_query.outputs | ansible.builtin.to_nice_yaml(indent=2) }}"
+            force: true
+
+        - name: "Extract list of vm ids" 
+          ansible.builtin.set_fact:
+            vm_ids_and_nodes:  "{{ terraform_query.outputs.existing_vms.value.vms | community.general.json_query('[*].{vm_id: vm_id, node: node_name}') }}"
+
+        - name: "Query api for ticket" 
+          register: vm_ticket
+          ansible.builtin.uri:
+            url: "{{ proxmox_config.proxmox_endpoint ~ 'api2/json/access/ticket' }}"
+            method: POST
+            validate_certs: false
+            force_basic_auth: true 
+            body_format: json
+            body: 
+              username: "{{ proxmox_config.proxmox_username }}" 
+              password: "{{ proxmox_password }}"
+
+        - name: "Dump ticket returned value"
+          ansible.builtin.copy:
+            content: "{{ vm_ticket | to_nice_yaml(indent=2) }}"
+            dest: "{{ handler_dump_file_path + 'vm_ticket.yaml' }}"
+
+        - name: "Query api for full vm info" 
+          register: vm_configs
+          loop: "{{ vm_ids_and_nodes }}"
+          loop_control:
+            loop_var: vm_info
+          ansible.builtin.uri:
+            url: "{{ proxmox_config.proxmox_endpoint ~ 'api2/json/nodes/' ~ vm_info.node ~ '/qemu/' ~ vm_info.vm_id ~ '/config' }}"
+            method: GET
+            validate_certs: false
+            force_basic_auth: true 
+            headers:
+              Cookie: "{{ 'PVEAuthCookie=' ~ vm_ticket.json.data.ticket }}"
+            url_username: "{{ proxmox_config.proxmox_username }}" 
+            url_password: "{{ proxmox_password }}"
+
+        - name: "Dump registered values"
+          ansible.builtin.copy:
+            content: "{{ vm_configs.results | to_nice_yaml(indent=2) }}"
+            dest: "{{ handler_dump_file_path + 'terraform_vm_configs.yaml' }}"
+
+        - name: "Extract mac addresses" 
+          vars:
+            query: '[].json.data.net0'
+            mac_regex: '([0-9A-F]{2}:){5}([0-9A-F]{2})'
+          ansible.builtin.set_fact:
+            used_mac_addresses: "{{ vm_configs.results | community.general.json_query(query) | map('ansible.builtin.regex_search', mac_regex, ignorecase=true) | list }}"
+
+        - name: "Dump used mac addresses"
+          ansible.builtin.copy:
+            content: "{{ used_mac_addresses | to_nice_yaml(indent=2) }}"
+            dest: "{{ handler_dump_file_path + 'used_mac_addresses.yaml' }}"
+
+
+        - name: "Generate ip addresses in a loop because ipmath wants to not work with a map" 
+          loop: "{{ query('ansible.builtin.sequence', 'count=' ~ (openshift_node_count | default(3)) ) | map('int') }}"
+          loop_control:
+            loop_var: ip_offset
+          ansible.builtin.set_fact: 
+            openshift_host_ips: "{{ (openshift_host_ips | default([])) +  [(openshift_api_vip | ansible.utils.ipmath(ip_offset))] }}"
+            openshift_host_names: "{{ (openshift_host_names | default([])) + ['ocpn-0' ~ ip_offset] }}"
+
+        - name: "Generate host data structure for templating"
+          ansible.builtin.set_fact:
+            rendezvous_ip: "{{ openshift_host_ips[0] }}"
+            openshift_hosts: "{{ openshift_host_ips | zip(openshift_mac_addresses, openshift_host_names) | to_json | from_json | json_query('[*].{ip_address: @[0], mac_address: @[1], name: @[2]}') }}"
+
+        - name: "debug openshift_mac_addresses type"
+          ansible.builtin.debug: 
+            msg: "type: {{ openshift_mac_addresses | type_debug }}"
+
+        - name: "Dump new mac addresses"
+          ansible.builtin.copy:
+            content: "{{ openshift_host_ips | zip(openshift_mac_addresses) | to_nice_yaml(indent=2) }}"
+            dest: "{{ handler_dump_file_path + 'openshift_mac_addresses.yaml' }}"
+
+        - name: "Create temp directory for openshift iso generation"
+          ansible.builtin.file:
+            path: /tmp/openshift-install/configs
+            state: directory
+
+        - name: "Find all .j2 templates"
+          ansible.builtin.find:
+            paths: "{{ project_dir }}/templates/openshift-install"
+            patterns: "*.j2"
+            recurse: false
+          register: template_files
+
+        - name: "Template the openshift-install config files to dump directory"
+          loop: "{{ template_files.files }}"
+          loop_control:
+            loop_var: template_file
+          ansible.builtin.template:
+            src: "{{ template_file.path }}"
+            dest: "{{ [project_dir, 'dump', (template_file.path | basename | replace('j2', ''))] | ansible.builtin.path_join }}"
+
+        - name: "Template the openshift-install config files"
+          loop: "{{ template_files.files }}"
+          loop_control:
+            loop_var: template_file
+          ansible.builtin.template:
+            src: "{{ template_file.path }}"
+            dest: "/tmp/openshift-install/configs/{{ template_file.path | basename | replace('.j2', '') }}"
+
+        - name: "Generate openshift agent boot iso" 
+          register: openshift_install_output
+          environment:
+            OPENSHIFT_INSTALL_RELEASAE_IMAGE_OVERRIDE: "{{ openshift_image_override | default('quay.io/openshift-release-dev/ocp-release:4.19.9-multi-x86_64') }}"
+          ansible.builtin.shell:
+            chdir: "/tmp/openshift-install/" 
+            cmd: "{{ openshift_install_bin_path }} agent create image --dir='./configs'"
+
+        - name: "Save the kubeconfig and kubeadm password" 
+          loop: "{{ ['kubeconfig', 'kubeadmin-password'] }}"
+          ansible.builtin.copy: 
+            src: "/tmp/openshift-install/configs/auth/{{ item }}" 
+            dest: "{{ [project_dir, 'dump', item] | ansible.builtin.path_join }}"
+
+        - name: "Find openshift boot iso file"
+          ansible.builtin.find:
+            paths: "/tmp/openshift-install/configs"
+            patterns: "*.iso"
+            file_type: file
+          register: iso_files
+
+        - name: "Copy openshift boot iso to remote location"
+          loop: "{{ iso_files.files }}"
+          become: true
+          delegate_to: dev01
+          ansible.builtin.copy:
+            src: "{{ item.path }}"
+            dest: "/var/www/html/isos/"
+            mode: '0644'
+
+        - name: Restorecon on the uploaded iso 
+          become: true 
+          #become_pass: "{{ become_pass }}"
+          delegate_to: dev01 
+          register: restorecon_output
+          ansible.builtin.shell: 
+            cmd: |
+              restorecon -R /var/www/html/isos
+              ls -lZ /var/www/html/isos
+
+        - name: Debug iso selinux configuration 
+          ansible.builtin.debug:
+            var: restorecon_output.stdout
+
+        - name: "Extract iso name from stdout" 
+          ansible.builtin.set_fact:
+            openshift_iso_name: "{{ restorecon_output.stdout | ansible.builtin.regex_search('agent[A-z0-9._-]*\\.iso') }}"
+            
+        - name: "Debug iso name"
+          ansible.builtin.debug:
+            var: openshift_iso_name
+
+        - name: "Create openshift cluster and bootstrap from the agent iso" 
+          register: terraform_build
+          #notify: remove_temp_file
+          community.general.terraform:
+            project_path: "{{ project_dir + '/templates/terraform/openshift-cluster' }}"
+            state: present
+            force_init: true
+            complex_vars: true 
+            variables:
+              proxmox_password: "{{ proxmox_password }}"
+              proxmox_node_name: "{{ proxmox_config.proxmox_node_name }}"
+              openshift_nodes: "{{ proxmox_config.openshift_nodes }}"
+              openshift_install_iso_name: "{{  openshift_iso_name }}"
+              iso_url: "{{ [proxmox_config.iso_url, openshift_iso_name] | ansible.builtin.path_join() }}"
+              proxmox_username: "{{ proxmox_config.proxmox_username }}"
+              proxmox_endpoint: "{{ proxmox_config.proxmox_endpoint }}"
+              proxmox_ssh_private_key_file: "~/.ssh/id_rsa"
+              mac_addresses: "{{ openshift_mac_addresses }}"
+              openshift_storage_disk_size: "{{ openshift_storage_disk_size | default(1000) }}"
+
+        - name: "Extract kubeadmin credentials" 
+          ansible.bultin.set_fact: 
+            kubeadmin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
+            kubeadmin_username: "kubeadmin"
+            openshift_cluster_admin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
+            openshift_cluster_admin_username: "kubeadmin"
+
+        - name: "Delete htpasswd file"
+          ansible.builtin.file:
+            path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd' }}"
+            state: absent
+
+        - name: "Create htpasswd file"
+          ansible.builtin.file:
+            path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd' }}"
+            state: present
+
+        - name: "Create htpasswd entry for {{ openshift_cluster_admin_name }}"
+          community.general.htpasswd:
+            path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd' }}"
+            name: "{{ openshift_cluster_admin_name }}"
+            password: "{{ openshift_cluster_admin_password }}"
+
+        - name: Debug Terraform outputs 
+          ansible.builtin.copy:
+            content: "{{ terraform_build.outputs | to_nice_json(indent=2) }}"
+            dest: "{{ [project_dir, 'dump/build_outputs.json'] | ansible.builtin.path_join }}"
+
+  
+#    - name: "Create openshift hosts data" 
+#      ansible.builtin.set_fact: 
+#        openshift_hosts: >-
+#          {{ openshift_mac_addresses | zip
+      
+
+
+
+
+
+
+
+
+
+
+
+
+

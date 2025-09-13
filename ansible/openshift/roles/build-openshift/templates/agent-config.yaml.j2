@@ -1,0 +1,41 @@
+apiVersion: v1alpha1
+kind: AgentConfig
+metadata:
+  name: "ocp"
+rendezvousIP: {{ proxmox_config.rendezvous_ip }}
+hosts:
+{% for host in range(1 proxmox_config.num_hosts + 1 %}
+  - hostname: "ocpn{{ host }}"
+    role: master
+    interfaces:
+      - macAddress: {{ proxmox_config.hosts[host].mac_address }}
+        name: ens18
+    networkConfig:
+      interfaces:
+        - name: ens01
+          identifier: mac-address
+          mac-address: {{ proxmox_config.hosts[host -1].mac_address }}
+          type: ethernet
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: 192.168.86.10{{ host }}
+                prefix-length: 24
+      dns-resolver:
+        config:
+          server:
+            - 192.168.86.5
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: 192.168.86.1
+            next-hop-interface: ens18
+            table-id: 254
+
+{% endfor %}
+
+
+
+

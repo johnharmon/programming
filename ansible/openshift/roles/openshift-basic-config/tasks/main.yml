@@ -1,0 +1,276 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for openshift-basic-config
+
+- name: "Set project_dir variable if not defined"
+  tags: always
+  ansible.builtin.set_fact:
+    project_dir: "{{ lookup('ansible.builtin.lines', 'pwd' }}"
+  when: project_dir is not defined
+
+- name: "Extract kubeadmin credentials" 
+  tags: always
+  ansible.bultin.set_fact: 
+    kubeadmin_password: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'kubeadmin-password')) }}"
+    kubeadmin_username: "kubeadmin"
+
+- name: "Delete htpasswd file"
+  tags: always
+  ansible.builtin.file:
+    path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
+    state: absent
+
+- name: "Create htpasswd file"
+  tags:
+    - htpassswd
+  ansible.builtin.file:
+    path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
+    state: present
+
+- name: "Create htpasswd entry for {{ openshift_cluster_admin_name }}"
+  tags:
+    - htpassswd
+  community.general.htpasswd:
+    path: "{{ project_dir | ansible.builtin.path_join('dump', 'htpasswd') }}"
+    name: "{{ openshift_cluster_admin_name }}"
+    password: "{{ openshift_cluster_admin_password }}"
+    hash_scheme: bcrypt
+
+
+- name: "Create htpasswd password secret"
+  tags:
+    - htpassswd
+  no_log: false
+  kubernetes.core.k8s:
+    password: "{{ kubeadmin_password }}"
+    username: "{{ kubeadmin_username }}"
+    state: present
+    definition: 
+      apiVersion: v1
+      kind: secret
+      metadata:
+        name: htpasswd
+        namespace: openshift-config
+      type: opaque
+      stringData:
+        htpasswd: "{{ lookup('file', (project_dir | ansible.builtin.path_join('dump', 'htpasswd')) }}"
+
+- name: "Create htpasswd identity provider"
+  tags:
+    - htpassswd
+  no_log: false
+  kubernetes.core.k8s:
+    password: "{{ openshift_cluster_admin_password }}"
+    username: "{{ openshift_cluster_admin_username }}"
+    state: present
+    template: |
+      apiVersion: config.openshift.io/v1
+      metadata:
+        name: cluster
+      kind: OAuth
+      spec:
+        identityProviders:
+          - name: local
+            mappingMethod: claim
+            type: HTPasswd
+            htpasswd:
+              fileData: 
+                name: htpasswd
+
+- name: "Add cluster-admin role to cluster-admin account"
+  tags:
+    - cluster_admin
+  kubernetes.core.k8s:
+    state: present
+    template: |
+      apiVersion: rpac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: "cluster-admin-{{ openshift_cluster_admin_name }}"
+      roleRef: 
+        apiGroup: rbac.authorization.k8s.io
+        kind: CluterRole
+        name: cluster-admin
+      subjects:
+        - kind: user
+          apiGroup: rbac.authorization.k8s.io
+          name: {{ openshift_cluster_admin_name }}
+
+- name: "Create core local user credentials" 
+  tags: 
+    - core_user_password
+  block:
+    - name: "Create password input file"
+      ansible.builtin.copy:
+        path: "{{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt' }}"
+        content: "{{ coreos_user_password }}"
+        force: true
+
+    - name: "Create encrypted password hash" 
+      no_log: false
+      register: passwd_cmd
+      ansible.builtin.shell:
+        cmd: |
+        openssl passwd -6 -in {{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt') }}
+
+    - name: "Remove password file"
+      tags: 
+        - core_user_password
+      ansible.builtin.file:
+        path: "{{ project_dir | ansible.builtin.path_join('dump', 'passwd.txt' }}"
+        state: absent
+
+    - name: "Create oauth token settings"
+      tags: 
+        - core_user_password
+      kubernetes.core.k8s:
+        kubeconfig: "{{ project_dir }}/dump/kubeconfig"
+        host: "{{ openshift_api_url }}"
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        server_side_apply: true
+        state: patched
+        template: |
+          apiVersion: config.openshift.io/v1
+          kind: Oauth
+          spec: 
+            tokenInactivityTimeout: {{ openshift_token_inactivity_timeout | default('86400') }}s
+            tokenMaxAgeSeconds: {{ (openshift_token_inactivity_timeout | default(86400)) * 3 }}
+
+    - name: "Set core password machine config"
+      no_log: false
+      tags: 
+        - core_user_password
+      kubernetes.core.k8s:
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        state: present 
+        server_side_apply: true
+        template: |
+          apiVersion: machineconfiguration.openshift.io/v1
+          kind: MachineConfig
+          metadata:
+            labels:
+              machineconfiguration.openshift.io/role: worker
+              machineconfiguration.openshift.io/role: master
+            name: 99-set-core-password
+          spec:
+            config:
+              ignition:
+                version: 3.4.0
+              passwd:
+                users:
+                  - name: core
+                  - passwordHash: {{ passwd_cmd.stdout }}
+
+- name: "Create machine config to mount data disks for localpath provisioner"
+  no_log: false
+  tags:
+    - localpath
+    - local-path
+    - local_path
+  kubernetes.core.k8s:
+    password: "{{ openshift_cluster_admin_password }}"
+    username: "{{ openshift_cluster_admin_username }}"
+    state: present 
+    server_side_apply: true
+    template: |
+      apiVersion: machineconfiguration.openshift.io/v1
+      kind: MachineConfig
+      metadata:
+        labels:
+          machineconfiguration.openshift.io/role: worker
+          machineconfiguration.openshift.io/role: master
+        name: mount-data-directories
+      spec:
+        config:
+          ignition:
+            version: 3.4.0
+            storage:
+              filesystems:
+                - device: /dev/disk/by-id/{{ openshift_data_disk_interface }}-{{ openshift_data_disk_serial }}
+                  format: xfs
+                  path: {{ openshift_local_path_provisioner.path }}
+            systemd:
+              units:
+                - name: data_mount_selinux.service
+                  enabled: true
+                  contents: |
+                    [Unit]
+                    Description=Ensure SELinux context for local-path provisioner data dir
+                    After={{ openshift_local_path_provisioner.path.lstrip('/') | replace('/', '-') }}.mount
+                    Requires={{ openshift_local_path_provisioner.path.lstrip('/') | replace('/', '-') }}.mount
+                    # If your mount path differs, update these Conditions + the PATH env below.
+                    ConditionPathIsDirectory=/var/lib/localpath
+                    ConditionPathIsMountPoint=/var/lib/localpath
+                    
+                    [Service]
+                    Type=oneshot
+                    # change this to your actual mount path
+                    Environment=PATH_DIR=/var/lib/localpath
+                    # Add or modify fcontext, then relabel recursively
+                    ExecStartPre=/bin/bash -c "/usr/sbin/semanage fcontext -a -t container_file_t \"${PATH_DIR}(/.*)?\" 2>/dev/null || /usr/sbin/semanage fcontext -m -t container_file_t \"${PATH_DIR}(/.*)?\""
+                    ExecStart=/usr/sbin/restorecon -RFv ${PATH_DIR}
+                    RemainAfterExit=yes
+                    
+                    [Install]
+                    WantedBy=multi-user.target
+                
+
+- name: "Setup local volume storage"
+  tags: 
+    - ODF
+    - odf 
+    - localstorage
+  block:
+    - name: "Create local volume discovery"
+      tags: 
+        - ODF
+        - odf 
+        - localstorage
+      kubernetes.core.k8s:
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        template: |
+          apiVersion: local.storage.openshift.io/v1alpha1
+          kind: LocalVolumeDiscovery
+          metadata:
+            name: auto-discover-devices
+            namespace: openshift-local-storage
+          spec:
+            nodeSelector:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: {{ local_storage_node_selector_key | default('node-role.kubernetes.io/worker') }}
+                      operator: {{ local_storage_node_selector_operator | default('Exists') }}
+
+    - name: "Create local volume set" 
+      tags: 
+        - ODF
+        - odf 
+        - localstorage
+      kubernetes.core.k8s:
+        password: "{{ openshift_cluster_admin_password }}"
+        username: "{{ openshift_cluster_admin_username }}"
+        server_side_apply: true
+        state: present
+        template: |
+          apiVersion: local.storage.openshift.io/v1alpha1
+          kind: LocalVolumeSet
+          metadata:
+            name: local.volume.set
+            namespace: openshift-local-storage
+          spec:
+            deviceInclusionSpec:
+              minSize: 1T
+            storageClassName: local.storage
+
+
+
+    
+
+
+          
+    
+  
+

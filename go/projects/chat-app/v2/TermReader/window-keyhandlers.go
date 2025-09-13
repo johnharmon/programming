@@ -71,7 +71,7 @@ func InsertHandleDelete(w *Window) {
 		w.IncrCursorCol(len(w.GetActiveLine()))
 
 	} else {
-		_, _, newLine := DeleteCharacterAt(w.GetActiveLine(), w.CursorCol-1)
+		_, _, newLine := DeleteCharacterAt(w.GetActiveLine(), w.CursorCol-2)
 		w.Buf.Lines[w.CursorLine] = newLine
 		w.Logger.Logln("Content After deletion: %s", w.GetActiveLine())
 		w.RedrawLine(w.CursorLine)
