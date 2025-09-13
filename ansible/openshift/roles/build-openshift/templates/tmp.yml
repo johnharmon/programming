@@ -1,0 +1,26 @@
+
+    networkConfig:
+      interfaces:
+        - name: eno1
+          identifier: mac-address
+          mac-address: bc:24:11:79:1e:e6
+          type: ethernet
+          dispatch: 
+            post-activation: |
+              echo "WE CONFIGURED THE INTERFACE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" | systemd-cat
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: 192.168.86.100
+                prefix-length: 24
+      dns-resolver:
+        config:
+          server:
+            - 192.168.86.5
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: 192.168.86.1
+            next-hop-interface: eno1

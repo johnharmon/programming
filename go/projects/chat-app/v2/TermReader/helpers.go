@@ -267,7 +267,9 @@ func GetCharacterPositionByIndex(line []byte, curPos int) int { // Gets the disp
 	chars := 0
 	curIndex := 0
 	for curIndex < curPos {
-		_, _, step := StepRightUntilValidByte(line, curIndex)
+		_, step := ValidateMinimalUtf8At(line, curIndex)
+		//_, _, step := StepRightUntilValidCodePoint(line, curIndex)
+
 		curIndex += step
 		chars += 1
 	}
@@ -320,7 +322,8 @@ func Utf8Len(line []byte) int {
 	chars := 0
 	i := 0
 	for i < len(line) {
-		_, _, step := StepRightUntilValidByte(line, i)
+
+		_, step := ValidateMinimalUtf8At(line, i)
 		if step < 1 {
 			GlobalLogger.Logln("Step less than 1, breaking loop, char count is: %d, byte index was: %d", chars, i)
 			break
@@ -329,6 +332,25 @@ func Utf8Len(line []byte) int {
 		chars++
 	}
 	return chars
+}
+
+func Utf8MinLen(line []byte, minLen int) (isMinLen bool, bytePos int) {
+	chars := 0
+	prevStep := 0
+	i := 0
+	isMinLen = true
+	for chars < minLen {
+		_, step := ValidateMinimalUtf8At(line, bytePos)
+		if step < 1 {
+			GlobalLogger.Logln("Step less than 1, breaking loop, char count is: %d, byte index was: %d", chars, i)
+			isMinLen = false
+			break
+		}
+		bytePos += prevStep
+		prevStep = step
+		chars++
+	}
+	return isMinLen, bytePos
 }
 
 func ValidateUtf8(seq []byte) (bool, int) {
@@ -375,12 +397,43 @@ func ValidateUtf8At(line []byte, start int) (bool, int) {
 }
 
 /*
+
+Attempts to validate a utf8 codepoint. if it cannot, returns immediately and only steps by 1 byte, even if multiple invalid bytes are found sequentially. This treats every invalid byte as a separate character.
+*/
+func ValidateMinimalUtf8At(line []byte, start int) (bool, int) {
+	if start < 0 || start >= len(line) {
+		return false, 0
+	}
+	if ok, seqLen := IsStartingByte(line[start]); ok {
+		if seqLen > 1 {
+			if seqLen+start > len(line) {
+				return false, 1
+			}
+			for i := 1; i < seqLen; i++ {
+				if !IsContinuationByte(line[start+i]) {
+					return false, 1
+				}
+			}
+			return true, seqLen
+		} else {
+			return true, 1
+		}
+	}
+	return false, 1
+}
+
+func StepRightMinimal2(line []byte, curPos int) (bool, int) {
+	return ValidateMinimalUtf8At(line, curPos)
+}
+
+/*
 Will step right until it finds a valid utf-8 byte.
 Will return one false if the starting byte is not a valid starting utf-8 byte
 Will return a second false if it cannot find another valid starting byte within the the range line[curPos:]
 Returns an int representing the total distance from the starting position to the next valid utf-8 byte start, or to EOL
 */
-func StepRightUntilValidByte(line []byte, curPos int) (startOk bool, foundOk bool, totalStep int) {
+
+func StepRightUntilValidCodePoint(line []byte, curPos int) (startOk bool, foundOk bool, totalStep int) {
 	ok, step := ValidateUtf8At(line, curPos)
 	if ok {
 		GlobalLogger.Logln("Valid byte identified at %d, stepped forward: %d", curPos, step)
@@ -402,6 +455,25 @@ func StepRightUntilValidByte(line []byte, curPos int) (startOk bool, foundOk boo
 		}
 	}
 }
+
+func StepRightUntilValidStartingByte(line []byte, curPos int) (startOk bool, foundOk bool, totalStep int) {
+	if ok, _ := IsStartingByte(line[curPos]); ok {
+		return true, true, 1
+	} else {
+		totalStep++
+		for i := curPos; i < len(line); i++ {
+			if ok, _ := IsStartingByte(line[i]); ok {
+				foundOk = true
+				break
+			} else {
+				i++
+				totalStep++
+			}
+		}
+		return false, foundOk, totalStep
+	}
+}
+
 
 /*
 Will check if the current position represents the start of a sequence,
@@ -428,7 +500,8 @@ func GetNthChar(line []byte, charPos int) (bytePos int, charLen int) {
 	for chars <= charPos {
 		bytePos += prevStep
 		GlobalLogger.Logln("Validating byte at: %d", bytePos)
-		_, _, step = StepRightUntilValidByte(line, bytePos)
+		_, step = ValidateMinimalUtf8At(line, bytePos)
+
 		prevStep = step
 		chars++
 		GlobalLogger.Logln("Current character count: %d", chars)
