@@ -156,6 +156,37 @@ func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, sequenceToData ma
 	return liveCount
 }
 
+func getNthAliveIndexUnderLock(bitmap []uint64, target int) int {
+	if len(bitmap) < 1 || target < 0 {
+		return -1
+	}
+	actualIndex := 0 // 'index' value for the bit that represents 'Nth' 1 found
+	aliveIndex := 0  // variable to keep track of how many ones we have found
+	targetIdx := 0   // index of the word in the bitmap that holds the value we care about
+	found := false
+	for idx := range bitmap {
+		onesCount := bits.OnesCount64(bitmap[idx])
+		tmp := aliveIndex + onesCount
+		if tmp <= target {
+			aliveIndex += onesCount
+			actualIndex += 64
+		} else {
+			found = true
+			targetIdx = idx
+			break
+		}
+	}
+	if !found {
+		return -1
+	}
+	word := bitmap[targetIdx]
+	for i := 0; i < (target - aliveIndex); i++ {
+		word &= word - 1
+	}
+	idxOfNthOne := bits.TrailingZeros64(word)
+	return actualIndex + bits.TrailingZeros64(word)
+}
+
 func (s *OrderedSet[T]) compact() {
 	s.rwLock.RLock()
 	s.compacting = true
