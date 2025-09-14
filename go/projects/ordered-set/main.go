@@ -139,7 +139,7 @@ func (s *OrderedSet[T]) snapshotUnderLock() { // snapshot necessary values for c
 	s.cItems = make([]uint64, s.liveCount)
 }
 
-func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, sequenceToData map[uint64]setMember[T]) int {
+func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, sequenceToData map[uint64]setMember[T], dataToSequence map[T]uint64) int {
 	liveCount := 0
 	for idx := range s.items {
 		if isAlive(s.cBitMap, idx) {
@@ -148,7 +148,8 @@ func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, sequenceToData ma
 				*newItems = append(*newItems, uint64(0))
 			}
 			(*newItems)[liveCount] = itemSeqNo
-			sequenceToData[itemSeqNo] = setMember{Value: s.sequenceToData[s.items[idx]], bitmapIdx: liveCount}
+			sequenceToData[itemSeqNo] = setMember[T]{Value: s.sequenceToData[s.items[idx]].Value, bitmapIdx: liveCount}
+			dataToSequence[*(sequenceToData[itemSeqNo].Value)] = itemSeqNo
 			liveCount++
 		}
 	}
