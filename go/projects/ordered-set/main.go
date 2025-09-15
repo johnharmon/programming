@@ -56,6 +56,14 @@ type OrderedSet[T comparable] struct {
 	opsCh           chan *setOp[T]
 	replayCh        chan replayOp[T]
 	tombstones      int
+	cAppendBitmap   func(int)
+	appendBitmap    func(int)
+}
+
+func NewOrderedSet[T comparable]() *OrderedSet[T] {
+	s := OrderedSet[T]{}
+	s.dataToSequence = make(map[T]uint64)
+	s.cDataToSequence = make(map[T]uint64)
 }
 
 func getAliveIndicesUnderLock(bitmap []uint64) (liveIndices []int) {
@@ -170,6 +178,18 @@ func (s *OrderedSet[T]) Get(value T) (setEntity[T], bool) {
 	return setEntity[T]{}, false
 }
 
+func appendBitmapClosure(bitmap *[]uint64) func(int) {
+	return func(idx int) {
+		uintIndex := idx / 64
+		bitOffset := idx % 64
+		if uintIndex >= len(*bitmap) {
+			*bitmap = append(*bitmap, uint64(0))
+		}
+		bitMask := uint64(1) << bitOffset
+		(*bitmap)[uintIndex] |= bitMask
+	}
+}
+
 func (s *OrderedSet[T]) appendBitMap(idx int) {
 	uintIndex := idx / 64
 	bitOffset := idx % 64
@@ -185,7 +205,7 @@ func (s *OrderedSet[T]) snapshotUnderLock() { // snapshot necessary values for c
 	s.cItems = make([]uint64, s.liveCount)
 }
 
-func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData map[uint64]setMember[T], newDataToSequence map[T]uint64) int {
+func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData map[uint64]setMember[T], newDataToSequence map[T]uint64, newBitmap *[]uint64) int {
 	liveCount := 0
 	for _, idx := range getAliveIndicesUnderLock(s.bitmap) {
 		itemSeqNo := s.items[idx]
@@ -195,6 +215,7 @@ func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData
 		(*newItems)[liveCount] = itemSeqNo
 		newSequenceToData[itemSeqNo] = setMember[T]{Value: s.sequenceToData[s.items[idx]].Value, bitmapIdx: liveCount}
 		newDataToSequence[*(newSequenceToData[itemSeqNo].Value)] = itemSeqNo
+		s.cAppendBitmap(liveCount)
 		liveCount++
 	}
 	return liveCount
