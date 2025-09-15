@@ -58,6 +58,52 @@ type OrderedSet[T comparable] struct {
 	tombstones      int
 }
 
+func getAliveIndicesUnderLock(bitmap []uint64) (liveIndices []int) {
+	bitmapLength := len(bitmap)
+	if bitmapLength < 1 {
+		return liveIndices
+	}
+	for idx, word := range bitmap {
+		if word != 0 {
+			for word != 0 {
+				liveIndices = append(liveIndices, (64*idx)+bits.TrailingZeros64(word))
+				word &= word - 1
+			}
+		}
+	}
+	return liveIndices
+}
+
+func getNthAliveIndexUnderLock(bitmap []uint64, target int) int { // only do this under lock, else it cannot guarantee index accuracy or item liveleness
+	if len(bitmap) < 1 || target < 0 {
+		return -1
+	}
+	actualIndex := 0 // 'index' value for the bit that represents 'Nth' 1 found
+	aliveIndex := 0  // variable to keep track of how many ones we have found
+	targetIdx := 0   // index of the word in the bitmap that holds the value we care about
+	found := false
+	for idx := range bitmap {
+		onesCount := bits.OnesCount64(bitmap[idx])
+		tmp := aliveIndex + onesCount
+		if tmp <= target {
+			aliveIndex += onesCount
+			actualIndex += 64
+		} else {
+			found = true
+			targetIdx = idx
+			break
+		}
+	}
+	if !found {
+		return -1
+	}
+	word := bitmap[targetIdx]
+	for i := 0; i < (target - aliveIndex); i++ {
+		word &= word - 1
+	}
+	return actualIndex + bits.TrailingZeros64(word)
+}
+
 func (s *OrderedSet[T]) sequencer() {
 	var applied bool
 	var replay replayOp[T]
@@ -103,10 +149,10 @@ func (s *OrderedSet[T]) append(elem T) bool {
 	if _, ok := s.dataToSequence[elem]; !ok {
 		bitmapIdx := len(s.items) - 1
 		s.dataToSequence[elem] = s.seqNo
-		s.sequenceToData[s.seqNo] = setMember[T]{bitmapIdx: bitmapIdx - 1, Value: &elem}
+		s.sequenceToData[s.seqNo] = setMember[T]{bitmapIdx: bitmapIdx, Value: &elem}
 		s.items = append(s.items, s.seqNo)
 		s.liveCount++
-		s.appendBitMap(s.indexMap[elem])
+		s.appendBitMap(bitmapIdx)
 		return true
 	}
 	return false
@@ -139,52 +185,19 @@ func (s *OrderedSet[T]) snapshotUnderLock() { // snapshot necessary values for c
 	s.cItems = make([]uint64, s.liveCount)
 }
 
-func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, sequenceToData map[uint64]setMember[T], dataToSequence map[T]uint64) int {
+func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData map[uint64]setMember[T], newDataToSequence map[T]uint64) int {
 	liveCount := 0
-	for idx := range s.items {
-		if isAlive(s.cBitMap, idx) {
-			itemSeqNo := s.items[idx]
-			if liveCount > len(*newItems)-1 {
-				*newItems = append(*newItems, uint64(0))
-			}
-			(*newItems)[liveCount] = itemSeqNo
-			sequenceToData[itemSeqNo] = setMember[T]{Value: s.sequenceToData[s.items[idx]].Value, bitmapIdx: liveCount}
-			dataToSequence[*(sequenceToData[itemSeqNo].Value)] = itemSeqNo
-			liveCount++
+	for _, idx := range getAliveIndicesUnderLock(s.bitmap) {
+		itemSeqNo := s.items[idx]
+		if liveCount > len(*newItems)-1 {
+			*newItems = append(*newItems, uint64(0))
 		}
+		(*newItems)[liveCount] = itemSeqNo
+		newSequenceToData[itemSeqNo] = setMember[T]{Value: s.sequenceToData[s.items[idx]].Value, bitmapIdx: liveCount}
+		newDataToSequence[*(newSequenceToData[itemSeqNo].Value)] = itemSeqNo
+		liveCount++
 	}
 	return liveCount
-}
-
-func getNthAliveIndexUnderLock(bitmap []uint64, target int) int {
-	if len(bitmap) < 1 || target < 0 {
-		return -1
-	}
-	actualIndex := 0 // 'index' value for the bit that represents 'Nth' 1 found
-	aliveIndex := 0  // variable to keep track of how many ones we have found
-	targetIdx := 0   // index of the word in the bitmap that holds the value we care about
-	found := false
-	for idx := range bitmap {
-		onesCount := bits.OnesCount64(bitmap[idx])
-		tmp := aliveIndex + onesCount
-		if tmp <= target {
-			aliveIndex += onesCount
-			actualIndex += 64
-		} else {
-			found = true
-			targetIdx = idx
-			break
-		}
-	}
-	if !found {
-		return -1
-	}
-	word := bitmap[targetIdx]
-	for i := 0; i < (target - aliveIndex); i++ {
-		word &= word - 1
-	}
-	idxOfNthOne := bits.TrailingZeros64(word)
-	return actualIndex + bits.TrailingZeros64(word)
 }
 
 func (s *OrderedSet[T]) compact() {
@@ -194,7 +207,7 @@ func (s *OrderedSet[T]) compact() {
 	s.cItems = make([]uint64, s.liveCount)
 	s.snapshotSeqNo = s.seqNo
 	copy(s.cBitMap, s.bitmap[:len(s.cBitMap)-1])
-	liveCount := s.copyItemsUnderLock(&s.cItems, s.cSequenceToData)
+	liveCount := s.copyItemsUnderLock(&s.cItems, s.cSequenceToData, s.cDataToSequence)
 
 	//	for idx := range s.items {
 	//		if isAlive(s.cBitMap, idx) {
@@ -222,8 +235,8 @@ func (s *OrderedSet[T]) compact() {
 	go s.replay(wg)
 	wg.Wait()
 	s.rwLock.Lock()
-	s.bitmap, s.indexMap, s.items = s.cBitMap, s.cIndexMap, s.cItems
-	s.cBitMap, s.cIndexMap, s.cItems = nil, nil, nil
+	s.bitmap, s.dataToSequence, s.sequenceToData, s.items = s.cBitMap, s.cDataToSequence, s.cSequenceToData, s.cItems
+	s.cBitMap, s.cDataToSequence, s.cSequenceToData, s.cItems = nil, nil, nil, nil
 	s.compacting = false
 	s.rwLock.Unlock()
 }
