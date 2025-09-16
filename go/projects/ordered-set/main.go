@@ -16,6 +16,7 @@ type setOp[T comparable] struct {
 	replayOp[T]
 	callback chan bool
 	opVal    *T
+	opIdx    int
 }
 
 type setMember[T comparable] struct {
@@ -53,7 +54,7 @@ type OrderedSet[T comparable] struct {
 	lastAppliedSeq  uint64
 	rwLock          *sync.RWMutex
 	pending         map[uint64]*T
-	opsCh           chan *setOp[T]
+	opsCh           chan setOp[T]
 	replayCh        chan replayOp[T]
 	tombstones      int
 	cAppendBitmap   func(int)
@@ -69,7 +70,7 @@ func NewOrderedSet[T comparable]() *OrderedSet[T] {
 	s.cSequenceToData = make(map[uint64]setMember[T])
 	s.indexMap = make(map[T]int)
 	s.pending = make(map[uint64]*T)
-	s.opsCh = make(chan *setOp[T], 10000)
+	s.opsCh = make(chan setOp[T], 10000)
 	s.replayCh = make(chan replayOp[T], 10000)
 	s.bitmap = make([]uint64, 10000)
 	s.cBitmap = make([]uint64, 10000)
@@ -145,6 +146,8 @@ func (s *OrderedSet[T]) sequencer() {
 			applied = s.append(*op.opVal)
 		case OP_DELETE:
 			applied = s.delete(*op.opVal)
+		case OP_DELETE_IDX:
+			applied = s.deleteLiveIdx(op.opIdx)
 		}
 		op.seqNo = s.seqNo
 		if s.compacting {
@@ -341,6 +344,12 @@ func (s *OrderedSet[T]) compactingDeleteBitMap(idx int) {
 }
 
 func (s *OrderedSet[T]) Delete(elem T) bool {
+	op := s.opPool.Get().(setOp[T])
+	op.opVal = nil
+	op.opIdx = -1
+	op.callback = make(chan bool, 1)
+	s.opsCh <- op
+	return <-op.callback
 }
 
 func (s *OrderedSet[T]) delete(elem T) bool {
@@ -355,9 +364,10 @@ func (s *OrderedSet[T]) delete(elem T) bool {
 
 func (s *OrderedSet[T]) compactingDelete(elem T) bool {
 	s.rwLock.Lock()
-	if idx, ok := s.cIndexMap[elem]; ok {
-		s.compactingDeleteBitMap(idx)
-		delete(s.cIndexMap, elem)
+	if seqNo, ok := s.cDataToSequence[elem]; ok {
+		s.compactingDeleteBitMap(int(seqNo))
+		delete(s.cDataToSequence, elem)
+		delete(s.cSequenceToData(seqNo)
 		s.cLiveCount--
 		s.rwLock.Unlock()
 		return true
@@ -367,11 +377,12 @@ func (s *OrderedSet[T]) compactingDelete(elem T) bool {
 }
 
 func (s *OrderedSet[T]) DeleteIdx(idx int) bool {
-	if s.isIdxAlive(idx) {
-		s.deleteBitMap(idx)
-		return true
-	}
-	return false
+	op := s.opPool.Get().(setOp[T])
+	op.opIdx = idx
+	op.opVal = nil
+	op.callback = make(chan bool, 1)
+	s.opsCh <- op
+	return <-op.callback
 }
 
 func (s *OrderedSet[T]) deleteLiveIdx(idx int) bool {
@@ -380,7 +391,7 @@ func (s *OrderedSet[T]) deleteLiveIdx(idx int) bool {
 		if s.isIdxAlive(i) {
 			liveIdx++
 		}
-		if liveIdx == idx {
+		if liveIdx == seqNo {
 			s.deleteBitMap(i)
 		}
 		return true
@@ -406,7 +417,7 @@ func (s *OrderedSet[T]) isSeqAlive(seqNo uint64) bool {
 
 // func getBitMapIndex(idx int) uint64
 func (s *OrderedSet[T]) isIdxAlive(idx int) bool {
-	if idx < 0 || idx > len(s.bitmap) {
+	if seqNo < 0 || seqNo > len(s.bitmap) {
 		return false
 	}
 	uintIndex := idx / 64
@@ -450,7 +461,7 @@ func (s *OrderedSet[T]) IterIndex() iter.Seq2[int, T] {
 }
 
 func isAlive(bitmap []uint64, idx int) bool {
-	if idx < 0 || idx > len(bitmap) {
+	if seqNo < 0 || seqNo > len(bitmap) {
 		return false
 	}
 	uintIndex := idx / 64
