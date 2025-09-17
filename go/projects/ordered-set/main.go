@@ -56,6 +56,7 @@ type OrderedSet[T comparable] struct {
 	cLiveCount      int
 	seqNo           atomic.Uint64 // integer representing the most recent operation number so ops can be tagged with it
 	lastAppliedSeq  uint64
+	cLastAppliedSeq uint64
 	rwLock          *sync.RWMutex
 	pending         map[uint64]setOp[T]
 	opsCh           chan *setOp[T]
@@ -282,6 +283,7 @@ func (s *OrderedSet[T]) compact() {
 	s.snapshotSeqNo = s.seqNo.Load()
 	liveCount = s.copyItemsUnderLock(&s.cItems, s.cSequenceToData, s.cDataToSequence, &s.cBitmap)
 	s.cItems = make([]uint64, liveCount, int(float64(liveCount)*1.33))
+	s.cLastAppliedSeq = s.snapshotSeqNo
 	s.rwLock.RUnlock()
 
 	for currentSeq := s.snapshotSeqNo + 1; (s.seqNo.Load() - currentSeq) > 0; currentSeq++ {
@@ -291,20 +293,28 @@ func (s *OrderedSet[T]) compact() {
 				s.cAppend(*op.opVal, currentSeq)
 			case OP_DELETE:
 				s.cDelete(*op.opVal)
+			case OP_DELETE_IDX:
+				s.cDeleteIdx(op.opIdx)
 			}
+			s.cLastAppliedSeq = currentSeq
+			delete(s.pending, currentSeq)
 		}
 	}
-
 	s.rwLock.Lock()
-	close(s.replayCh)
-	s.replayCh = nil
-	s.dualWrite = true
-	s.rwLock.Unlock()
-
-	wg := &sync.WaitGroup{}
-	wg.Wait()
-
-	s.rwLock.Lock()
+	for currentSeq := s.cLastAppliedSeq + 1; (s.seqNo.Load() - currentSeq) > 0; currentSeq++ {
+		if op, ok := s.pending[currentSeq]; ok {
+			switch op.opType {
+			case OP_APPEND:
+				s.cAppend(*op.opVal, currentSeq)
+			case OP_DELETE:
+				s.cDelete(*op.opVal)
+			case OP_DELETE_IDX:
+				s.cDeleteIdx(op.opIdx)
+			}
+			s.cLastAppliedSeq = currentSeq
+			delete(s.pending, currentSeq)
+		}
+	}
 	s.bitmap, s.dataToSequence, s.sequenceToData, s.items = s.cBitmap, s.cDataToSequence, s.cSequenceToData, s.cItems
 	s.cBitmap, s.cDataToSequence, s.cSequenceToData, s.cItems = nil, nil, nil, nil
 	s.compacting = false
@@ -355,8 +365,8 @@ func (s *OrderedSet[T]) delete(elem T) bool {
 	if seqNo, ok := s.dataToSequence[elem]; ok {
 		if member, ok2 := s.sequenceToData[seqNo]; ok2 {
 			s.deleteBitMap(member.bitmapIdx)
-			delete(s.dataToSequence, elem)
-			delete(s.sequenceToData, seqNo)
+			//			delete(s.dataToSequence, elem)
+			//			delete(s.sequenceToData, seqNo)
 			s.liveCount.Store(s.liveCount.Load() - 1)
 			return true
 		}
@@ -368,8 +378,8 @@ func (s *OrderedSet[T]) cDelete(elem T) bool {
 	if seqNo, ok := s.cDataToSequence[elem]; ok {
 		if member, ok2 := s.cSequenceToData[seqNo]; ok2 {
 			s.deleteBitMap(member.bitmapIdx)
-			delete(s.cDataToSequence, elem)
-			delete(s.cSequenceToData, seqNo)
+			//			delete(s.cDataToSequence, elem)
+			//			delete(s.cSequenceToData, seqNo)
 			s.liveCount.Store(s.liveCount.Load() - 1)
 			return true
 		}
@@ -387,6 +397,22 @@ func (s *OrderedSet[T]) DeleteIdx(idx int) bool {
 }
 
 func (s *OrderedSet[T]) deleteLiveIdx(idx int) bool {
+	itemIdx := getNthAliveIndexUnderLock(s.bitmap, idx)
+	if itemIdx >= 0 {
+		seqNo := s.items[itemIdx]
+		member, ok := s.sequenceToData[seqNo]
+		if ok {
+			s.deleteBitMap(member.bitmapIdx)
+			//			delete(s.cDataToSequence, *member.Value)
+			//			delete(s.cSequenceToData, seqNo)
+			s.liveCount.Store(s.liveCount.Load() - 1)
+			return true
+		}
+	}
+	return false
+}
+
+func (s *OrderedSet[T]) cDeleteIdx(idx int) bool {
 	itemIdx := getNthAliveIndexUnderLock(s.bitmap, idx)
 	if itemIdx >= 0 {
 		seqNo := s.items[itemIdx]
