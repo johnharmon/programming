@@ -33,6 +33,8 @@ type setEntity[T comparable] struct {
 type replayOp[T comparable] struct {
 	opType int
 	seqNo  uint64
+	value  *T
+	opIdx  int
 }
 
 type OrderedSet[T comparable] struct {
@@ -54,13 +56,14 @@ type OrderedSet[T comparable] struct {
 	seqNo           atomic.Uint64 // integer representing the most recent operation number so ops can be tagged with it
 	lastAppliedSeq  uint64
 	rwLock          *sync.RWMutex
-	pending         map[uint64]*T
+	pending         map[uint64]setOp[T]
 	opsCh           chan setOp[T]
 	replayCh        chan replayOp[T]
 	tombstones      int
-	cAppendBitmap   func(int)
 	maxItems        int
+	cAppendBitmap   func(int)
 	appendBitmap    func(int)
+	// cAppend func(
 }
 
 func NewOrderedSet[T comparable]() *OrderedSet[T] {
@@ -70,7 +73,7 @@ func NewOrderedSet[T comparable]() *OrderedSet[T] {
 	s.sequenceToData = make(map[uint64]setMember[T])
 	s.cSequenceToData = make(map[uint64]setMember[T])
 	s.indexMap = make(map[T]int)
-	s.pending = make(map[uint64]*T)
+	s.pending = make(map[uint64]setOp[T])
 	s.opsCh = make(chan setOp[T], 10000)
 	s.replayCh = make(chan replayOp[T], 10000)
 	s.bitmap = make([]uint64, 10000)
@@ -142,9 +145,8 @@ func (s *OrderedSet[T]) sequencer() {
 		needReplay = false
 		applied = false
 		s.rwLock.Lock()
-		s.lastAppliedSeq = s.seqNo.Add(1)
-		s.seqNo.Add(1)
-		seqNo = s.seqNo.Load()
+		seqNo := s.seqNo.Load() + 1
+		s.lastAppliedSeq = seqNo
 		switch op.opType {
 		case OP_APPEND:
 			applied = s.append(*op.opVal)
@@ -157,8 +159,9 @@ func (s *OrderedSet[T]) sequencer() {
 		if s.compacting {
 			replay = op.replayOp
 			needReplay = true
-			s.pending[seqNo] = op.opVal
+			s.pending[seqNo] = op
 		}
+		s.seqNo.Store(seqNo)
 		s.rwLock.Unlock()
 		op.callback <- applied
 		op.opVal, op.callback = nil, nil
@@ -177,10 +180,11 @@ func (s *OrderedSet[T]) Append(elem T) bool {
 
 func (s *OrderedSet[T]) append(elem T) bool {
 	if _, ok := s.dataToSequence[elem]; !ok {
+		seqNo := s.seqNo.Load()
 		bitmapIdx := len(s.items) - 1
-		s.dataToSequence[elem] = s.seqNo
-		s.sequenceToData[s.seqNo] = setMember[T]{bitmapIdx: bitmapIdx, Value: &elem}
-		s.items = append(s.items, s.seqNo)
+		s.dataToSequence[elem] = seqNo
+		s.sequenceToData[seqNo] = setMember[T]{bitmapIdx: bitmapIdx, Value: &elem}
+		s.items = append(s.items, seqNo)
 		s.liveCount++
 		s.appendBitMap(bitmapIdx)
 		return true
@@ -236,9 +240,9 @@ func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData
 		}
 		liveCount++
 		(*newItems)[liveCount-1] = itemSeqNo
-		newSequenceToData[itemSeqNo] = setMember[T]{Value: s.sequenceToData[s.items[idx]].Value, bitmapIdx: liveCount-1}
+		newSequenceToData[itemSeqNo] = setMember[T]{Value: s.sequenceToData[s.items[idx]].Value, bitmapIdx: liveCount - 1}
 		newDataToSequence[*(newSequenceToData[itemSeqNo].Value)] = itemSeqNo
-		s.cAppendBitmap(liveCount-1)
+		s.cAppendBitmap(liveCount - 1)
 	}
 	return liveCount
 }
@@ -257,7 +261,7 @@ func (s *OrderedSet[T]) compact() {
 	s.rwLock.Lock()
 	s.compacting = true
 	if s.pending == nil {
-		s.pending = make(map[uint64]*T)
+		s.pending = make(map[uint64]setOp[T])
 	} else {
 		clear(s.pending)
 	}
@@ -269,8 +273,12 @@ func (s *OrderedSet[T]) compact() {
 	s.cItems = make([]uint64, liveCount, int(float64(liveCount)*1.33))
 	s.rwLock.RUnlock()
 
-	for currentSeq := s.snapshotSeqNo +1; (s.seqNo.Load() - currentSeq); currentSeq++  {
+	for currentSeq := s.snapshotSeqNo + 1; (s.seqNo.Load() - currentSeq) > 0; currentSeq++ {
 		if op, ok := s.pending[currentSeq]; ok {
+			switch op.opType {
+			case OP_APPEND:
+				s.compactingAppend(*op.value)
+			}
 		}
 	}
 
@@ -302,10 +310,10 @@ func (s *OrderedSet[T]) compactingAppendBitMap(idx int) {
 }
 
 // func appendClosure(s *OrderedSet[T], setItems []T,
-func (s *OrderedSet[T]) compactingAppend(elem T) bool {
+func (s *OrderedSet[T]) compactingAppend(setOp) bool {
 	s.rwLock.Lock()
-	if _, ok := s.compactingIndexMap[elem]; !ok {
-		s.items = append(s.items, elem)
+	if _, ok := s.cDataToSequence[elem]; !ok {
+		s.items = append(s.items)
 		s.compactingIndexMap[elem] = len(s.items) - 1
 		s.compactingLiveCount += 1
 		s.compactingAppendBitMap(s.compactingIndexMap[elem])
@@ -315,6 +323,21 @@ func (s *OrderedSet[T]) compactingAppend(elem T) bool {
 	s.rwLock.Unlock()
 	return false
 }
+
+//func (s *OrderedSet[T]) appendClosure(items *[]uint64, sequenceToData map[uint64]setMember[T], dataToSequence map[T]uint64, bitmap *[]uint64) func(T) {
+//	return func(elem T) {
+//		if _, ok := dataToSequence[elem]; !ok {
+//			bitmapIdx := len(items) - 1
+//			dataToSequence[elem] = s.seqNo
+//			sequenceToData[s.seqNo] = setMember[T]{bitmapIdx: bitmapIdx, Value: &elem}
+//			s.items = append(s.items, s.seqNo)
+//			s.liveCount++
+//			s.appendBitMap(bitmapIdx)
+//			return true
+//		}
+//		return false
+//	}
+//}
 
 func (s *OrderedSet[T]) replay(wg *sync.WaitGroup) {
 	wg.Add(1)
@@ -371,7 +394,7 @@ func (s *OrderedSet[T]) compactingDelete(elem T) bool {
 	if seqNo, ok := s.cDataToSequence[elem]; ok {
 		s.compactingDeleteBitMap(int(seqNo))
 		delete(s.cDataToSequence, elem)
-		delete(s.cSequenceToData(seqNo)
+		delete(s.cSequenceToData, seqNo)
 		s.cLiveCount--
 		s.rwLock.Unlock()
 		return true
