@@ -160,9 +160,6 @@ func (s *OrderedSet[T]) sequencer() {
 			s.pending[seqNo] = op.opVal
 		}
 		s.rwLock.Unlock()
-		if needReplay {
-			s.replayCh <- replay
-		}
 		op.callback <- applied
 		op.opVal, op.callback = nil, nil
 		s.opPool.Put(op)
@@ -272,7 +269,9 @@ func (s *OrderedSet[T]) compact() {
 	s.cItems = make([]uint64, liveCount, int(float64(liveCount)*1.33))
 	s.rwLock.RUnlock()
 
-	for {
+	for currentSeq := s.snapshotSeqNo +1; (s.seqNo.Load() - currentSeq); currentSeq++  {
+		if op, ok := s.pending[currentSeq]; ok {
+		}
 	}
 
 	s.rwLock.Lock()
