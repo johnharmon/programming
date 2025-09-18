@@ -1,16 +1,11 @@
-package orderedset
+package set
 
 import (
 	"iter"
 	"math/bits"
+	"os"
 	"sync"
 	"sync/atomic"
-)
-
-const (
-	OP_APPEND = iota
-	OP_DELETE
-	OP_DELETE_IDX
 )
 
 func NewOrderedSet[T comparable]() *OrderedSet[T] {
@@ -28,9 +23,11 @@ func NewOrderedSet[T comparable]() *OrderedSet[T] {
 	s.items = make([]uint64, 10000)
 	s.cItems = make([]uint64, 10000)
 	s.opPool = &sync.Pool{}
+	s.rwLock = &sync.RWMutex{}
 	s.opPool.New = func() any {
 		return &setOp[T]{}
 	}
+	s.encoder = NewSetOpEncoder[T](os.Stdout)
 	s.appendBitmap = appendBitmapClosure(&s.bitmap)
 	s.cAppendBitmap = appendBitmapClosure(&s.cBitmap)
 	s.seqNo = atomic.Uint64{}
@@ -107,9 +104,10 @@ func (s *OrderedSet[T]) sequencer() {
 		}
 		s.seqNo.Store(seqNo)
 		s.rwLock.Unlock()
+		s.encoder.Encode(*op)
 		op.callback <- applied
 		op.opVal, op.callback, op.opIdx = nil, nil, 0
-		s.opPool.Put(&op)
+		s.opPool.Put(op)
 	}
 }
 
