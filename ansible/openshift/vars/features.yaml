@@ -1,0 +1,22 @@
+features_sets:
+  default:
+    features:
+      - name: build
+      - name: basic_config
+        var_overrides:
+          data_mount_path: /var/lib/storage
+        overrides_only: false
+        component_overrides:
+          - localpath
+          - htpasswd
+
+features:
+  basic_config:
+    vars: {}
+    components:
+      - odf
+      - htpasswd 
+  build: 
+    vars: {}
+    components:   
+      - build
