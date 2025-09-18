@@ -1,10 +1,11 @@
-package main
+package orderedset
 
 import (
+	"fmt"
 	"io"
+	"reflect"
 	"sync"
 	"sync/atomic"
-	"reflect"
 )
 
 type setOp[T comparable] struct {
@@ -66,6 +67,20 @@ type setOpEncoder[T comparable] struct {
 	writer io.Writer
 }
 
+func NewSetOpEncoder[T comparable](writer io.Writer) setOpEncoder[T] {
+	return setOpEncoder[T]{writer: writer}
+}
+
 func (s *setOpEncoder[T]) Encode(op setOp[T]) {
-	s.writer.Write("Type: %s, Value: %s, Idx: %d, opType: %s, seqNo: %d\n" op.opVal)
+	fmt.Fprintf(s.writer,
+		`Type: %v, 
+		Value: %s, 
+		Idx: %d, 
+		opType: %d, 
+		seqNo: %d\n`,
+		reflect.TypeOf(op.opVal),
+		op.opVal,
+		op.opIdx,
+		op.opType,
+		op.seqNo)
 }
