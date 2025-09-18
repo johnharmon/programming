@@ -1,5 +1,6 @@
 package main
 
+// inserting a comment for github testing
 import (
 	"fmt"
 	"math/rand"
