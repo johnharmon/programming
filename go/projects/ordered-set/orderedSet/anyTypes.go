@@ -1,4 +1,4 @@
-package orderedset
+package set
 
 import (
 	"fmt"
@@ -8,54 +8,53 @@ import (
 	"sync/atomic"
 )
 
-type setOp[T comparable] struct {
+type anySetOp struct {
 	callback chan bool
-	opVal    *T
+	opVal    any
 	opIdx    int
 	opType   int
 	seqNo    uint64
 }
 
-type setMember[T comparable] struct {
+type anySetMember struct {
 	bitmapIdx int
-	Value     *T
+	Value     any
 }
 
-type setEntity[T comparable] struct {
-	Value T
+type anySetEntity struct {
+	Value any
 	ID    uint64
 }
 
-type replayOp[T comparable] struct {
+type anySeplayOp struct {
 	opType int
 	seqNo  uint64
-	value  *T
+	value  any
 	opIdx  int
 }
 
-type OrderedSet[T comparable] struct {
+type AnyOrderedSet struct {
 	dualWrite       bool
 	bitmap          []uint64
 	compacting      bool
 	cBitmap         []uint64
 	cItems          []uint64
-	cDataToSequence map[T]uint64
-	dataToSequence  map[T]uint64
-	sequenceToData  map[uint64]setMember[T]
-	cSequenceToData map[uint64]setMember[T]
+	cDataToSequence map[any]uint64
+	dataToSequence  map[any]uint64
+	sequenceToData  map[uint64]anySetMember
+	cSequenceToData map[uint64]anySetMember
 	snapshotSeqNo   uint64
 	opPool          *sync.Pool
 	items           []uint64
-	indexMap        map[T]int
+	indexMap        map[any]int
 	liveCount       atomic.Uint64
 	cLiveCount      int
 	seqNo           atomic.Uint64 // integer representing the most recent operation number so ops can be tagged with it
 	lastAppliedSeq  uint64
 	cLastAppliedSeq uint64
 	rwLock          *sync.RWMutex
-	pending         map[uint64]setOp[T]
-	opsCh           chan *setOp[T]
-	replayCh        chan replayOp[T]
+	pending         map[uint64]anySetOp
+	opsCh           chan *anySetOp
 	tombstones      int
 	maxItems        int
 	cAppendBitmap   func(int)
@@ -63,15 +62,15 @@ type OrderedSet[T comparable] struct {
 	// cAppend func(
 }
 
-type setOpEncoder[T comparable] struct {
+type anySetOpEncoder struct {
 	writer io.Writer
 }
 
-func NewSetOpEncoder[T comparable](writer io.Writer) setOpEncoder[T] {
-	return setOpEncoder[T]{writer: writer}
+func NewAnySetOpEncoder(writer io.Writer) anySetOpEncoder {
+	return anySetOpEncoder{writer: writer}
 }
 
-func (s *setOpEncoder[T]) Encode(op setOp[T]) {
+func (s *anySetOpEncoder) Encode(op anySetOp) {
 	fmt.Fprintf(s.writer,
 		`Type: %v, 
 		Value: %s, 
