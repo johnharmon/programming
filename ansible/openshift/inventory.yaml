@@ -1,0 +1,5 @@
+proxmox: 
+  hosts:
+    dev01: 
+      ansible_host: "dev01.harmonlab.com"
+      
