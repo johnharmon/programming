@@ -1,6 +1,8 @@
 package set
 
 import (
+	"fmt"
+	"io"
 	"iter"
 	"math/bits"
 	"os"
@@ -17,11 +19,10 @@ func NewOrderedSet[T comparable]() *OrderedSet[T] {
 	s.indexMap = make(map[T]int)
 	s.pending = make(map[uint64]setOp[T])
 	s.opsCh = make(chan *setOp[T], 10000)
-	s.replayCh = make(chan replayOp[T], 10000)
-	s.bitmap = make([]uint64, 10000)
-	s.cBitmap = make([]uint64, 10000)
-	s.items = make([]uint64, 10000)
-	s.cItems = make([]uint64, 10000)
+	s.bitmap = make([]uint64, 1, 10000)
+	s.cBitmap = make([]uint64, 1, 10000)
+	s.items = make([]uint64, 0, 10000)
+	s.cItems = make([]uint64, 1, 10000)
 	s.opPool = &sync.Pool{}
 	s.rwLock = &sync.RWMutex{}
 	s.opPool.New = func() any {
@@ -31,7 +32,7 @@ func NewOrderedSet[T comparable]() *OrderedSet[T] {
 	s.appendBitmap = appendBitmapClosure(&s.bitmap)
 	s.cAppendBitmap = appendBitmapClosure(&s.cBitmap)
 	s.seqNo = atomic.Uint64{}
-	s.seqNo.Store(0)
+	s.seqNo.Store(1)
 	go s.sequencer()
 	return &s
 }
@@ -52,34 +53,36 @@ func getAliveIndicesUnderLock(bitmap []uint64) (liveIndices []int) {
 	return liveIndices
 }
 
-func getNthAliveIndexUnderLock(bitmap []uint64, target int) int { // only do this under lock, else it cannot guarantee index accuracy or item liveleness
+func getNthAliveIndexUnderLock(bitmap []uint64, target int) (realIndex int) { // only do this under lock, else it cannot guarantee index accuracy or item liveleness
+	// Scans a bitmap for Nth alive item and returns the 'bitmap index' of that 1
 	if len(bitmap) < 1 || target < 0 {
 		return -1
 	}
-	actualIndex := 0 // 'index' value for the bit that represents 'Nth' 1 found
-	aliveIndex := 0  // variable to keep track of how many ones we have found
-	targetIdx := 0   // index of the word in the bitmap that holds the value we care about
-	found := false
+	remaining := target
 	for idx := range bitmap {
-		onesCount := bits.OnesCount64(bitmap[idx])
-		tmp := aliveIndex + onesCount
-		if tmp <= target {
-			aliveIndex += onesCount
-			actualIndex += 64
-		} else {
-			found = true
-			targetIdx = idx
-			break
+		popCount := bits.OnesCount64(bitmap[idx])
+		if remaining <= popCount {
+			word := bitmap[idx]
+			for i := 1; i < remaining; i++ {
+				word &= word - 1
+			}
+			return idx*64 + bits.TrailingZeros64(word)
 		}
+		remaining -= popCount
 	}
-	if !found {
-		return -1
-	}
-	word := bitmap[targetIdx]
-	for i := 0; i < (target - aliveIndex); i++ {
-		word &= word - 1
-	}
-	return actualIndex + bits.TrailingZeros64(word)
+	return -1
+
+	// onesCount := bits.OnesCount64(bitmap[idx])
+	//			tmp := aliveIndex + onesCount
+	//			if tmp <= target {
+	//				aliveIndex += onesCount
+	//				actualIndex += 64
+	//			} else {
+	//				found = true
+	//				targetIdx = idx
+	//				break
+	//			}
+	//		}
 }
 
 func (s *OrderedSet[T]) sequencer() {
@@ -122,7 +125,7 @@ func (s *OrderedSet[T]) Append(elem T) bool {
 
 func (s *OrderedSet[T]) append(elem T, seqNo uint64) bool {
 	if _, ok := s.dataToSequence[elem]; !ok {
-		bitmapIdx := len(s.items) - 1
+		bitmapIdx := len(s.items)
 		s.dataToSequence[elem] = seqNo
 		s.sequenceToData[seqNo] = setMember[T]{bitmapIdx: bitmapIdx, Value: &elem}
 		s.items = append(s.items, seqNo)
@@ -158,6 +161,56 @@ func (s *OrderedSet[T]) Get(value T) (setEntity[T], bool) {
 	return setEntity[T]{}, false
 }
 
+func (s *OrderedSet[T]) GetIdx(idx int) (*setEntity[T], bool) {
+	s.rwLock.Lock()
+	realIdx := getNthAliveIndexUnderLock(s.bitmap, idx+1)
+	if realIdx != -1 {
+		if realIdx < len(s.items) {
+			seqNo := s.items[realIdx]
+			if member, ok := s.sequenceToData[seqNo]; ok {
+				s.rwLock.Unlock()
+				return &setEntity[T]{Value: *member.Value, ID: seqNo}, true
+			}
+			fmt.Printf("Error: non-existent sequence number: %d given by s.items[%d]\n", seqNo, realIdx)
+		}
+		fmt.Printf("Error, out of bounds index given by 'getNthAliveIndexUnderLock(%d)'\n", idx)
+	}
+	s.rwLock.Unlock()
+	return nil, false
+}
+
+func (s *OrderedSet[T]) Len() int {
+	return int(s.liveCount.Load())
+}
+
+func (s *OrderedSet[T]) DumpItems(out io.Writer) {
+	for idx, item := range s.items {
+		fmt.Fprintf(out, "Index: %d, SequenceNumber: %d, Alive: %t\n", idx, item, s.isSeqAlive(item))
+		fmt.Println("")
+	}
+}
+
+func (s *OrderedSet[T]) DumpBitMap(out io.Writer) {
+	for idx, word := range s.bitmap {
+		fmt.Printf("%d: %b\n", idx, word)
+	}
+	fmt.Println("")
+}
+
+func (s *OrderedSet[T]) DumpSequenceMap(out io.Writer) {
+	for k, v := range s.sequenceToData {
+		fmt.Fprintf(out, "sequenceNumber: %d, bitmapIdx: %d, value: %d\n", k, v.bitmapIdx, *v.Value)
+	}
+	fmt.Println("")
+}
+
+func (s *OrderedSet[T]) DumpDataMap(out io.Writer) {
+	for k, v := range s.dataToSequence {
+		fmt.Fprintf(out, "value: %d, sequenceNumber: %d\n", k, v)
+	}
+	fmt.Println("")
+}
+
 func appendBitmapClosure(bitmap *[]uint64) func(int) {
 	return func(idx int) {
 		uintIndex := idx / 64
@@ -176,6 +229,7 @@ func (s *OrderedSet[T]) appendBitMap(idx int) {
 	if uintIndex >= len(s.bitmap) {
 		s.bitmap = append(s.bitmap, uint64(0))
 	}
+	fmt.Printf("appendBitMap(%d):::: idx: %d, bitOffset: %d\n", idx, idx, bitOffset)
 	bitMask := uint64(1) << bitOffset
 	s.bitmap[uintIndex] |= bitMask
 }
@@ -293,8 +347,9 @@ func (s *OrderedSet[T]) compactingDeleteBitMap(idx int) {
 
 func (s *OrderedSet[T]) Delete(elem T) bool {
 	op := s.opPool.Get().(*setOp[T])
-	op.opVal = nil
+	op.opVal = &elem
 	op.opIdx = -1
+	op.opType = OP_DELETE
 	op.callback = make(chan bool, 1)
 	s.opsCh <- op
 	return <-op.callback
@@ -304,8 +359,8 @@ func (s *OrderedSet[T]) delete(elem T) bool {
 	if seqNo, ok := s.dataToSequence[elem]; ok {
 		if member, ok2 := s.sequenceToData[seqNo]; ok2 {
 			s.deleteBitMap(member.bitmapIdx)
-			//			delete(s.dataToSequence, elem)
-			//			delete(s.sequenceToData, seqNo)
+			delete(s.dataToSequence, elem)
+			delete(s.sequenceToData, seqNo)
 			s.liveCount.Store(s.liveCount.Load() - 1)
 			return true
 		}
@@ -317,8 +372,8 @@ func (s *OrderedSet[T]) cDelete(elem T) bool {
 	if seqNo, ok := s.cDataToSequence[elem]; ok {
 		if member, ok2 := s.cSequenceToData[seqNo]; ok2 {
 			s.deleteBitMap(member.bitmapIdx)
-			//			delete(s.cDataToSequence, elem)
-			//			delete(s.cSequenceToData, seqNo)
+			delete(s.cDataToSequence, elem)
+			delete(s.cSequenceToData, seqNo)
 			s.liveCount.Store(s.liveCount.Load() - 1)
 			return true
 		}
@@ -375,7 +430,9 @@ func (s *OrderedSet[T]) isValAlive(elem T) bool {
 }
 
 func (s *OrderedSet[T]) isSeqAlive(seqNo uint64) bool {
+	fmt.Printf("isSeqAlive(%d)\n", seqNo)
 	if member, ok := s.sequenceToData[seqNo]; ok {
+		fmt.Printf("isIdxAlive(%d)\n", member.bitmapIdx)
 		if s.isIdxAlive(member.bitmapIdx) {
 			return true
 		}
@@ -385,7 +442,7 @@ func (s *OrderedSet[T]) isSeqAlive(seqNo uint64) bool {
 
 // func getBitMapIndex(idx int) uint64
 func (s *OrderedSet[T]) isIdxAlive(idx int) bool {
-	if idx < 0 || idx > len(s.bitmap) {
+	if idx < 0 || idx > len(s.items) {
 		return false
 	}
 	uintIndex := idx / 64
