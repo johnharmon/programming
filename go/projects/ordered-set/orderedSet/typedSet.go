@@ -25,6 +25,10 @@ func NewOrderedSet[T comparable]() *OrderedSet[T] {
 	s.cItems = make([]uint64, 1, 10000)
 	s.opPool = &sync.Pool{}
 	s.rwLock = &sync.RWMutex{}
+	s.logger = NewConcreteLogger()
+	s.logger.Init()
+
+	s.pendingLock = &sync.RWMutex{}
 	s.opPool.New = func() any {
 		return &setOp[T]{}
 	}
@@ -92,7 +96,6 @@ func (s *OrderedSet[T]) sequencer() {
 		s.rwLock.Lock()
 		seqNo := s.seqNo.Load() + 1
 		s.lastAppliedSeq = seqNo - 1
-		op.seqNo = seqNo
 		switch op.opType {
 		case OP_APPEND:
 			applied = s.append(*op.opVal, seqNo)
@@ -103,11 +106,18 @@ func (s *OrderedSet[T]) sequencer() {
 		}
 		op.seqNo = seqNo
 		if s.compacting {
+			s.pendingLock.Lock()
 			s.pending[seqNo] = *op
+			s.pendingLock.Unlock()
 		}
 		s.seqNo.Store(seqNo)
+		s.logger.Logln(op.String())
+		// fmt.Fprintf(os.Stdout, "%s\n", op.String())
+		if s.liveCount.Load() > 100 && (int(s.liveCount.Load()) < len(s.items)*2) {
+			go s.compact()
+		}
 		s.rwLock.Unlock()
-		s.encoder.Encode(*op)
+		// s.encoder.Encode(*op)
 		op.callback <- applied
 		op.opVal, op.callback, op.opIdx = nil, nil, 0
 		s.opPool.Put(op)
@@ -138,7 +148,7 @@ func (s *OrderedSet[T]) append(elem T, seqNo uint64) bool {
 
 func (s *OrderedSet[T]) cAppend(elem T, seqNo uint64) bool {
 	if _, ok := s.cDataToSequence[elem]; !ok {
-		bitmapIdx := len(s.cItems) - 1
+		bitmapIdx := len(s.cItems)
 		s.cDataToSequence[elem] = seqNo
 		s.cSequenceToData[seqNo] = setMember[T]{bitmapIdx: bitmapIdx, Value: &elem}
 		s.cItems = append(s.cItems, seqNo)
@@ -171,9 +181,9 @@ func (s *OrderedSet[T]) GetIdx(idx int) (*setEntity[T], bool) {
 				s.rwLock.Unlock()
 				return &setEntity[T]{Value: *member.Value, ID: seqNo}, true
 			}
-			fmt.Printf("Error: non-existent sequence number: %d given by s.items[%d]\n", seqNo, realIdx)
+			// fmt.Printf("Error: non-existent sequence number: %d given by s.items[%d]\n", seqNo, realIdx)
 		}
-		fmt.Printf("Error, out of bounds index given by 'getNthAliveIndexUnderLock(%d)'\n", idx)
+		// fmt.Printf("Error, out of bounds index given by 'getNthAliveIndexUnderLock(%d)'\n", idx)
 	}
 	s.rwLock.Unlock()
 	return nil, false
@@ -211,6 +221,15 @@ func (s *OrderedSet[T]) DumpDataMap(out io.Writer) {
 	fmt.Println("")
 }
 
+func (s *OrderedSet[T]) DumpMetadata(out io.Writer) {
+	//"\x1b[0;0H\x1b[2JTotalItemCount: %d, LiveItemCount: %d, sequenceNumber: %d\r",
+	fmt.Fprintf(out,
+		"TotalItemCount: %d, LiveItemCount: %d, sequenceNumber: %d\n",
+		len(s.items),
+		s.liveCount.Load(),
+		s.seqNo.Load())
+}
+
 func appendBitmapClosure(bitmap *[]uint64) func(int) {
 	return func(idx int) {
 		uintIndex := idx / 64
@@ -229,7 +248,7 @@ func (s *OrderedSet[T]) appendBitMap(idx int) {
 	if uintIndex >= len(s.bitmap) {
 		s.bitmap = append(s.bitmap, uint64(0))
 	}
-	fmt.Printf("appendBitMap(%d):::: idx: %d, bitOffset: %d\n", idx, idx, bitOffset)
+	// fmt.Printf("appendBitMap(%d):::: idx: %d, bitOffset: %d\n", idx, idx, bitOffset)
 	bitMask := uint64(1) << bitOffset
 	s.bitmap[uintIndex] |= bitMask
 }
@@ -239,13 +258,22 @@ func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData
 	appendBitmap := appendBitmapClosure(newBitmap)
 	for _, idx := range getAliveIndicesUnderLock(s.bitmap) {
 		itemSeqNo := s.items[idx]
+		// s.logger.Logln("copyItemsUnderLock: itemSeqNo: %d", itemSeqNo)
+		fmt.Fprintf(os.Stderr, "copyItemsUnderLock: itemSeqNo: %d\n", itemSeqNo)
 		if liveCount > len(*newItems)-1 {
 			*newItems = append(*newItems, uint64(0))
 		}
 		liveCount++
 		(*newItems)[liveCount-1] = itemSeqNo
-		newSequenceToData[itemSeqNo] = setMember[T]{Value: s.sequenceToData[s.items[idx]].Value, bitmapIdx: liveCount - 1}
-		newDataToSequence[*(newSequenceToData[itemSeqNo].Value)] = itemSeqNo
+		seqNo := s.items[idx]
+		sm := s.sequenceToData[seqNo]
+		newSequenceToData[itemSeqNo] = setMember[T]{Value: sm.Value, bitmapIdx: liveCount - 1}
+		sMember := newSequenceToData[itemSeqNo]
+		val := sMember.Value
+		s.logger.Logln("%d", itemSeqNo)
+		message := fmt.Sprintf("Attempting to access value for seqNo: %d\n", itemSeqNo)
+		fmt.Fprint(os.Stderr, message)
+		newDataToSequence[*val] = itemSeqNo
 		appendBitmap(liveCount - 1)
 	}
 	return liveCount
@@ -255,21 +283,19 @@ func (s *OrderedSet[T]) compact() {
 	s.cBitmap = s.cBitmap[:0]
 	s.cItems = s.cItems[:0]
 	liveCount := int(s.liveCount.Load())
-	if s.maxItems > 2*(int(s.liveCount.Load())) {
-		s.cSequenceToData = make(map[uint64]setMember[T], liveCount+liveCount/3)
-		s.cDataToSequence = make(map[T]uint64, liveCount+liveCount/3)
-	} else {
-		clear(s.cSequenceToData)
-		clear(s.cDataToSequence)
-	}
+	fmt.Printf("Making new maps\n")
+	s.cSequenceToData = make(map[uint64]setMember[T], liveCount+liveCount/3)
+	s.cDataToSequence = make(map[T]uint64, liveCount+liveCount/3)
 
 	s.rwLock.Lock()
 	s.compacting = true
+	s.pendingLock.Lock()
 	if s.pending == nil {
 		s.pending = make(map[uint64]setOp[T])
 	} else {
 		clear(s.pending)
 	}
+	s.pendingLock.Unlock()
 	s.rwLock.Unlock()
 
 	s.rwLock.RLock()
@@ -280,6 +306,7 @@ func (s *OrderedSet[T]) compact() {
 	s.rwLock.RUnlock()
 
 	for currentSeq := s.snapshotSeqNo + 1; (s.seqNo.Load() - currentSeq) > 0; currentSeq++ {
+		s.pendingLock.Lock()
 		if op, ok := s.pending[currentSeq]; ok {
 			switch op.opType {
 			case OP_APPEND:
@@ -292,9 +319,11 @@ func (s *OrderedSet[T]) compact() {
 			s.cLastAppliedSeq = currentSeq
 			delete(s.pending, currentSeq)
 		}
+		s.pendingLock.Unlock()
 	}
 	s.rwLock.Lock()
 	for currentSeq := s.cLastAppliedSeq + 1; (s.seqNo.Load() - currentSeq) > 0; currentSeq++ {
+		s.pendingLock.Lock()
 		if op, ok := s.pending[currentSeq]; ok {
 			switch op.opType {
 			case OP_APPEND:
@@ -307,6 +336,7 @@ func (s *OrderedSet[T]) compact() {
 			s.cLastAppliedSeq = currentSeq
 			delete(s.pending, currentSeq)
 		}
+		s.pendingLock.Unlock()
 	}
 	s.bitmap, s.dataToSequence, s.sequenceToData, s.items = s.cBitmap, s.cDataToSequence, s.cSequenceToData, s.cItems
 	s.cBitmap, s.cDataToSequence, s.cSequenceToData, s.cItems = nil, nil, nil, nil
@@ -362,6 +392,7 @@ func (s *OrderedSet[T]) delete(elem T) bool {
 			delete(s.dataToSequence, elem)
 			delete(s.sequenceToData, seqNo)
 			s.liveCount.Store(s.liveCount.Load() - 1)
+			s.logger.Logln("Deleted sequence number: %d, with value: %d, flippeed bitmapIdx: %d", seqNo, elem, member.bitmapIdx)
 			return true
 		}
 	}
@@ -430,9 +461,9 @@ func (s *OrderedSet[T]) isValAlive(elem T) bool {
 }
 
 func (s *OrderedSet[T]) isSeqAlive(seqNo uint64) bool {
-	fmt.Printf("isSeqAlive(%d)\n", seqNo)
+	// fmt.Printf("isSeqAlive(%d)\n", seqNo)
 	if member, ok := s.sequenceToData[seqNo]; ok {
-		fmt.Printf("isIdxAlive(%d)\n", member.bitmapIdx)
+		// fmt.Printf("isIdxAlive(%d)\n", member.bitmapIdx)
 		if s.isIdxAlive(member.bitmapIdx) {
 			return true
 		}

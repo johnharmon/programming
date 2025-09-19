@@ -1,20 +1,13 @@
 package set
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"reflect"
 	"sync"
 	"sync/atomic"
 )
-
-type setOp[T comparable] struct {
-	callback chan bool
-	opVal    *T
-	opIdx    int
-	opType   int
-	seqNo    uint64
-}
 
 type setMember[T comparable] struct {
 	bitmapIdx int
@@ -52,8 +45,10 @@ type OrderedSet[T comparable] struct {
 	seqNo           atomic.Uint64 // integer representing the most recent operation number so ops can be tagged with it
 	lastAppliedSeq  uint64
 	cLastAppliedSeq uint64
+	logger          *ConcreteLogger
 	rwLock          *sync.RWMutex
 	pending         map[uint64]setOp[T]
+	pendingLock     *sync.RWMutex
 	opsCh           chan *setOp[T]
 	replayCh        chan replayOp[T]
 	tombstones      int
@@ -85,4 +80,43 @@ func (s *setOpEncoder[T]) Encode(op setOp[T]) {
 		op.opIdx,
 		op.opType,
 		op.seqNo)
+}
+
+type LogEntry struct {
+	Message   string `json:"message"`
+	Timestamp any    `json:"timestamp"`
+}
+
+type RawLogArgs struct {
+	FormatMessage string
+	FormatArgs    []any
+	Timestamp     string
+}
+
+type FlushToken struct {
+	Iteration  int
+	HandledBy  string
+	SentBy     string
+	ReceivedBy string
+	Values     map[string]any
+}
+
+type ConcreteLogger struct {
+	ActiveBuffer      *bytes.Buffer
+	FlushBuffer       *bytes.Buffer
+	Out               io.Writer
+	Mu                *sync.Mutex
+	FlushMu           *sync.Mutex
+	SwapMu            *sync.Mutex
+	FlushSender       chan *FlushToken
+	FlushReceiver     chan *FlushToken
+	LogOutput         chan []byte
+	LogEntryCh        chan *LogEntry
+	RawLogCh          chan *RawLogArgs
+	RunCh             chan *sync.WaitGroup
+	Done              chan struct{}
+	LogFileName       string
+	LogEntryPool      *sync.Pool
+	RawLogArgPool     *sync.Pool
+	MessageBufferPool *sync.Pool
 }

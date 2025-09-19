@@ -2,49 +2,76 @@ package main
 
 // inserting a comment for github testing
 import (
-	"fmt"
+	//"fmt"
 	"math/rand"
-	"os"
+	//"os"
+	"time"
 
 	"harmonlab.io/set"
 )
 
 func main() {
 	mySet := set.NewOrderedSet[int]()
-	for i := 0; i < 5; i++ {
-		res := mySet.Append(i)
-		fmt.Printf("Change Applied: %t\n", res)
-	}
-	for i := 0; i < 5; i++ {
-		res := mySet.Append(i)
-		fmt.Printf("Change Applied: %t\n", res)
-	}
-	//	fmt.Println("Deleting items:")
+	go TestSet(mySet)
+	//	for i := 0; i < 5; i++ {
+	//		res := mySet.Append(i)
+	//		fmt.Printf("Change Applied: %t\n", res)
+	//	}
+	//
+	//	for i := 0; i < 5; i++ {
+	//		res := mySet.Append(i)
+	//		fmt.Printf("Change Applied: %t\n", res)
+	//	}
+	//
+	// fmt.Println("Deleting items:")
+	//
 	//	for i := 0; i < 5; i++ {
 	//		res := mySet.Delete(i)
 	//		fmt.Printf("Change Applied: %t\n", res)
 	//	}
-	//	fmt.Println("Deleting items:")
+	//
+	// fmt.Println("Deleting items:")
+	//
 	//	for i := 0; i < 5; i++ {
 	//		res := mySet.Delete(i)
 	//		fmt.Printf("Change Applied: %t\n", res)
 	//	}
-	for i := 0; i < 5; i++ {
-		res := mySet.Append(rand.Int())
-		fmt.Printf("Change Applied: %t\n", res)
+	//
+	//	for i := 0; i < 5; i++ {
+	//		res := mySet.Append(rand.Int())
+	//		fmt.Printf("Change Applied: %t\n", res)
+	//	}
+	//
+	// //	mySet.DumpBitMap(os.Stdout)
+	// //	mySet.DumpItems(os.Stdout)
+	// //	mySet.DumpSequenceMap(os.Stdout)
+	// //	mySet.DumpDataMap(os.Stdout)
+	//
+	//	for i := 0; i < 5; i++ {
+	//		setLen := mySet.Len()
+	//		idx := rand.Int() % setLen
+	//		if res, ok := mySet.GetIdx(idx); ok {
+	//			fmt.Printf("Value: %d, index: %d\n", res.Value, idx)
+	//		} else {
+	//			fmt.Printf("Error: index(%d) not found in set\n", idx)
+	//		}
+	//
+	// }
+	for {
+		//		mySet.DumpMetadata(os.Stdout)
+		//		time.Sleep(time.Microsecond * 100)
 	}
-	mySet.DumpBitMap(os.Stdout)
-	mySet.DumpItems(os.Stdout)
-	mySet.DumpSequenceMap(os.Stdout)
-	mySet.DumpDataMap(os.Stdout)
-	for i := 0; i < 5; i++ {
-		setLen := mySet.Len()
-		idx := rand.Int() % setLen
-		if res, ok := mySet.GetIdx(idx); ok {
-			fmt.Printf("Value: %d, index: %d\n", res.Value, idx)
-		} else {
-			fmt.Printf("Error: index(%d) not found in set\n", idx)
-		}
+}
 
+func TestSet(s *set.OrderedSet[int]) {
+	for {
+		item := rand.Int() % 1000
+		op := rand.Int() % 10
+		if op < 9 {
+			s.Append(item)
+		} else {
+			s.Delete(item)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
