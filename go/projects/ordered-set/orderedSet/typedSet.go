@@ -36,7 +36,7 @@ func NewOrderedSet[T comparable]() *OrderedSet[T] {
 	s.appendBitmap = appendBitmapClosure(&s.bitmap)
 	s.cAppendBitmap = appendBitmapClosure(&s.cBitmap)
 	s.seqNo = atomic.Uint64{}
-	s.seqNo.Store(1)
+	s.seqNo.Store(0)
 	go s.sequencer()
 	return &s
 }
@@ -48,10 +48,14 @@ func getAliveIndicesUnderLock(bitmap []uint64) (liveIndices []int) {
 	}
 	for idx, word := range bitmap {
 		if word != 0 {
+			fmt.Fprintf(os.Stderr, "Checking bitmap word: %d, %b\n", idx, word)
+			liveIndicesInWord := []int{}
 			for word != 0 {
 				liveIndices = append(liveIndices, (64*idx)+bits.TrailingZeros64(word))
+				liveIndicesInWord = append(liveIndicesInWord, bits.TrailingZeros64(word))
 				word &= word - 1
 			}
+			fmt.Fprintf(os.Stderr, "Live indicies in word: %v\n", liveIndicesInWord)
 		}
 	}
 	return liveIndices
@@ -95,7 +99,7 @@ func (s *OrderedSet[T]) sequencer() {
 		applied = false
 		s.rwLock.Lock()
 		seqNo := s.seqNo.Load() + 1
-		s.lastAppliedSeq = seqNo - 1
+		s.lastAppliedSeq = seqNo
 		switch op.opType {
 		case OP_APPEND:
 			applied = s.append(*op.opVal, seqNo)
@@ -256,7 +260,9 @@ func (s *OrderedSet[T]) appendBitMap(idx int) {
 func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData map[uint64]setMember[T], newDataToSequence map[T]uint64, newBitmap *[]uint64) int {
 	liveCount := 0
 	appendBitmap := appendBitmapClosure(newBitmap)
+	s.logger.Logln("Live Indices: %v", getAliveIndicesUnderLock(s.bitmap))
 	for _, idx := range getAliveIndicesUnderLock(s.bitmap) {
+		fmt.Fprintf(os.Stderr, "Working on index: %d\n", idx)
 		itemSeqNo := s.items[idx]
 		// s.logger.Logln("copyItemsUnderLock: itemSeqNo: %d", itemSeqNo)
 		fmt.Fprintf(os.Stderr, "copyItemsUnderLock: itemSeqNo: %d\n", itemSeqNo)
@@ -265,8 +271,7 @@ func (s *OrderedSet[T]) copyItemsUnderLock(newItems *[]uint64, newSequenceToData
 		}
 		liveCount++
 		(*newItems)[liveCount-1] = itemSeqNo
-		seqNo := s.items[idx]
-		sm := s.sequenceToData[seqNo]
+		sm := s.sequenceToData[itemSeqNo]
 		newSequenceToData[itemSeqNo] = setMember[T]{Value: sm.Value, bitmapIdx: liveCount - 1}
 		sMember := newSequenceToData[itemSeqNo]
 		val := sMember.Value
@@ -301,7 +306,7 @@ func (s *OrderedSet[T]) compact() {
 	s.rwLock.RLock()
 	s.snapshotSeqNo = s.seqNo.Load()
 	liveCount = s.copyItemsUnderLock(&s.cItems, s.cSequenceToData, s.cDataToSequence, &s.cBitmap)
-	s.cItems = make([]uint64, liveCount, int(float64(liveCount)*1.33))
+	// s.cItems = make([]uint64, liveCount, int(float64(liveCount)*1.33))
 	s.cLastAppliedSeq = s.snapshotSeqNo
 	s.rwLock.RUnlock()
 
@@ -348,7 +353,7 @@ func (s *OrderedSet[T]) cAppendBitMap(idx int) {
 	uintIndex := idx / 64
 	bitOffset := idx % 64
 	if uintIndex >= len(s.cBitmap) {
-		s.cBitmap = append(s.bitmap, uint64(0))
+		s.cBitmap = append(s.cBitmap, uint64(0))
 	}
 	bitMask := uint64(1) << bitOffset
 	s.cBitmap[uintIndex] |= bitMask
@@ -363,6 +368,7 @@ func (s *OrderedSet[T]) deleteBitMap(idx int) {
 	if uintIndex < len(s.bitmap) {
 		bitMask := uint64(1) << bitOffset
 		s.bitmap[uintIndex] &^= bitMask
+		s.logger.Logln("Deleted index %d of bitmap: %b, totalIndex: %d", bitOffset, s.bitmap[uintIndex], uintIndex*64+bitOffset)
 	}
 }
 
@@ -428,8 +434,8 @@ func (s *OrderedSet[T]) deleteLiveIdx(idx int) bool {
 		member, ok := s.sequenceToData[seqNo]
 		if ok {
 			s.deleteBitMap(member.bitmapIdx)
-			//			delete(s.cDataToSequence, *member.Value)
-			//			delete(s.cSequenceToData, seqNo)
+			delete(s.cDataToSequence, *member.Value)
+			delete(s.cSequenceToData, seqNo)
 			s.liveCount.Store(s.liveCount.Load() - 1)
 			return true
 		}
@@ -479,6 +485,7 @@ func (s *OrderedSet[T]) isIdxAlive(idx int) bool {
 	uintIndex := idx / 64
 	bitOffset := idx % 64
 	bitMask := uint64(1) << bitOffset
+	s.logger.Logln("Checking index: %d in bitmap: %b", bitOffset, s.bitmap[uintIndex])
 	return (s.bitmap[uintIndex] & bitMask) != 0
 }
 
